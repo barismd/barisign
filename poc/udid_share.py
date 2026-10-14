@@ -316,7 +316,48 @@ def empty_profile():
     }
 
 
-def mdm_profile(checkin_url, ca_der, name_suffix=""):
+def make_mdm_identity(ca_cert, ca_key, password):
+    """A client identity for the MDM payload, issued by our own CA.
+
+    iOS refuses an MDM payload without IdentityCertificateUUID, which must point at a
+    `com.apple.security.pkcs12` payload carrying a certificate *and its private key*.
+    We are the CA, so we can mint that identity ourselves - nothing external needed.
+    Returns the PKCS#12 bytes.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    cert = (x509.CertificateBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,
+                                                         "BariSign MDM identity")]))
+            .issuer_name(ca_cert.subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=30))     # short-lived
+            .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                           critical=False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(
+                ca_key.public_key()), critical=False)
+            .add_extension(x509.KeyUsage(
+                digital_signature=True, content_commitment=False, key_encipherment=True,
+                data_encipherment=False, key_agreement=False, key_cert_sign=False,
+                crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
+            .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]),
+                           critical=False)
+            .sign(ca_key, hashes.SHA256()))
+    return pkcs12.serialize_key_and_certificates(
+        b"BariSign", key, cert, [ca_cert],
+        serialization.BestAvailableEncryption(password.encode()))
+
+
+def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity_password=""):
     """EXPERIMENT: ONE profile that also delivers the UDID.
 
     Why this can work where a nested `Profile Service` could not: an MDM profile is an
@@ -328,6 +369,7 @@ def mdm_profile(checkin_url, ca_der, name_suffix=""):
 
     UNVERIFIED: iOS may insist on a signed MDM profile or a valid push topic.
     """
+    identity_uuid = str(uuid.uuid4()).upper()
     return {
         "PayloadContent": [
             {
@@ -341,7 +383,19 @@ def mdm_profile(checkin_url, ca_der, name_suffix=""):
                 "PayloadVersion": 1,
             },
             {
+                "PayloadCertificateFileName": "BariSignIdentity.p12",
+                "PayloadContent": identity_p12,
+                "Password": identity_password,
+                "PayloadDescription": "Client identity for the MDM connection. Delete with the profile.",
+                "PayloadDisplayName": "BariSign MDM identity",
+                "PayloadIdentifier": "io.barisign.identity",
+                "PayloadType": "com.apple.security.pkcs12",
+                "PayloadUUID": identity_uuid,
+                "PayloadVersion": 1,
+            },
+            {
                 "PayloadType": "com.apple.mdm",
+                "IdentityCertificateUUID": identity_uuid,
                 "PayloadVersion": 1,
                 "PayloadIdentifier": "io.barisign.mdm",
                 "PayloadUUID": str(uuid.uuid4()).upper(),
@@ -683,8 +737,11 @@ def main():
         state["ca_fingerprint"] = certs["ca_fingerprint"]
         if not use_udid_only:
             state["ca_xml"] = as_xml(ca_profile(certs["ca_der"], certs["ca_fingerprint"]))
+        _ca_cert, _ca_key = load_or_create_ca()
+        _password = secrets.token_urlsafe(16)
+        _p12 = make_mdm_identity(_ca_cert, _ca_key, _password)
         state["mdm_xml"] = as_xml(mdm_profile(base + "/udid", certs["ca_der"],
-                                              certs["ca_fingerprint"]))
+                                              certs["ca_fingerprint"], _p12, _password))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
             ca_url = None

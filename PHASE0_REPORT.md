@@ -2637,3 +2637,30 @@ the two-profile flow (CA once, then one profile per fetch) remains the verified 
 | `Profile Service` nested inside a Configuration array | ❌ iOS: *"unknown data"* |
 | CA + `Profile Service` in one file (any arrangement) | ❌ trust switch cannot happen before the request |
 | **CA + `com.apple.mdm` (+ Web Clip) in one file** | **? untested on device** |
+
+---
+
+# 47. MDM progress: iOS asked for `IdentityCertificateUUID` — supplied by our own CA
+
+Device result for the `--mdm` profile:
+
+> **"Profil Hatası: Gerekli 'IdentityCertificateUUID' alanı yok."**
+
+That is progress, not a wall: iOS **processed the MDM payload** and named the missing key. An MDM payload
+must reference a `com.apple.security.pkcs12` payload carrying a **client certificate and its private key**.
+We are the CA, so we mint that identity ourselves — no external certificate is involved:
+
+- new `make_mdm_identity()` issues a short-lived (30-day) **client identity** (EKU `clientAuth`, SKI/AKI,
+  RSA-2048) signed by our persistent CA, and packages it as **PKCS#12** with a random password;
+- the profile now carries four payloads, in this order:
+  `com.apple.security.root` → `com.apple.security.pkcs12` → `com.apple.mdm` (with
+  `IdentityCertificateUUID` pointing at the PKCS#12 payload's UUID) → `com.apple.webClip.managed`.
+
+*Verified in the Codespace:* the PKCS#12 round-trips (`load_key_and_certificates` returns
+`CN=BariSign MDM identity` with its key and the CA), the payload order is correct, and the MDM payload's
+`IdentityCertificateUUID` really matches the PKCS#12 payload's UUID.
+
+**Still unverified on device.** The next likely refusals, in order of probability: the profile is
+**unsigned** (Apple may require a signed MDM profile), or the **Topic** must match a push certificate. If
+iOS accepts it, the check-in lands on our server by itself and the UDID arrives with **no trust toggle and
+no second profile**.
