@@ -1081,3 +1081,222 @@ Then, if the handshakes look healthy:
 ```
 python3 -u poc_login.py --login YOUR-APPLE-ID
 ```
+
+---
+
+# 22. PHASE A — can SideStore be installed on a SINGLE device from a-Shell?
+
+Research only. No code written, no developer-portal work. Everything below is from source or from
+device measurements recorded by the projects themselves; each claim is marked **verified** (read in a
+source or measured on hardware) or **unverified**. Nothing here is confirmed by the user's own device
+unless it says so.
+
+**Primary sources, with dates**
+
+| Source | What it is | Date |
+|---|---|---|
+| `FrizzleM/SideInstaller` → `NOTES.md` | build notes, device-measured findings | entries dated **2026-08-31**, **2026-09-30** |
+| `FrizzleM/SideInstaller` → `ashell/README.md` | the a-Shell port, measured on an iPhone in a-Shell | **2026-08-27**, **2026-08-31** |
+| `FrizzleM/SideInstaller` → `ashell/BOOTSTRAP-PROMPT.md` | the route decisions and milestone list | current |
+| `jkcoxson/idevice` @ `7bd551c` (**MIT**) | protocol client used by StikDebug and SideInstaller | current |
+| `nab138/isideload` (**MIT**) | install sequence (`sideload/install.rs`) | current |
+| CPython docs, `ssl` | PSK support | "Added in version 3.13" |
+| `docs.sidestore.io/docs/advanced/jit` | iOS 26/27 JIT support status | current |
+
+---
+
+## 22.1 Q1 — How do they install on the *same* device on iOS 27? Which transport, which ports?
+
+**The transport is not classic lockdownd/usbmux over the VPN.** For iOS 27 targets that path is
+**verified closed on hardware** (`NOTES.md`, 2026-09-30):
+
+> *"Answered for iOS 27 (2026-09-30): neither answers. The VPN peer resets the first request and
+> loopback is refused by iOS, so on iOS 27 `connect` no longer tries this fallback."*
+
+The live route is **RPPairing → TLS-PSK → CDTunnel → in-process software TCP stack → RSD → services**,
+stated verbatim in `NOTES.md`:
+
+> *"Transport used: RPPairing pair-verify over the LocalDevVPN Wi-Fi loopback → TLS-PSK tunnel →
+> in-process software TCP stack (`tunnel_tcp_stack`) → RSD handshake → services over RSD. Pairing-record
+> type for our own connection: RPPairing (`rp_pairing_file.plist`), not a classic lockdown record."*
+
+**Ports** (port map measured on an iPhone, `ashell/README.md`, 2026-08-31):
+
+| Port | Behaviour (measured) | What it is |
+|---|---|---|
+| **49152** | holds an idle connection; **resets at exactly 11 bytes received** unless the magic matches; correct 11-byte header → **held**; wrong magic → closed in 19 ms; full `attemptPairVerify` → **423 bytes of RPPairing JSON** (`wireProtocolVersion` 26, min 8) | **RPPairing listener** |
+| **62078** | accepts, then resets the moment the first request arrives (e.g. `GetValue(DevicePublicKey)`, the opening of `lockdownd_pair`) | lockdownd — **unusable on-device** |
+| **8443** | speaks first: answers plaintext with a TLS fatal alert | unidentified |
+| **61779** | holds and tolerates 64 bytes, no cutoff | unidentified |
+| 49151 | — | `tunneld` default port, a **host-side** daemon (`tunnel_tcp_stack`) |
+| 27015 | — | usbmuxd default port (**desktop**) |
+
+Addressing note: the 11-byte cutoff was originally misread as a protocol rejection; it is
+**RPPairing's header** — `b"RPPairing"` (9 bytes) + `u16be` length = **11**
+(`idevice` `remote_pairing/socket.rs:69`, framing; `recv_plain` reads those 11 bytes first). This is
+why the user's own measurement ("1 byte gets no reply") is consistent: the service is waiting for 11.
+
+**Services over RSD** (service names, `idevice` — the `.shim.remote` suffix is the RemoteXPC naming):
+
+- `com.apple.mobile.installation_proxy.shim.remote` (`services/installation_proxy.rs:450`)
+- `com.apple.mobile.house_arrest.shim.remote` (`services/house_arrest.rs:114`)
+- `com.apple.mobile.mobile_image_mounter.shim.remote` (`services/mobile_image_mounter.rs:775`)
+- `com.apple.amfi.lockdown.shim.remote` (`services/amfi.rs:143`)
+- plus `services/installcoordination_proxy.rs` — the iOS 17+ IXPC install path
+
+**SideStore (minimuxer + em_proxy)** uses the *classic* usbmuxd/lockdown model, which is why SideStore
+needs a **pairing file**; **StikDebug/idevice** use `tunnel_create_rppairing` and also take a pairing
+file. **Verified** that both depend on a pairing record; both are **native** apps.
+
+## 22.2 Q2 — What exactly is needed
+
+**Pairing record.** Two different things share the name:
+
+- **Classic lockdown record** (`idevice` `pairing_file.rs`): `SystemBUID`, `HostID`, `HostCertificate`,
+  `HostPrivateKey`, `RootCertificate`, `RootPrivateKey`, `DeviceCertificate`, `UDID` (+ EscrowBag on
+  some paths) — certificates are RSA, exchanged during `lockdownd_pair`.
+- **RPPairing file** (`rp_pairing_file.plist`) — what iOS 27 devices actually produce and consume
+  (SideInstaller's file carries **both halves** so other apps can use it).
+
+**Classic pipeline (Route A — closed on iOS 27):** pair over lockdownd on 62078 → `StartSession` →
+`StartService` per service → AFC upload → installation_proxy install → house_arrest to seed the pairing
+file. All messages are length-prefixed plists: `struct.pack(">I", len)` + `plistlib.dumps`.
+
+**Upload target (verified, `isideload` `sideload/install.rs:34,88`):** `PublicStaging/<name>.ipa` over AFC.
+
+**Install request (verified, `installation_proxy.rs:174` + `isideload` `install.rs:53-62`):**
+
+```python
+{"Command": "Install",
+ "ClientOptions": {"PackageType": "Developer"},
+ "PackagePath": "PublicStaging/<name>.ipa"}
+```
+
+with progress/completion plists streamed back (`watch_completion`). iOS 17+ also exposes
+`installcoordination_proxy`.
+
+**TLS to lockdownd (Route A):** a session where the host presents `HostCertificate`/`HostPrivateKey`
+and the device presents `DeviceCertificate` — ordinary certificate-based TLS, so Python's `ssl` could
+do it with `load_cert_chain`. **Irrelevant in practice: Route A never gets that far on iOS 27.**
+
+## 22.3 Q3 — Can a pairing record be created ON the device on iOS 27, and can Python do the TLS?
+
+**A classic lockdown record cannot be minted on-device on iOS 27 — verified, dated 2026-09-30.** Three
+independent statements in `NOTES.md`:
+
+1. `EnableWifiDebugging`'s own comment: *"lockdownd answers over USB only until `EnableWifiDebugging` is
+   set, and setting it needs a session, which needs a record"* — a deadlock.
+2. Measured: the VPN peer **resets the first request** and **loopback is refused by iOS**.
+3. Side by Side measured the same thing against another device: *"lockdownd accepts the TCP connection
+   and resets it (`ECONNRESET`, error 54) the moment the first request arrives — `GetValue(DevicePublicKey)`
+   … so no Trust prompt ever appears."*
+
+**An RPPairing record for a device CAN be created on iOS 27 — but only in a specific, native-only shape.**
+The device-initiated flow, verified end-to-end by a reporter on **two iOS 27 iPhones**:
+
+> *"(pairable host → RPPairing tunnel → RSD → install) end to end on two iOS 27 iPhones."*
+>
+> *"Pairing this iPhone means typing a code SideInstaller shows into a prompt in Settings, with
+> SideInstaller behind it … the target taps a `_remotepairing-pairable-host._tcp` host under
+> Settings › Privacy & Security › Developer Mode and types the PIN that host shows."*
+
+**The five checkpoints** (the milestone list in `BOOTSTRAP-PROMPT.md`; `ashell/README.md` calls this
+"checkpoint 1 of 5"):
+
+| # | Checkpoint | Needed for |
+|---|---|---|
+| 1 | probes run, route chosen | prerequisite |
+| 2 | **pair with this device from this device** and persist the record | **the pairing record** |
+| 3 | reach one service and read something harmless (device info → **UDID**) | **UDID only** (and install) |
+| 4 | install an **already signed** .ipa — *"this is the checkpoint that matters"* | install |
+| 5 | sign with your own Apple ID, then install | signing |
+
+**Can Python's `ssl` (OpenSSL 1.1.1i) do the TLS steps?**
+
+- Route A (certificate-based): yes in principle — but the route is closed.
+- Route B (RPPairing) uses **TLS 1.2 PSK** (`PSK-AES256-CBC-SHA384`; SideInstaller hand-rolls it in
+  `tls_psk.rs`). CPython gained `ssl.SSLContext.set_psk_client_callback` **in 3.13** (CPython docs:
+  *"Added in version 3.13"*), and a-Shell has **Python 3.13.1** — so this may be free rather than
+  hand-rolled. **Unverified on the device**; one line settles it.
+- **What is definitely missing, and is the real blocker:** the **software TCP stack** over the CDTunnel.
+  Upstream that is the `jktcp` crate, called *"the largest single risk in this route and every byte of
+  the .ipa crosses it twice"*, and it is **not vendored** in SideInstaller. Plus the **RemoteXPC/RSD**
+  codec. SideInstaller's own a-Shell port has a RemoteXPC codec in `siboot.py` but notes it was
+  *"written one layer too early"*.
+
+**Why this is out of reach for a Shortcut-driven a-Shell script even if the protocol were written:**
+pairing requires the app to **stay running in the background while the user leaves it** — SideInstaller
+uses a **Live Activity** plus *"pairing's keep-alive audio keeps the app running"* while the user is in
+Settings. A Python script launched by a Shortcut in a-Shell cannot hold a background keep-alive or post
+a Live Activity, and iOS suspends it as soon as the user switches to Settings. **This is an
+architectural blocker, not a coding-effort one.**
+
+## 22.4 Q4 — Would lockdownd at `10.7.0.1:62078` answer `QueryType`/`GetValue` unpaired?
+
+**No — measured, 2026-09-30.** `NOTES.md`: *"Answered for iOS 27: neither answers. The VPN peer resets
+the first request and loopback is refused by iOS."* Side by Side adds: `ECONNRESET` the instant
+`GetValue(DevicePublicKey)` arrives. The user's own "1 byte → no reply" on 49152 is the RPPairing header
+waiting (11 bytes), a different port.
+
+Their own earlier probe (`ashell/lockdown_probe.py`) was exactly this hypothesis; it was settled
+negative. **Do not spend another round on it.**
+
+## 22.5 Q5 — Every other currently working way to get a signed IPA installed with no computer
+
+| Route | Second device? | Server? | Turkey | iOS 27 as of Oct 2026 | Risks / terms |
+|---|---|---|---|---|---|
+| **A. Single-device, pure Python in a-Shell** | No | No | n/a | **Not feasible** (§22.6) | — |
+| **B. Sign on device A, AirDrop to device B** | **Yes** | No | Works | **Works** (user-measured: AirDrop installs; unsigned won't launch) | Receiver's UDID must be registered; acquiring a *second* device's UDID without a computer is the gap |
+| **C. A native on-device installer (SideInstaller v1.0.0)** | No, per its README | No | Works | **Claims iOS 27+, and its two-device mode is verified on two iPhones** | **Native app, not Shortcut-drivable**; custom non-commercial licence; its own notes show the iPhone 13 path still falling back to an **imported pairing file** |
+| **D. `itms-services` / OTA** | No | **Yes** (HTTPS + trusted cert) | Works | **Dead end, device-measured** | *"requires an Ad Hoc or Enterprise distribution profile — free-account development profiles are refused"* (the "couldn't verify integrity" error). Confirms our §5.1/§5.2 |
+| **E. Prebuilt pairing file from a site/app** | No | Third party | Works | Works (community standard) | You hand a pairing record to a third party; revocation/ransom risk; against the spirit of "never leaves the device" |
+| **F. StikDebug** | No | No | Works | **No longer on the App Store** (per its repo notice) | Still needs a pairing file for JIT |
+| **G. `itms-services` from your own private HTTPS** | No | **Yes**, user-owned | Works | Works | The *signed* IPA carries your UDID + profile; a bearer URL leaks it |
+
+Older-than-2026 sources were excluded. Nothing newer than Oct 2026 was found that changes this.
+
+## 22.6 Q6 — Verdict
+
+**Is single-device install feasible in pure Python in a-Shell?**
+
+## **NO — high confidence.**
+
+| Blocker | Status |
+|---|---|
+| Mint a pairing record on-device (Route A, classic lockdown) | **Impossible on iOS 27** (device-measured, dated) |
+| RPPairing self-pairing (Route B) | **Exists on iOS 27, but is native-only**: requires a Bonjour pairable-host, a PIN typed into Settings, and the app staying alive in the background (Live Activity + keep-alive audio) |
+| Software TCP stack over CDTunnel (`jktcp`) | **Not available** in pure Python; upstream calls it the largest single risk |
+| RemoteXPC / RSD codec | Not available; SideInstaller's own attempt was "one layer too early" |
+| Mach-O + CMS signer | Still to be written (§13 item 1) |
+| TLS-PSK | **Probably free** via Python 3.13's `set_psk_client_callback` (unverified on-device) |
+
+**Effort if it were attempted:** weeks of work and a very large token budget, to re-implement a Rust TCP
+stack and RemoteXPC in Python, with the decisive step (self-pairing) unreachable from a Shortcut-launched
+background-suspended script. **Not recommended.**
+
+**Ranked recommendation**
+
+1. **B — two-device AirDrop.** Already proven on the user's devices. The one open item is obtaining the
+   **receiver's UDID** with no computer; iOS 27's device-initiated pairing
+   (`_remotepairing-pairable-host._tcp` + PIN) is the verified mechanism, but it needs the same native
+   tunnel stack for us to read the UDID.
+2. **C — point users at a native on-device installer (SideInstaller) as a documented alternative**, and
+   keep BariSign's Shortcut for what it does well: choosing the variant, signing with the user's Apple ID,
+   and handing over a correctly signed IPA. (Its licence is non-commercial and its code stays in
+   `third_party/` — we link to it, we do not ship it.)
+3. **A — single-device pure-Python install: not recommended.** Documented above rather than attempted.
+
+**Open question this phase did NOT resolve** (it needs the developer portal, which is out of scope for
+Phase A): whether a free-account provisioning profile can cover **two devices at once**, which decides
+how much of route B is left to build.
+
+## 22.7 Cheap tests for later (no code written, one line each)
+
+Run in a-Shell, in order, only when authorised:
+
+1. TLS-PSK availability — decides whether Route B's `tls_psk.rs` would ever have to be hand-rolled:
+   `python3 -c "import ssl; print('psk:', hasattr(ssl.SSLContext,'set_psk_client_callback'), ssl.OPENSSL_VERSION)"`
+2. Unpaired lockdownd over the VPN peer (expected to fail per §22.4 — run once to close it on *this* device):
+   `python3 -c "import socket,struct,plistlib; msg=plistlib.dumps({'Request':'QueryType','Label':'b','ClientVersion':'1'}); s=socket.create_connection(('10.7.0.1',62078),timeout=5); s.sendall(struct.pack('>I',len(msg))+msg); print(s.recv(4096)[:120])"`
+
+**STOP — Phase A ends here.** Waiting for the user's go before any implementation.
