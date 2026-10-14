@@ -253,8 +253,16 @@ def make_certs(ip):
         serialization.NoEncryption())
     return {
         "ca_pem": pem(ca_cert),
+        "ca_fingerprint": ":".join("%02X" % b for b in
+                                   __import__("hashlib").sha256(
+                                       ca_cert.public_bytes(
+                                           serialization.Encoding.DER)).digest()[:4]),
         "ca_der": ca_cert.public_bytes(serialization.Encoding.DER),
-        "leaf_chain_pem": pem(leaf_cert) + pem(ca_cert),   # leaf first, then our CA
+        # LEAF ONLY. A TLS server should not send the root: the peer trusts it
+        # separately, and a chain that carries a self-signed root can be refused by
+        # strict validators. (Was: leaf + CA, which is non-standard.)
+        "leaf_chain_pem": pem(leaf_cert),
+        "ca_pem": pem(ca_cert),
         "leaf_key_pem": leaf_key_pem,
     }
 
@@ -304,13 +312,13 @@ def empty_profile():
     }
 
 
-def ca_profile(ca_der):
+def ca_profile(ca_der, name_suffix=""):
     return {
         "PayloadContent": [{
             "PayloadCertificateFileName": "BariSignCA.cer",
             "PayloadContent": ca_der,
             "PayloadDescription": "Temporary BariSign certificate authority.",
-            "PayloadDisplayName": "BariSign temporary CA",
+            "PayloadDisplayName": "BariSign CA %s" % name_suffix,
             "PayloadIdentifier": "io.barisign.ca",
             "PayloadType": "com.apple.security.root",
             "PayloadUUID": str(uuid.uuid4()).upper(),
@@ -319,7 +327,7 @@ def ca_profile(ca_der):
         "PayloadDescription":
             "Temporary, throwaway CA so the BariSign scripts can use HTTPS. Delete "
             "it afterwards, and also turn it off in Certificate Trust Settings.",
-        "PayloadDisplayName": "BariSign temporary CA",
+        "PayloadDisplayName": "BariSign CA %s" % name_suffix,
         "PayloadIdentifier": "io.barisign.ca.profile",
         "PayloadType": "Configuration",
         "PayloadUUID": str(uuid.uuid4()).upper(),
@@ -599,8 +607,8 @@ def main():
             print("Could not start HTTPS: %r" % (exc,))
             return 2
         state["ca_der"] = certs["ca_der"]
-        state["ca_fingerprint"] = ca_fingerprint(load_or_create_ca()[0])
-        state["ca_xml"] = as_xml(ca_profile(certs["ca_der"]))
+        state["ca_fingerprint"] = certs["ca_fingerprint"]
+        state["ca_xml"] = as_xml(ca_profile(certs["ca_der"], certs["ca_fingerprint"]))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
             ca_url = None
@@ -628,7 +636,9 @@ def main():
     print()
     if use_https:
         print(" MODE: HTTPS.")
-        print(" CA fingerprint : %s" % state.get("ca_fingerprint", "?"))
+        print(" CA name on the device: \"BariSign CA %s\"" % state.get("ca_fingerprint", "?"))
+        print(" Use that exact name when you switch trust ON - older runs left")
+        print(" identically-named CAs behind, which is how the wrong one gets toggled.")
         print(" This CA is now PERSISTENT: it is created once and reused on every run,")
         print(" so it only has to be installed and trusted ONE TIME. (Before, a new CA")
         print(" was made on every run, which is why a trusted CA stopped matching and")

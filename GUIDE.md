@@ -60,9 +60,18 @@ python3 -u udid_share.py --https --airdrop
 3. Press **Return** in a-Shell, then **install `BariSign-UDID.mobileconfig`**.
 4. a-Shell prints the model and iOS build, you answer `y`, and the UDID is shown.
 
-If the target still holds an **older BariSign CA**, delete it first
-(Settings → General → VPN & Device Management) and install the new one; the script prints the CA
-fingerprint it is using, so you can check you have the right one.
+**Two more fixes, both from the certificate itself:**
+
+- **The CA profile is now named after its own fingerprint** — e.g. *"BariSign CA 73:D9:69:05"*. Older runs
+  left several profiles all called "BariSign temporary CA", so the trust switch could easily be flipped on
+  the *wrong* entry. The name is printed by the script, and the profile identifier is unchanged, so
+  installing a new CA **replaces** the old one instead of piling up.
+- **The server now sends the leaf certificate only.** A TLS server should never send the root: the device
+  already has our CA in its trust store, and a chain carrying a self-signed root can be refused by strict
+  validators — which is exactly what Apple's enrolment check is.
+
+**Before you start, delete every old profile:** Settings → General → VPN & Device Management → remove
+every *BariSign* entry, then check Certificate Trust Settings has no BariSign row left.
 
 **Test it (use the iPad first — iPhones may hit the one-hour Security Delay):**
 
