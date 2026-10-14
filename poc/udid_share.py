@@ -35,6 +35,8 @@
 # =============================================================================
 
 import datetime
+import hashlib
+import hmac
 import http.server
 import ipaddress
 import os
@@ -51,6 +53,7 @@ import time
 import urllib.parse
 import uuid
 
+MDM_P12_PASSWORD = "1234"     # typed by nothing: it ships in the profile
 PORT_HINT = 8787
 WINDOW_SECONDS = 300          # 5 minutes
 PROFILE_LIFETIME_SECONDS = 600  # ask iOS to drop the profile by itself (see notes)
@@ -316,6 +319,126 @@ def empty_profile():
     }
 
 
+# ---------------------------------------------------------------------------
+# A minimal legacy PKCS#12 writer (PBES1 / 3DES), because iOS will not take the
+# PBES2 archives that `cryptography` produces and will not take an unencrypted one.
+# ---------------------------------------------------------------------------
+
+def _dlen(n):
+    if n < 0x80:
+        return bytes([n])
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return bytes([0x80 | len(body)]) + body
+
+
+def _tlv(tag, content):
+    return bytes([tag]) + _dlen(len(content)) + content
+
+
+def _seq(*items):
+    return _tlv(0x30, b"".join(items))
+
+
+def _set_of(*items):
+    return _tlv(0x31, b"".join(items))
+
+
+def _int(value):
+    body = value.to_bytes(max(1, (value.bit_length() + 7) // 8), "big")
+    return _tlv(0x02, body)
+
+
+def _octets(data):
+    return _tlv(0x04, data)
+
+
+def _ctx(n, content):
+    return _tlv(0xA0 | n, content)
+
+
+def _oid(dotted):
+    parts = [int(x) for x in dotted.split(".")]
+    body = bytes([40 * parts[0] + parts[1]])
+    for value in parts[2:]:
+        chunk = bytearray([value & 0x7F])
+        value >>= 7
+        while value:
+            chunk.insert(0, 0x80 | (value & 0x7F))
+            value >>= 7
+        body += bytes(chunk)
+    return _tlv(0x06, body)
+
+
+def _pkcs12_kdf(password_utf16be, salt, iterations, purpose, length):
+    """PKCS#12 v1.1 appendix B, SHA-1 as the PRF. purpose 1 = key, 2 = IV."""
+    v, u = 64, 20
+    D = bytes([purpose]) * v
+    S = (salt * (v // len(salt) + 1))[:v]
+    P = (password_utf16be * (v // len(password_utf16be) + 1))[:v] if password_utf16be else b""
+    I = S + P
+    out = b""
+    while len(out) < length:
+        digest = hashlib.sha1(D + I).digest()
+        for _ in range(1, iterations):
+            digest = hashlib.sha1(digest).digest()
+        out += digest
+        B = (digest * (v // u + 1))[:v]
+        if I:
+            blocks = bytearray()
+            for offset in range(0, len(I), v):
+                value = (int.from_bytes(I[offset:offset + v], "big")
+                         + int.from_bytes(B, "big") + 1) % (1 << (8 * v))
+                blocks += value.to_bytes(v, "big")
+            I = bytes(blocks)
+    return out[:length]
+
+
+def _pbes1_encrypt(plaintext, password, salt, iterations):
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    pwd = password.encode("utf-16-be") + b"\x00\x00"
+    key = _pkcs12_kdf(pwd, salt, iterations, 1, 24)
+    iv = _pkcs12_kdf(pwd, salt, iterations, 2, 8)
+    pad = 8 - (len(plaintext) % 8)
+    padded = plaintext + bytes([pad]) * pad
+    encryptor = Cipher(algorithms.TripleDES(key), modes.CBC(iv)).encryptor()
+    return encryptor.update(padded) + encryptor.finalize()
+
+
+def build_legacy_p12(key_der, cert_der, ca_ders, password):
+    """Return a PKCS#12 (DER) that iOS accepts, encrypted with `password`."""
+    iterations = 2048
+    salt_key = secrets.token_bytes(16)
+    enc_key = _pbes1_encrypt(key_der, password, salt_key, iterations)
+    params = _seq(_octets(salt_key), _int(iterations))
+    alg = _seq(_oid("1.2.840.113549.1.12.1.3"), params)   # pbeWithSHA1And3-KeyTripleDES-CBC
+    shrouded = _seq(alg, _octets(enc_key))
+
+    def cert_bag(der):
+        cert_bag_value = _seq(_oid("1.2.840.113549.1.9.22.1"), _ctx(0, _octets(der)))
+        return _seq(_oid("1.2.840.113549.1.12.10.1.3"), _ctx(0, cert_bag_value))
+
+    bags = [_seq(_oid("1.2.840.113549.1.12.10.1.2"), _ctx(0, shrouded))]  # pkcs8ShroudedKeyBag
+    bags.append(cert_bag(cert_der))
+    for ca in ca_ders:
+        bags.append(cert_bag(ca))
+    safe_contents = _seq(*bags)
+    container = _seq(_oid("1.2.840.113549.1.7.1"), _ctx(0, _octets(safe_contents)))
+    authenticated_safe = _seq(container)
+    auth_safe = _seq(_oid("1.2.840.113549.1.7.1"), _ctx(0, _octets(authenticated_safe)))
+
+    # MacData over the AuthenticatedSafe bytes, HMAC-SHA1 with the PKCS#12 KDF
+    # (purpose 3). Without it OpenSSL warns "MAC is absent" and Apple's parser may
+    # refuse the file outright.
+    pwd = password.encode("utf-16-be") + b"\x00\x00"
+    mac_salt = secrets.token_bytes(16)
+    mac_key = _pkcs12_kdf(pwd, mac_salt, iterations, 3, 20)
+    mac = hmac.new(mac_key, authenticated_safe, hashlib.sha1).digest()
+    digest_info = _seq(_seq(_oid("1.3.14.3.2.26"), _tlv(0x05, b"")), _octets(mac))
+    mac_data = _seq(digest_info, _octets(mac_salt), _int(iterations))
+
+    return _seq(_int(3), auth_safe, mac_data)
+
+
 def make_mdm_identity(ca_cert, ca_key, password):
     """A client identity for the MDM payload, issued by our own CA.
 
@@ -352,11 +475,17 @@ def make_mdm_identity(ca_cert, ca_key, password):
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]),
                            critical=False)
             .sign(ca_key, hashes.SHA256()))
-    # NOTE: `cryptography` can only encrypt a PKCS#12 with PBES2/AES, and iOS has a
-    # long history of refusing those. An UNENCRYPTED archive is the safe choice here:
-    # the profile itself is the transport, and Apple's Password key is optional.
-    return pkcs12.serialize_key_and_certificates(
-        b"BariSign", key, cert, [ca_cert], serialization.NoEncryption())
+    # iOS refuses PBES2/AES archives ("the password is not correct") and prompts the
+    # user when no Password key is sent - and it will not accept an unencrypted
+    # archive either. So we build a LEGACY PKCS#12 ourselves: pbeWithSHA1And3-KeyTripleDES-CBC
+    # (PKCS#12 v1.1 KDF + 3DES-CBC), which is what iOS and macOS expect.
+    return build_legacy_p12(
+        key.private_bytes(serialization.Encoding.DER,
+                          serialization.PrivateFormat.PKCS8,
+                          serialization.NoEncryption()),
+        cert.public_bytes(serialization.Encoding.DER),
+        [ca_cert.public_bytes(serialization.Encoding.DER)],
+        password)
 
 
 def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
@@ -387,9 +516,8 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
             {
                 "PayloadCertificateFileName": "BariSignIdentity.p12",
                 "PayloadContent": identity_p12,
-                # An empty Password key stops iOS from prompting the user. The archive
-                # itself stays unencrypted because iOS refuses PBES2/AES archives.
-                "Password": "",
+                # A real password, and a real legacy-encrypted archive to match it.
+                "Password": MDM_P12_PASSWORD,
                 "PayloadDescription": "Client identity for the MDM connection. Delete with the profile.",
                 "PayloadDisplayName": "BariSign MDM identity",
                 "PayloadIdentifier": "io.barisign.identity",
@@ -430,7 +558,7 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
         "PayloadVersion": 1,
         "PayloadIdentifier": "io.barisign.mdm.profile",
         "PayloadUUID": str(uuid.uuid4()).upper(),
-        "PayloadDisplayName": "BariSign - UDID (MDM v3)",
+        "PayloadDisplayName": "BariSign - UDID (MDM v4)",
         "PayloadDescription":
             "Temporary. Adds a throwaway CA, reports this device's identifiers once, and adds one removable icon. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
@@ -749,7 +877,7 @@ def main():
         # The identity is packaged UNENCRYPTED on purpose (iOS refuses PBES2/AES
         # archives), so no Password key is sent either - a password against an
         # unencrypted archive is exactly the "password is not correct" error.
-        _p12 = make_mdm_identity(_ca_cert, _ca_key, "")
+        _p12 = make_mdm_identity(_ca_cert, _ca_key, MDM_P12_PASSWORD)
         state["mdm_xml"] = as_xml(mdm_profile(base + "/udid", certs["ca_der"],
                                               certs["ca_fingerprint"], _p12))
         if use_airdrop:
@@ -827,7 +955,7 @@ def main():
     if use_airdrop:
         if use_mdm:
             mdm_path = write_beside_script("BariSign-ONE.mobileconfig", state["mdm_xml"])
-            print(" ONE-PROFILE MODE (MDM v3): CA + client identity + MDM check-in +")
+            print(" ONE-PROFILE MODE (MDM v4): CA + client identity + MDM check-in +")
             print(" marker, all in this single file. Look for \"(MDM v2)\" in the profile")
             print(" name on the device - if it does not say v3, it is an old file.")
             import plistlib as _pl
