@@ -1364,7 +1364,57 @@ page and cannot read the UDID), and Shortcuts has no API that exposes device ide
 runs a script on Device B that produces the UDID" is not a route. Safari + one temporary profile is the
 closest thing to "no app", and `poc/udid_share.py` implements it.
 
-## 23.5 Next action (waiting for go)
+## 23.6 Answers about the profile (user questions)
+
+- **Whose profile is it?** Ours, generated in memory by the script at that moment. `PayloadIdentifier`
+  `io.barisign.udid`, display name "BariSign - read this device's UDID", shown under
+  Settings → General → VPN & Device Management. It is **unsigned**, so iOS shows a "Not Signed" warning
+  before installation. It is deleted by the user afterwards and carries no secret. Nothing is fetched
+  from the internet — not even the profile itself.
+- **Does it use the internet?** No. The callback URL is the signer's **LAN address**
+  (`http://<ip>:8787/udid`), so the device information travels over the local Wi-Fi only. No Apple ID,
+  no third-party server, no external host. Both devices must be on the same Wi-Fi.
+- **Is it suitable for everyone?** Not yet, and honestly: it is a *probe*, not a polished flow.
+  Friction: the profile warning text + an "Allow sending device information" prompt + deleting the
+  profile afterwards; both devices on one Wi-Fi; locked-down (school/work) devices may refuse profile
+  installation; and the decisive question — whether **iOS 27 still sends the UDID at all** — is
+  **unverified**. If Apple removed it, this route is dead for everybody and §22.3's Settings pairing is
+  the only no-app path left.
+- **Is it easy? Does it need a restart?** No restart of anything — no device reboot, no a-Shell
+  restart. It is roughly five taps on Device B (scan → tap link → Install → Install → Allow, then
+  delete). The real constraint is on **Device A**: a-Shell must stay in the **foreground** (and the
+  screen awake) while Device B scans, because iOS suspends a backgrounded app and the little server
+  stops answering. A's screen auto-lock should be set to Never for the duration.
+- One more unknown to expect: whether iOS 27 accepts a profile fetched over plain `http://`. The
+  classic examples are `http://`, and if Apple now insists on HTTPS for profile delivery this needs a
+  trusted certificate, which we already know is the hard part.
+
+## 23.6 Answers about the profile (user questions)
+
+- **Whose profile is it?** Ours, generated in memory by the script at that moment. `PayloadIdentifier`
+  `io.barisign.udid`, display name "BariSign - read this device's UDID", shown under
+  Settings → General → VPN & Device Management. It is **unsigned**, so iOS shows a "Not Signed" warning
+  before installation. It is deleted by the user afterwards and carries no secret. Nothing is fetched
+  from the internet — not even the profile itself.
+- **Does it use the internet?** No. The callback URL is the signer's **LAN address**
+  (`http://<ip>:8787/udid`), so the device information travels over the local Wi-Fi only. No Apple ID,
+  no third-party server, no external host. Both devices must be on the same Wi-Fi.
+- **Is it suitable for everyone?** Not yet, and honestly: it is a *probe*, not a polished flow.
+  Friction: the profile warning text + an "Allow sending device information" prompt + deleting the
+  profile afterwards; both devices on one Wi-Fi; locked-down (school/work) devices may refuse profile
+  installation; and the decisive question — whether **iOS 27 still sends the UDID at all** — is
+  **unverified**. If Apple removed it, this route is dead for everybody and §22.3's Settings pairing is
+  the only no-app path left.
+- **Is it easy? Does it need a restart?** No restart of anything — no device reboot, no a-Shell
+  restart. It is roughly five taps on Device B (scan → tap link → Install → Install → Allow, then
+  delete). The real constraint is on **Device A**: a-Shell must stay in the **foreground** (and the
+  screen awake) while Device B scans, because iOS suspends a backgrounded app and the little server
+  stops answering. A's screen auto-lock should be set to Never for the duration.
+- One more unknown to expect: whether iOS 27 accepts a profile fetched over plain `http://`. The
+  classic examples are `http://`, and if Apple now insists on HTTPS for profile delivery this needs a
+  trusted certificate, which we already know is the hard part.
+
+## 23.7 Next action (waiting for go)
 
 ```
 cd ~/Documents/barisign
