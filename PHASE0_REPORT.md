@@ -1,8 +1,19 @@
 # Phase 0 — Research & Feasibility
 
-Status: **Phase 0 complete. Awaiting user go/no-go.** Everything below was checked against
-real sources (GitHub API/source, Apple docs, community reports) on 2026-10-14. Items we could
-not confirm are marked **unverified**.
+Status: **Phase 0 complete.** User decisions recorded in §0. Phase 1 not started; only the PoCs
+in `POC_GUIDE.md` are authorised for now. Everything below was checked against real sources
+(GitHub API/source, Apple docs, community reports) on 2026-10-14. Items we could not confirm are
+marked **unverified**.
+
+## 0. Confirmed decisions (user, 2026-10-14)
+
+1. **Go for PoCs only**, not full Phase 1 yet. PoC results come back first.
+2. **Target = iOS 27+ only.** Stated as a hard requirement in `README.md`.
+3. **AirDrop is the primary install route.**
+4. **English only for now.** Translations (English + Turkish) only after it works.
+5. Test devices: **iPhone 13 (iOS 27)** = main target; **iPad (A16)** = AirDrop receiver.
+6. PoC-A/B/C written for a non-programmer in `POC_GUIDE.md` (exact taps, exact commands,
+   pass/fail meaning).
 
 ---
 
@@ -39,9 +50,10 @@ Resolved **at runtime** from the GitHub Releases API — never hardcoded.
 
 Verified facts (GitHub API, 2026-10-14):
 
-- `SideStore/SideStore` stable = `0.6.4` (2026-09-09). **Trap:** `0.7.0-alpha` has
-  `prerelease=false`, so a naive "latest non-prerelease" would hand the user an alpha.
-  The resolver must also reject `alpha`/`beta`/`rc` in the tag name.
+- `SideStore/SideStore` stable = `0.6.4` (2026-09-09). **Trap (empirically confirmed 2026-10-14):**
+  `0.7.0-alpha` has `prerelease=false`, and GitHub's `releases/latest` **returns `0.7.0-alpha`** —
+  so both `releases/latest` and a naive "newest non-prerelease" hand the user an alpha. The
+  resolver must list releases and reject `alpha`/`beta`/`rc` in the tag name.
 - `SideStore/SideStore` tag `nightly` is a rolling release; `SideStore.ipa` (31,137,651 B)
   was rebuilt **2026-10-13T20:51Z** while the release's `published_at` still reads 2023 — so
   version display must use the **asset `updated_at`**, not the release publish date.
@@ -235,11 +247,12 @@ signing; iOS 17.4–26.x pairing without a computer.
 
 ---
 
-## 8. Decisions needed from you (Phase 0 stop)
+## 8. Phase 0 close-out — decisions taken
 
-1. **Go / no-go** for Phase 1 with the architecture in §6?
-2. Do you accept that on iOS **17.4–26.x** a computer-free install may be **impossible** for the
-   very first app (pairing file), and that the project's primary target is **iOS 27+**?
-3. Primary install route: **AirDrop** (recommended) — confirm, or ask for the private-HTTPS route.
-4. Which **languages** for the final translation phase (English first)?
-5. Your test devices + iOS versions, so the README states support honestly.
+1. **Authorised now:** PoC-A/B/C only (see `POC_GUIDE.md`). **Not** authorised yet: full Phase 1.
+2. **Target = iOS 27+ only**; on iOS 17.4–26.x a computer-free first install may be impossible
+   (pairing file) and is explicitly out of scope. Stated in `README.md`.
+3. **Primary install route = AirDrop** (confirmed). Private-HTTPS `itms-services` kept as a
+   documented fallback only.
+4. **Languages:** English now; English + Turkish in the final phase, after it works.
+5. Next action is on the user: run PoC-A/B/C on iPhone 13 (iOS 27) + iPad (A16) and report results.
