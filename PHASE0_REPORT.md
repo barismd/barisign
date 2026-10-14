@@ -2244,3 +2244,69 @@ The test costs ten seconds and needs no code:
 
 - **Present** → the iOS 27 route is alive on virgin devices, and §37's plan can proceed.
 - **Absent** → this verdict stands, and the minimum is a one-time computer touch.
+
+---
+
+# 39. BREAKTHROUGH: the profile route is alive — it just needs a *public* HTTPS endpoint
+
+The user demanded every path be researched, not just iOS 27. That found the missing piece.
+
+## 39.1 The verified industry fact (2026 sources)
+
+Multiple current UDID services (udid.tech, udid.my, udid.tools, BetaDrop, IPAsig, lemoncert, appisto,
+builds.io) all describe and use exactly one computer-free mechanism, and one of them spells out the
+mechanics precisely (BetaDrop):
+
+> *"The button creates a short-lived session and serves a configuration profile whose payload type is
+> `Profile Service`. iOS shows you the profile-details screen, and only after you tap Install does the
+> device **post a signed response back over HTTPS** containing the attributes the profile asked for. It is
+> a one-shot query… The profile requests exactly five fields: UDID, PRODUCT, VERSION, SERIAL, IMEI."*
+
+So the payload type is **not** retired (our §30 was wrong), and the whole thing is standard practice in
+2026 — including on iOS 26/27.
+
+## 39.2 Why every one of our attempts failed, and the one thing that was missing
+
+| Attempt | Result | Lesson |
+|---|---|---|
+| `http://` callback | refused | iOS requires **HTTPS** |
+| `https://` with a **user-installed CA** | *"MDM certificate is invalid"* | iOS requires a **publicly trusted** certificate, not one the user added |
+| `https://example.com/udid` | *"MDM server returned 405"* | **iOS does make the request** — the payload works end to end |
+
+The missing piece was never the payload, the signing, or the certificate machinery we built. It was
+simply: **an HTTPS endpoint with a real certificate.** A temporary CA could never satisfy it.
+
+## 39.3 The solution, within all of the user's constraints
+
+**A free Cloudflare Worker.** Created entirely in a browser (Cloudflare dashboard → Workers → paste →
+Deploy), it provides:
+
+- a **publicly trusted HTTPS URL** — no computer, no server of the user's own, no certificate to manage;
+- the `Profile Service` profile served over HTTPS, so **Safari fetches it directly — no AirDrop needed**;
+- the POST endpoint, which stores UDID/PRODUCT/VERSION/SERIAL in a KV namespace and returns the minimal
+  profile Apple expects;
+- a `GET /result/<token>` the signer polls.
+
+**Every constraint is satisfied:** no PC, no Apple enterprise/public *signing* certificate, **one
+profile**, **no CA install**, **no Developer Mode**, **no app on the target**, and the UDID goes only to
+the user's own endpoint over HTTPS. It also explains, at last, why "no computer" UDID services exist and
+work.
+
+Implemented: `cloudflare-worker/worker.js` (127 lines, syntax-checked) and `cloudflare-worker/README.md`
+with the browser-only deploy steps. **Untested on a device.**
+
+## 39.4 Two caveats that matter, both documented
+
+1. **Safari only.** Chrome and in-app browsers save the profile as a file instead of handing it to
+   Settings, which looks like nothing happened.
+2. **Security Delay (iOS 26.4+ / 27).** On an **iPhone**, installing *any* configuration profile at a
+   location iOS does not consider familiar triggers a **one-hour** delay (Face ID → 1 hour → Face ID).
+   At home it does not trigger, and **iPad is unaffected.**
+
+This also finally explains the friction the user saw during the earlier profile tests.
+
+## 39.5 What is left, and it is the real remaining work
+
+With the UDID solved, the chain becomes: register that UDID with the free Apple ID (Apple sign-in already
+works on-device, §21.10) → sign the chosen variant for it → AirDrop → the app installs. **The CMS/Mach-O
+signer is now the only unbuilt piece**, exactly as §13 predicted.
