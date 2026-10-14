@@ -1494,3 +1494,51 @@ the "BariSign" profile(s) under VPN & Device Management.
 
 **Report back:** the whole a-Shell screen, what Device B showed at each tap, whether the "Allow sending
 device information" prompt appeared, and whether the profile landed in VPN & Device Management.
+
+---
+
+# 25. Profile lifetime, and the network checks in the Shortcut
+
+## 25.1 Profile expiry — verified against Apple's own documentation
+
+Two different keys exist, and only one of them deletes anything:
+
+| Key | Apple's own words | What it actually does |
+|---|---|---|
+| `PayloadExpirationDate` | *"The date when a profile is no longer valid and the system **presents an update button to the user**"* (developer.apple.com/documentation/devicemanagement/toplevel); and the Configuration Profile Reference adds: *"This key is only used if the profile is delivered via **over-the-air** profile delivery"* | marks the profile expired and offers an *Update* button. **It does not remove anything**, and probably does nothing for a manually installed profile |
+| `DurationUntilRemoval` | documented in Apple's archived **Over-the-Air Profile Delivery** guide (and referenced alongside `RemovalDate`) | the device **removes the profile itself** after this many seconds. This is the key that actually cleans up |
+
+So: **we add both.** `DurationUntilRemoval = 600` (10 minutes) is the real cleanup; `PayloadExpirationDate`
+is the same 10-minute mark, as a hint for the UI. Both are **unverified on iOS 27** — Apple ignores
+unknown or inapplicable keys silently, so there is no downside to including them, but the manual
+"delete the profile" instruction **still stands** and is what the test steps say. This is a belt-and-braces
+addition, not a claim that the profile self-destructs.
+
+Verified in the Codespace: the profile with both keys serialises to XML and parses back correctly.
+
+## 25.2 Network checks belong in the Shortcut, not in a-Shell
+
+**A-Shell cannot read the Wi-Fi name** — iOS does not expose the SSID to a generic process, and that is a
+platform restriction, not something we can code around. Two Shortcuts actions cover the checks instead,
+both confirmed to exist:
+
+| Action | What it returns | Used for |
+|---|---|---|
+| **Get Network Details** (iOS 17+) | Network Name (SSID), BSSID, Wi-Fi Standard, channel, RSSI, noise, Rx/Tx rates | confirm the SSID is the user's **home/hotspot** network, and warn on anything else |
+| **Get Current IP Address** | the local (LAN) address | confirm it is a private range and show the user exactly which network A is on |
+
+The script already does the same private-range check on **its own** bound address and refuses to run on a
+non-private address, but the Shortcut is where the *user-facing* question belongs:
+
+1. *"Which network are you on?"* — read **SSID** and compare to the user's saved home network name;
+   if it does not match, show a warning and let the user back out before anything is installed.
+2. Show **A's local IP address** so the user can see it is a `192.168.` / `10.` / `172.16–31.` address.
+3. Ask the readiness question: *"Is the other device on this same Wi-Fi?"* — and note that the real proof
+   is simply whether Device B can open the address, so if the page does not load, the devices are not on
+   the same network.
+4. Remind the user to accept a-Shell's **Local Network** permission when iOS asks.
+
+One caution worth writing into the guide: comparing **BSSIDs between the two devices is unreliable**
+(mesh networks hand out different access points), so use the SSID plus reachability, not BSSID equality.
+
+These four steps are recorded as requirements for `SHORTCUT_BUILD_GUIDE.md` in Phase 1.

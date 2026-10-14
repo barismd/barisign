@@ -28,7 +28,9 @@
 #      python3 -m pip install segno
 # =============================================================================
 
+import datetime
 import http.server
+import ipaddress
 import plistlib
 import re
 import secrets
@@ -41,6 +43,7 @@ import uuid
 
 PORT_HINT = 8787
 WINDOW_SECONDS = 300          # 5 minutes
+PROFILE_LIFETIME_SECONDS = 600  # ask iOS to drop the profile by itself (see notes)
 MAX_BODY = 256 * 1024
 TOKEN = secrets.token_urlsafe(12)
 PREFIX = "/" + TOKEN
@@ -55,7 +58,20 @@ posted = threading.Event()
 
 def udid_profile(callback_url):
     """ONLY a Profile Service payload. No certificates, no VPN, no proxy, no
-    Wi-Fi, nothing else. It asks for three attributes and nothing more."""
+    Wi-Fi, nothing else. It asks for three attributes and nothing more.
+
+    Lifetime keys, so the profile does not sit on the device forever:
+      * DurationUntilRemoval - the device removes the profile itself after this
+        many seconds. This is the key that actually deletes (Apple's archived
+        Over-the-Air Profile Delivery guide).
+      * PayloadExpirationDate - Apple documents this as "the date when a profile
+        is no longer valid and the system presents an update button"; it does
+        NOT delete anything, and Apple's reference says it "is only used if the
+        profile is delivered via over-the-air profile delivery".
+    Neither is verified on iOS 27, and unknown keys are ignored harmlessly, so
+    the delete-it-yourself instruction still stands. iOS is never asked to
+    distrust or remove anything the user did not install here.
+    """
     return {
         "PayloadContent": {
             "URL": callback_url,
@@ -70,6 +86,9 @@ def udid_profile(callback_url):
             "Temporary and unsigned. Sends this device's UDID, model and iOS version to "
             "the BariSign script on your own Wi-Fi. Nothing else. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
+        "PayloadExpirationDate": datetime.datetime.now(datetime.timezone.utc)
+                                + datetime.timedelta(seconds=PROFILE_LIFETIME_SECONDS),
+        "DurationUntilRemoval": PROFILE_LIFETIME_SECONDS,
     }
 
 
@@ -203,6 +222,11 @@ def main():
         print("interface. Connect to Wi-Fi and try again.")
         return 2
 
+    try:
+        private = ipaddress.ip_address(ip).is_private
+    except ValueError:
+        private = False
+
     # Ephemeral port: avoids clashes and makes the URL meaningless to guess.
     server = None
     for port in [PORT_HINT] + [0]:
@@ -235,6 +259,15 @@ def main():
     print(" PRODUCT and VERSION. No certificate, no VPN, no proxy, no Wi-Fi.")
     print()
     print(" Listening only on %s, for %d seconds, with a one-time path." % (ip, WINDOW_SECONDS))
+    if private:
+        print(" That address is private (a home/hotspot network): %s" % ip)
+    else:
+        print(" *** WARNING: %s is NOT a private address. The UDID will travel in" % ip)
+        print(" *** clear over a network that may not be yours. Stop, move both")
+        print(" *** devices to your own Wi-Fi, and run this again.")
+    print(" A-Shell cannot read the Wi-Fi name (iOS does not allow it). Check that")
+    print(" both devices are on the same network before scanning - the Shortcut will")
+    print(" ask, using the 'Get Network Details' action.")
     print(" Device A: keep a-Shell in the FOREGROUND and the screen awake.")
     print()
     print(" Device B: scan this, then follow the prompts.")
