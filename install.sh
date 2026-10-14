@@ -27,14 +27,28 @@ mkdir -p "$DIR/poc" "$DIR/bin" "$DIR/third_party/sideinstaller" \
 }
 cd "$DIR" || exit 1
 
+# The web (raw) URLs sit behind a CDN that can serve a stale copy for a few
+# minutes after an update. The GitHub API is not cached, so try it first and keep
+# the web URL only as a fallback.
+API="https://api.github.com/repos/barismd/barisign/contents"
+
 fetch() {   # fetch <file-in-repo> <destination>
     printf '  %-40s' "$2"
-    if curl -sSL "$BASE/$1?raw=true" -o "$2" && [ -s "$2" ]; then
+    tmp="$2.api.tmp"
+    if curl -sSL "$API/$1" -o "$tmp" 2>/dev/null && [ -s "$tmp" ] \
+       && python3 -c "import base64,json;d=json.load(open('$tmp'));open('$2','wb').write(base64.b64decode(d['content']))" 2>/dev/null \
+       && [ -s "$2" ]; then
+        rm -f "$tmp"
         echo "ok"
-    else
-        echo "FAILED"
-        return 1
+        return 0
     fi
+    rm -f "$tmp"
+    if curl -sSL "$BASE/$1?raw=true" -o "$2" 2>/dev/null && [ -s "$2" ]; then
+        echo "ok (web fallback)"
+        return 0
+    fi
+    echo "FAILED"
+    return 1
 }
 
 fail=0
