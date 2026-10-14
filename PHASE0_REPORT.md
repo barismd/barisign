@@ -887,7 +887,41 @@ Design note that follows from this: **our sign-and-AirDrop flow may not need the
 exists so SideStore can reach the device's own services for installing/refreshing later. If it breaks
 TLS during signing, the Shortcut should ask for it only where it is genuinely required.
 
-## 21.5 Next action
+## 21.5 Round 6 second run: everything PASS except the password prompt
+
+`--diag` on the iPad (VPN **off**) was healthy and proved no interception:
+
+```
+gsa.apple.com      OK TLSv1.3 Apple ctx   issuer=Apple Server Authentication CA  [17.32.194.2, 17.32.194.34]
+github.com         OK TLSv1.3 general ctx issuer=Sectigo Public Server Authentication CA DV E36  [140.82.121.3]
+ani.sidestore.io   OK TLSv1.3 general ctx issuer=YE1  [89.117.146.208]
+ani.sidestore.zip  OK TLSv1.3 general ctx issuer=YE1  [212.56.43.84]
+```
+
+`--selftest` then **PASSed all six**, including anisette provisioning and the pinned Apple root. So the
+CA-bundle fix from §21.1 worked and the earlier anisette TLS failures do not reproduce.
+
+`--login` still got stuck at the password prompt (the user had to restart a-Shell).
+
+**Cause:** our own `_read_password()` used `termios` to turn ECHO off. On a-Shell that succeeds, but the
+terminal then **stops delivering keystrokes to Python**, so the read blocked forever. (Earlier,
+`getpass` had hung for a different reason: it opens `/dev/tty`, which is not the terminal being typed
+into.) This replaced one hang with another — our bug both times.
+
+**Fix:**
+- `termios` is gone entirely. On a TTY the PoC now uses a plain `input()`, which is what a-Shell
+  supports.
+- A `select()` guard (120 s) means the prompt can **never wedge the terminal again** — it prints and
+  exits instead of forcing an app restart.
+- If stdin is **not** a TTY the password is read from the pipe. That is exactly how the Shortcut will
+  deliver it, so the intended architecture needs no terminal input at all.
+- Consequence, stated plainly: on a TTY the password is now **visible** as you type (a-Shell cannot
+  hide it). `clear` afterwards is recommended; the Shortcut path avoids this.
+
+**Verified in the Codespace:** the pipe path returns the line unchanged; the TTY path was exercised
+under a real PTY and returned the typed line without hanging.
+
+## 21.6 Next action
 
 ```
 python3 -u poc_login.py --diag

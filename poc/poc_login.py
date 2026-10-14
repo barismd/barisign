@@ -334,40 +334,36 @@ def _selftest():
 
 
 def _read_password(prompt):
-    """Read a password without hanging.
+    """Read a password without ever wedging the terminal.
 
-    `getpass.getpass()` opens /dev/tty, and inside a-Shell that opens but is not
-    the terminal you are typing into, so it blocks forever after the prompt.
-    We read from stdin instead, turning echo off with termios when we can.
+    Two earlier attempts hung on a-Shell: `getpass` (opens /dev/tty, which is not
+    the terminal you type into) and then a `termios` ECHO-off read (a-Shell stops
+    delivering keystrokes to Python in that mode). So: no termios at all, plain
+    `input()`, and a `select` timeout so we always come back.
+
+    If stdin is a pipe (how the Shortcut will do it) the pipe is used instead.
     """
+    if not sys.stdin.isatty():
+        line = sys.stdin.readline()
+        return line.rstrip("\r\n")
+
     sys.stdout.write(prompt)
     sys.stdout.flush()
-    fd = None
     try:
-        import termios                                   # noqa: PLC0415
-        fd = sys.stdin.fileno()
-        if sys.stdin.isatty():
-            old = termios.tcgetattr(fd)
-            new = list(old)
-            new[3] = new[3] & ~termios.ECHO
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, new)
-                line = sys.stdin.readline()
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old)
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            return line.rstrip("\r\n")
-    except Exception:                                    # noqa: BLE001
-        if fd is not None:
-            try:
-                sys.stdout.write("\n")
-                sys.stdout.flush()
-            except Exception:                            # noqa: BLE001
-                pass
-    # Fallback: characters will be visible on screen.
-    print("(echo cannot be turned off here — what you type will be visible)")
-    return input("")
+        import select                                          # noqa: PLC0415
+        ready, _, _ = select.select([sys.stdin], [], [], 120)
+        if not ready:
+            print()
+            print("No input after 120 seconds — giving up so a-Shell stays usable.")
+            raise SystemExit(4)
+    except SystemExit:
+        raise
+    except Exception:                                          # noqa: BLE001
+        pass
+    try:
+        return input("")
+    except EOFError:
+        return ""
 
 
 def _login(email, server):
@@ -375,7 +371,9 @@ def _login(email, server):
     print("This PoC only writes inside: %s" % POC_STATE)
     print("Apple ID : %s" % email)
     print("SRP-6a: the password becomes a proof; it is never sent and never saved.")
-    print("Type the password and press Return. Nothing will appear as you type.")
+    print("a-Shell cannot hide what you type, so the password WILL be visible on")
+    print("screen (and may stay in the scrollback — run `clear` afterwards).")
+    print("If stdin is a pipe (the Shortcut does this), the pipe is used instead.")
     print()
     print("If this account uses two-factor authentication, Apple will ask for a")
     print("code and a prompt will appear here.")
