@@ -1998,3 +1998,34 @@ default, and `_wait_return()` exists. Untested on device.
 
 Reminder that matters for both flows: **the request is made while iOS installs the profile**, so a-Shell
 must be in the foreground and the listener answering at that moment.
+
+---
+
+# 35. "MDM certificate is invalid" — iOS validates the callback server's TLS chain
+
+Device result: with `--https`, the UDID profile was refused with **"MDM certificate is invalid"**. That is
+iOS refusing the **TLS certificate of the callback endpoint**, not the profile format — and it confirms
+(iOS even names it "MDM") that the device treats the Profile Service URL as an enrollment server and
+validates its chain.
+
+Two candidate causes, in likelihood order:
+
+1. **The CA trust switch was never turned on.** Installing the CA profile is not enough: iOS requires
+   *Settings → General → About → Certificate Trust Settings → full trust* to be switched ON for that root,
+   and it must be done **before** the profile is installed. This is the same rule found in Phase 0 for
+   `itms-services`.
+2. **iOS 27 may not accept a user-installed root for this particular endpoint.** Unverified — but note the
+   Web Clip profile and the CA profile both installed, so profiles in general are fine.
+
+Added: a `/<token>/tls-check` route so the trust can be tested directly instead of guessed. With the
+script running, open that URL in Safari on the target:
+
+- a padlock and `TLS OK - this device trusts the BariSign temporary CA.` → the CA is trusted, so the
+  failure is cause 2 (and the certificate itself needs attention);
+- no padlock / a warning → the trust switch is still OFF (cause 1), and the HTTPS route cannot work until
+  it is on.
+
+Also still untested and cheaper than all of this: the **plain HTTP** route (`--airdrop`, one profile, no
+CA at all), which avoids certificates entirely. The earlier HTTP failure is not comparable — that profile
+carried the lifetime keys and predated several fixes. If iOS accepts an `http://` callback, this whole
+certificate problem disappears. **Unverified until run.**

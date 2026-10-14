@@ -315,7 +315,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path).path
-        if path == PREFIX + "/ca.mobileconfig" and state.get("ca_xml"):
+        if path == PREFIX + "/tls-check":
+            self._send("TLS OK - this device trusts the BariSign temporary CA.\n",
+                       "text/plain")
+        elif path == PREFIX + "/ca.mobileconfig" and state.get("ca_xml"):
             self._send(state["ca_xml"], "application/x-apple-aspen-config")
         elif path == PREFIX + "/udid.mobileconfig":
             self._send(state["profile_xml"], "application/x-apple-aspen-config")
@@ -597,7 +600,13 @@ def main():
             ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
         profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
         if use_https:
-            print(" STEP 1 of 2 - the temporary CA. Share it, install it, then switch")
+            print(" Check first, on Device B in Safari (needs this script running):")
+        print("   %s/tls-check" % base)
+        print("   a padlock and 'TLS OK' means the CA is trusted. No padlock = the")
+        print("   trust switch is still OFF and the profile will fail with")
+        print("   'MDM certificate is invalid'.")
+        print()
+        print(" STEP 1 of 2 - the temporary CA. Share it, install it, then switch")
             print("              trust ON: Settings -> General -> About ->")
             print("              Certificate Trust Settings -> 'BariSign temporary CA'.")
             offer_share(ca_path)
