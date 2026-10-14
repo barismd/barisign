@@ -1,5 +1,23 @@
 # Cloudflare Worker — complete guide (no computer, no certificate, one profile)
 
+## Do users have to set up Cloudflare? **No.**
+
+BariSign deploys **one shared Worker** and every user gets a real HTTPS endpoint without doing
+anything: the Shortcut asks for a session, shows a QR, and polls the result. Self-hosting this file is
+only for someone who does not want their UDID to pass through BariSign's endpoint at all — both paths
+use the same code, and the guide below is the self-hosted one.
+
+### How the shared endpoint is kept safe
+
+| Concern | What the code does |
+|---|---|
+| Someone else reads your result | Every session has a **`session`** (travels in the QR) and a separate **`key`** that never leaves the signing device. `/result` requires both. A leaked QR is useless on its own. |
+| Someone overwrites your UDID with a fake | **Write-once.** The first valid POST for a session wins; any later one gets `409`, so a real UDID can never be replaced. |
+| Leftover data | The result is **deleted the moment it is read**, and expires after **15 minutes** even if it is never read. Sessions expire after 30 minutes. |
+| Abuse / cost | A best-effort per-IP throttle on `/new`, plus Cloudflare's own rate limiting (set **10 requests/minute per IP** on `/new` in the dashboard). |
+| Stored secrets | **None.** No Apple ID, password, token or pairing record ever reaches the endpoint — only the device's own identifier, briefly. |
+| Honest limit | The UDID *does* pass through the endpoint in clear inside TLS. Anyone unwilling to accept that self-hosts this same file. |
+
 ## First, the thing you were worried about
 
 **In this flow there is no CA and no second certificate. Nothing gets installed except one profile.**
@@ -87,8 +105,9 @@ iPad is unaffected.)
    https://barisign.<your-subdomain>.workers.dev/new
    ```
 
-   You get a page with a link like `…/s/6f2a…`. (If you ask for it with `Accept: application/json`, e.g.
-   from a script, it returns `{"session":"…","url":"…"}` instead.)
+   It answers `{"session":"…","key":"…","url":"…"}` when asked with `Accept: application/json`
+   (that is what the Shortcut and the a-Shell script use), and an HTML page otherwise. **Keep the
+   `key` private** — it is what makes the result readable only by the signing device.
 
 2. Tap that link → **Download the UDID profile**.
 3. Open **Settings → General → VPN & Device Management**, tap the **BariSign** profile, tap **Install**,
@@ -96,10 +115,10 @@ iPad is unaffected.)
 4. Go back to Safari and open:
 
    ```
-   https://barisign.<your-subdomain>.workers.dev/result/<the-same-session>
+   https://barisign.<your-subdomain>.workers.dev/result/<session>?key=<key>
    ```
 
-5. You should see JSON:
+5. You should see JSON (the `key` from step 1 is required):
 
    ```json
    {"udid":"00008110-…","product":"iPad15,7","version":"27.0","serial":"…","received_at":"…"}
@@ -111,6 +130,8 @@ iPad is unaffected.)
 |---|---|
 | the JSON with `udid` | ✅ **It works.** The whole UDID stage is solved and it is yours. |
 | `{"status":"waiting"}` | The profile was not installed yet (or the install was blocked) — install it, then reload. |
+| `{"status":"forbidden"}` | the `key` is missing or wrong |
+| `{"status":"expired"}` | the session was older than 30 minutes — start a new one |
 | an error page from Cloudflare | The binding is missing or wrongly named — `UDID_KV` must match exactly. |
 | the profile screen never appears | You are not in Safari, or the page was opened inside another app. |
 | Safari says the profile could not be installed | Security Delay (see below), or an already-managed device. |
