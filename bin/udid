@@ -1,0 +1,4 @@
+#!/bin/sh
+# BariSign - read another device's UDID (see GUIDE.md).
+cd "$(dirname "$0")/.." || exit 1
+exec python3 -u poc/udid_share.py "$@"

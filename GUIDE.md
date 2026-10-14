@@ -6,74 +6,92 @@ What works **today**, verified on real devices (iPhone 13 + iPad, iOS 27), and w
 |---|---|---|
 | 1 | Get the target device's **UDID** — no computer, no app on the target, no third party | ✅ works |
 | 2 | Sign in to Apple with a **free Apple ID** (anisette + SRP-6a + 2FA) | ✅ works |
-| 3 | Register the UDID, create App ID + certificate + provisioning profile | 🚧 to build |
+| 3 | Register the UDID; create App ID + certificate + provisioning profile | ⚠️ **written, untested** (`bin/portal`) |
 | 4 | **Sign the IPA** (Mach-O + Apple CMS signature) | 🚧 to build — the last big piece |
 | 5 | Install by **AirDrop** | ✅ works |
 
-Stages 1, 2 and 5 can be done by hand today. Stages 3 and 4 are what automation still has to provide, so
-**you cannot install SideStore with this yet.**
+---
+
+## Get it once, then keep it updated
+
+a-Shell ships `git`, so there is no reason to copy files by hand:
+
+```
+git clone https://github.com/barismd/barisign.git ~/Documents/barisign
+cd ~/Documents/barisign
+```
+
+From then on, one command fetches the newest version and checks that everything still compiles:
+
+```
+sh bin/update
+```
+
+The four commands used below are tiny wrappers in `bin/`:
+
+| Command | What it runs |
+|---|---|
+| `sh bin/update` | `git pull` + compile check |
+| `sh bin/udid` | `poc/udid_share.py` — read the UDID |
+| `sh bin/login` | `poc/poc_login.py` — Apple sign-in |
+| `sh bin/portal` | `poc/poc_portal.py` — developer portal (stage 3) |
+
+> **Shortcuts for your fingers (optional):** a-Shell runs `~/.profile` in every new window, so aliases
+> can live there. First check it is writable: `touch ~/.profile && echo writable`. If it says writable,
+> add lines such as `alias update='cd ~/Documents/barisign && sh bin/update'` and then just type
+> `update`. If it is read-only (likely — only `~/Documents` is writable in a-Shell), `cd
+> ~/Documents/barisign` once per session and use the `sh bin/...` forms.
 
 ---
 
 ## Step 1 — Get the UDID (private, no third party)
 
 A free Apple ID signs apps for a specific device, so the device's **UDID** must be known. iOS reports it
-from a `Profile Service` profile, but only over HTTPS with a certificate iOS trusts. This script serves
+from a `Profile Service` profile, but only over HTTPS with a certificate iOS trusts. The script serves
 exactly that from your own iPad over your own Wi-Fi.
 
 ```
 cd ~/Documents/barisign
-curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/poc/udid_share.py" -o udid_share.py
-python3 -c "compile(open('udid_share.py').read(),'x','exec'); print('file OK')"
-python3 -u udid_share.py
+sh bin/udid
 ```
 
-The script writes two files and opens a preview of each. **Do these in order — the order is the whole
-trick:**
+It writes two files and opens a preview of each. **Do these in order — the order is the whole trick:**
 
-1. Share **`BariSign-CA.mobileconfig`** to the other device (the preview's top-right button → AirDrop) and
-   install it.
+1. Share **`BariSign-CA.mobileconfig`** to the other device (top-right button in the preview → AirDrop)
+   and install it.
 2. On that device: **Settings → General → About → Certificate Trust Settings → switch ON full trust** for
    the row named **"BariSign CA XX:XX"** (the script prints the exact name).
-3. Check it: open the `…/tls-check` address the script prints, in **Safari** on that device. A padlock and
-   `TLS OK` means the trust is right.
+3. Check it: open the `…/tls-check` address in **Safari** on that device. A padlock and `TLS OK` means the
+   trust is right.
 4. Press **Return** in a-Shell, share **`BariSign-UDID.mobileconfig`**, and install it.
-5. iOS will say the profile is **empty** — that is expected. The UDID has already been sent.
-6. Back in a-Shell: the model and iOS build are shown; answer `y` and the **UDID** is printed.
+5. iOS will say the profile is **empty** — expected. The UDID has already been sent.
+6. Back in a-Shell: the model is shown; answer `y` and the **UDID** is printed. Copy it.
 
-The whole exchange stays on your Wi-Fi. Nothing is sent to any server, and there is no DNS, no account and
-no certificate to manage.
+The whole exchange stays on your Wi-Fi — no server, no DNS, no account, no certificate to manage.
 
 ### From the second time onwards — one profile
 
-The CA only has to be installed and trusted **once per device**. After that:
+The CA only has to be installed and trusted **once per device**:
 
 ```
-python3 -u udid_share.py --udid-only
+sh bin/udid --udid-only
 ```
 
-That shares **only** `BariSign-UDID.mobileconfig`. If it fails, run the plain command once to reinstall the
-CA.
+That shares **only** `BariSign-UDID.mobileconfig`. If it fails, run the plain command once to reinstall
+the CA.
 
 ### Cleaning up
 
-On the target: **Settings → General → VPN & Device Management** → remove every *BariSign* entry. The UDID
-profile asks iOS to delete itself ten minutes after install (`DurationUntilRemoval`), but do not rely on
-it.
+On the target: **Settings → General → VPN & Device Management** → remove every *BariSign* entry.
 
 ---
 
-## Step 2 — Sign in to Apple (works today)
-
-In a-Shell, in `~/Documents/barisign`:
+## Step 2 — Sign in to Apple
 
 ```
-curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py" -o poc_login.py
-curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py" -o signin.py
-curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/third_party/apple-roots/apple-roots.pem" -o apple-roots.pem
-curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/third_party/ca-bundle/cacert.pem" -o cacert.pem
-python3 -u poc_login.py --selftest
-python3 -u poc_login.py --login YOUR-APPLE-ID
+cd ~/Documents/barisign
+sh bin/login --selftest            # checks the runtime, crypto, anisette and Apple TLS
+sh bin/login --login YOUR-APPLE-ID
 ```
 
 It stops after sign-in: no device registered, nothing installed. The password is never transmitted
@@ -81,24 +99,46 @@ It stops after sign-in: no device registered, nothing installed. The password is
 
 ---
 
-## Step 3 — Register the UDID and get a profile (to build)
+## Step 3 — Developer portal (written, not yet tested against Apple)
 
-Planned, and it will run entirely from the signing device:
+Registers the UDID, creates an App ID, gets a development certificate for a key generated **on this
+device**, and downloads the matching provisioning profile. Nothing is installed, and nothing is revoked
+without asking.
 
-1. ask Apple for your teams and certificates;
-2. register the UDID from Step 1 (a free account holds a limited number of devices);
-3. create an App ID for the chosen variant and download a provisioning profile listing that device;
-4. create or reuse a development certificate tied to a key generated **on the device**.
+```
+cd ~/Documents/barisign
+sh bin/portal --email YOUR-APPLE-ID --udid <UDID from step 1>
+```
 
-**Manual alternative today:** open `developer.apple.com` in Safari → *Certificates, Identifiers & Profiles*
-→ **Devices → +** → paste the UDID. The rest (App ID, certificate, profile) is doable by hand but fiddly.
+A first run with the defaults is a safe smoke test: it registers the UDID and uses the throwaway
+identifier `com.barisign.smoke`. For a real variant, pass the identifier it needs (see `variants.json`),
+for example:
+
+```
+sh bin/portal --email YOU@example.com --udid <UDID> \
+    --bundle-id com.SideStore.SideStore --device-name "My iPhone"
+```
+
+You will be asked for your Apple ID password again (nothing is kept between runs). The script prints the
+team, the registered device, the App ID, whether the certificate was **created or reused**, and where the
+private key and `profile.mobileprovision` were written — plus the profile's own name, expiry, how many
+devices it lists (and whether yours is among them) and its entitlements.
+
+**Notes that will matter**
+
+- The bundle identifier gets your team ID appended, exactly as SideStore and AltStore do
+  (`com.SideStore.SideStore.<TEAMID>`). The provisioning profile must match the app you later install.
+- A free account gets **two** development certificates and a limited number of App IDs and devices. If
+  Apple says the certificate limit is reached (error 7460) the script asks before revoking anything.
+- If the account has never accepted the free developer agreement, Apple returns no team and the script
+  says so — open `developer.apple.com` in Safari once and accept it.
 
 ---
 
 ## Step 4 — Sign the IPA (to build — the last big piece)
 
 An IPA is a zip; the app inside must carry a valid Apple code signature: a CodeDirectory over every page,
-entitlements, and a CMS signature with Apple's two custom attributes. This must be written from scratch in
+entitlements, and a CMS signature with Apple's two custom attributes. It has to be written from scratch in
 pure Python and is the make-or-break item (`docs/PHASE0_REPORT.md`, §13). Until it exists, nothing this
 project produces will launch.
 
@@ -108,8 +148,7 @@ project produces will launch.
 
 Once an IPA is validly signed for the target's UDID:
 
-1. On the signing device: `python3 -u udid_share.py --view /absolute/path/App.ipa` (a preview opens), or
-   use the Files app.
+1. On the signing device: `sh bin/udid --view /absolute/path/App.ipa` (a preview opens), or use Files.
 2. Share → **AirDrop** → the other device.
 3. On the target: accept. **iOS installs it by itself — there is no extra "Install" tap.**
 4. Open the app. If it installs but will not open, the signature is not valid for that device.
@@ -123,23 +162,26 @@ Once an IPA is validly signed for the target's UDID:
 - **Security Delay.** On an **iPhone** running iOS 26.4+, installing *any* profile at a location iOS does
   not consider familiar triggers a **one-hour** delay (Face ID → 1 hour → Face ID). Do it at home, or use
   an **iPad**, which is unaffected.
-- **Free Apple ID limits:** 3 apps installed at a time (SideStore counts as one), a limited number of App
-  IDs, and signing expires every 7 days.
-- **The UDID is not a credential** — it is an identifier developers paste into portals daily. No Apple ID,
+- **Free Apple ID limits:** 3 apps installed at a time (SideStore counts as one), limited App IDs, 7-day
+  signing.
+- **The UDID is not a credential** — an identifier developers paste into portals daily. No Apple ID,
   password or pairing record is involved in Step 1.
 
-## Troubleshooting Step 1
+## Troubleshooting
 
 | What you see | What it means |
 |---|---|
-| `RESULT: UDID received` + the model you expected | ✅ done |
-| `no UDID arrived within 300 seconds` | the profile was not installed, or the trust switch is off — check the `…/tls-check` padlock |
-| *"MDM certificate is invalid"* on the target | the CA's trust switch is OFF, or an **older** BariSign CA is installed — delete it in VPN & Device Management and install the current one |
-| the profile screen never appears | you are not in Safari, or the preview was closed — use `python3 -u udid_share.py --view BariSign-UDID.mobileconfig` |
+| `RESULT: UDID received` + the model you expected | ✅ step 1 done |
+| `no UDID arrived within 300 seconds` | the profile was not installed, or the CA trust switch is off — check the `…/tls-check` padlock |
+| *"MDM certificate is invalid"* | the CA's trust switch is OFF, or an **older** BariSign CA is installed — delete it and install the current one |
+| the profile screen never appears | you are not in Safari, or the preview was closed — `sh bin/udid --view BariSign-UDID.mobileconfig` |
 | iOS says the profile is **empty** | expected — the UDID was already sent |
-| `*** … is not a private address` | both devices must be on your own Wi-Fi |
+| portal: *"no developer team"* | accept the free developer agreement once at `developer.apple.com` in Safari |
+| portal: error **7460** | the account is at its certificate limit (free accounts get two) — the script asks before revoking |
+| portal: *already registered* | that UDID is already on the team; harmless |
+| `bin/update` says "git pull failed" | the checkout has local changes — `git status` in the folder will show them |
 
 ## What comes next
 
-Stage 3 (developer portal) and Stage 4 (the signer), then a Shortcut that chains everything. At that point
-this guide collapses into: *tap the Shortcut, scan a code, accept an AirDrop.*
+Stage 4 (the signer), then a Shortcut that chains everything. At that point this guide collapses into:
+*tap the Shortcut, scan a code, accept an AirDrop.*

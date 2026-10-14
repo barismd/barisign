@@ -16,11 +16,21 @@ computer**, driven entirely by an **iOS Shortcut**.
 | **Get the target device's UDID** — no computer, no app on the target, no third party | ✅ **verified** | a temporary configuration profile over the local network (`poc/udid_share.py`) |
 | **Sign in to Apple with a free Apple ID** (anisette + SRP-6a + 2FA) | ✅ **verified** (`LOGIN: PASS`) | on the device, in a-Shell (`poc/poc_login.py`) |
 | **Install a signed IPA** | ✅ **verified** | AirDrop: iOS installs it by itself, no extra tap |
-| Register the UDID, create the App ID, certificate and provisioning profile | 🚧 **to build** | developer-portal calls |
+| Register the UDID, create the App ID, certificate and provisioning profile | ⚠️ **written, untested** | `poc/poc_portal.py` |
 | **Sign the IPA** (Mach-O + Apple CMS signature) | 🚧 **to build** | the last big piece |
 
-Until the last two rows exist, BariSign cannot produce something your device will launch. Everything above
-them is done.
+Until the last row exists, BariSign cannot produce something your device will launch. Everything above it
+is done.
+
+**Getting it** (a-Shell ships `git`):
+
+```
+git clone https://github.com/barismd/barisign.git ~/Documents/barisign
+cd ~/Documents/barisign
+sh bin/update          # later: fetch the newest version and check it compiles
+```
+
+Four wrappers do the work: `sh bin/udid`, `sh bin/login`, `sh bin/portal`, `sh bin/update`.
 
 ---
 
@@ -101,7 +111,8 @@ and you are shown which version you are about to get. `variants.json` is the mac
 | **`GUIDE.md`** | the step-by-step guide for what works today |
 | `docs/PHASE0_REPORT.md` | all research, device results, dead ends and why, with dates |
 | `variants.json` | the variant registry and the runtime resolution rules |
-| `poc/` | the working scripts: `udid_share.py` (UDID), `poc_login.py` (Apple sign-in) |
+| `bin/` | the four one-word commands: `update`, `udid`, `login`, `portal` |
+| `poc/` | the scripts behind them: `udid_share.py`, `poc_login.py`, `poc_portal.py` |
 | `THIRD_PARTY_NOTICES.md` | licences and attribution |
 | `AGENTS.md` | the working rules for this project |
 

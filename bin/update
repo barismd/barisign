@@ -1,0 +1,12 @@
+#!/bin/sh
+# BariSign - update this checkout in place, then check the scripts still compile.
+cd "$(dirname "$0")/.." || exit 1
+echo "BariSign in $(pwd)"
+git pull --ff-only || { echo "git pull failed - fix that before continuing"; exit 1; }
+echo
+for f in poc/udid_share.py poc/poc_login.py poc/poc_portal.py; do
+    python3 -c "compile(open('$f').read(),'x','exec')" 2>/dev/null \
+        && echo "  $f  OK" || echo "  $f  FAILED TO COMPILE"
+done
+echo
+echo "Ready."

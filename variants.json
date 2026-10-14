@@ -20,7 +20,9 @@
       "channel": "stable",
       "asset_pattern": "SideStore.ipa",
       "licence": "AGPL-3.0",
-      "notes": "Untethered: refreshes itself on-device. No AltServer."
+      "notes": "Untethered: refreshes itself on-device. No AltServer.",
+      "bundle_id": "com.SideStore.SideStore",
+      "bundle_id_note": "the portal appends .<TEAMID>, as SideStore and AltStore do; verify against the IPA's Info.plist before relying on it"
     },
     {
       "id": "sidestore-nightly",
@@ -30,7 +32,9 @@
       "asset_pattern": "SideStore.ipa",
       "licence": "AGPL-3.0",
       "warning": "nightly",
-      "notes": "Rolling pre-release build from the project's own nightly pipeline."
+      "notes": "Rolling pre-release build from the project's own nightly pipeline.",
+      "bundle_id": "com.SideStore.SideStore",
+      "bundle_id_note": "the portal appends .<TEAMID>, as SideStore and AltStore do; verify against the IPA's Info.plist before relying on it"
     },
     {
       "id": "livecontainer-sidestore-stable",
@@ -40,7 +44,9 @@
       "asset_pattern": "LiveContainer+SideStore.ipa",
       "licence": "AGPL-3.0",
       "notes": "Single combined IPA published by the LiveContainer project. Apps run inside LiveContainer do not each use an app slot.",
-      "asset_url_encoding": "the + is percent-encoded as %2B in browser_download_url"
+      "asset_url_encoding": "the + is percent-encoded as %2B in browser_download_url",
+      "bundle_id": "com.kdt.livecontainer",
+      "bundle_id_note": "the portal appends .<TEAMID>, as SideStore and AltStore do; verify against the IPA's Info.plist before relying on it"
     },
     {
       "id": "livecontainer-sidestore-nightly",
@@ -49,7 +55,9 @@
       "channel": "nightly",
       "asset_pattern": "LiveContainer+SideStore.ipa",
       "licence": "AGPL-3.0",
-      "warning": "nightly"
+      "warning": "nightly",
+      "bundle_id": "com.kdt.livecontainer",
+      "bundle_id_note": "the portal appends .<TEAMID>, as SideStore and AltStore do; verify against the IPA's Info.plist before relying on it"
     },
     {
       "id": "altstore-classic-stable",
@@ -61,7 +69,9 @@
       "notes": "Minimum iOS 17.4. v2.3 (2026-09-30) added computer-free sideloading through a 'Remote AltServer' setup step and credits the SideStore team; the exact mechanism is unverified by us. AltStore PAL is EU-only and is not an installable IPA, so it is out of scope.",
       "only_channel": true,
       "observed_asset_example": "AltStore_Classic_Notarized_2_3.ipa (40616419 bytes, updated 2026-09-30)",
-      "no_nightly_reason": "altstoreio/AltStore has exactly ONE release; older tags exist but carry no release and no assets, so there is no installable nightly/beta IPA."
+      "no_nightly_reason": "altstoreio/AltStore has exactly ONE release; older tags exist but carry no release and no assets, so there is no installable nightly/beta IPA.",
+      "bundle_id": "com.altstore.AltStore",
+      "bundle_id_note": "the portal appends .<TEAMID>, as SideStore and AltStore do; verify against the IPA's Info.plist before relying on it"
     }
   ]
 }
