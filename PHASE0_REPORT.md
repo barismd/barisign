@@ -256,3 +256,222 @@ signing; iOS 17.4–26.x pairing without a computer.
    documented fallback only.
 4. **Languages:** English now; English + Turkish in the final phase, after it works.
 5. Next action is on the user: run PoC-A/B/C on iPhone 13 (iOS 27) + iPad (A16) and report results.
+
+---
+
+# 9. PoC results (user-run on real devices, 2026-10-14)
+
+Devices: **iPhone 13 (iOS 27)**, a-Shell full; **iPad (A16)** as the AirDrop target.
+VPN state was not recorded for PoC-A/B; PoC-C was run with LocalDevVPN **on** and **off**.
+
+## 9.1 PoC-A — runtime — **PASS**
+
+| Check | Result |
+|---|---|
+| A1 | `Python 3.13.1+` |
+| A2 | PASS (`ssl` reports `OpenSSL 1.1.1i 8 Dec 2020`) |
+| A3 | `curl 8.1.2` (OpenSSL/1.1.1w, https). `openssl` → **command not found**. `unzip` → **command not found** |
+| A4 | `pip install pyaes` → **Successfully installed pyaes-1.6.1** (pure-Python wheel built on device) |
+| A5/A6 | `cryptography` **3.4.8 present**; `AESGCM` and `pkcs7` import OK |
+
+Two assumptions changed (see §10): third-party **pure-Python packages can be installed**, and
+`cryptography` **is already there**.
+
+## 9.2 PoC-C — the device's own install door — **PASS**, with two surprises
+
+| Check | Result |
+|---|---|
+| C1 | `utun4 inet 10.7.1.1 --> 10.7.1.1 netmask 0xffffffff`; **no `10.7.0.1` entry shown** |
+| C2 | TCP to `10.7.0.1:49152` → **OPEN**, still open after 5 s idle → **PASS** |
+| C3 | `connect_ex(127.0.0.1:49152)` → **`0` (connected)** — with the VPN **on and off** |
+| C3 control | `connect_ex(127.0.0.1:50321)` → `61` (refused, as expected) |
+| C4 | send 1 zero byte → `recv` **timed out after 3 s**; no reset, no bytes returned |
+
+Surprises (both **unverified**, one port-scan command is in §15):
+
+1. `10.7.0.1` is reachable although `ifconfig` only lists the local `/32` `10.7.1.1` — the peer is
+   routed, not listed.
+2. Something listens on **loopback `49152` regardless of the VPN**. This contradicts the Phase 0
+   assumption that 49152 is only the VPN peer; the port is not proof that the tunnel is up.
+3. C4 timed out instead of resetting. SideInstaller reported a reset on wrong bytes, so this
+   behaviour is version/protocol dependent (**unverified**).
+
+**Conclusion:** the door exists and holds an idle connection (the property the design needs), but
+"port 49152 answers" is **not** a reliable VPN/readiness signal, and the readiness check must not
+use it.
+
+## 9.3 PoC-B — install route — **routing PASS**
+
+- iOS 27 **accepts and installs an unsigned `SideStore.ipa` 0.6.4** via **both** a Files tap and
+  **AirDrop iPhone → iPad**. The app then **does not open** (expected — unsigned).
+- Not recorded: whether the Files tap *on the iPhone itself* installs to its own home screen.
+  To re-check.
+- B3 skipped (no signed IPA available yet).
+
+**Conclusion (important):** iOS enforces signature validity at **launch**, not at install. The
+AirDrop plan therefore needs *only* a valid signature — no install trick. This removes the entire
+cert/loopback/private-key problem from the critical path.
+
+---
+
+# 10. Corrections to Phase 0 assumptions
+
+| Phase 0 assumption | Correction (PoC-A) |
+|---|---|
+| No third-party/C-extension packages | **Wrong.** Pure-Python `pip install` works on-device (`pyaes` installed). |
+| We'd need a pure-Python AES fallback | **Resolved.** `cryptography` (AES-GCM/CBC) is present; a pure-Python AES also exists in the reusable code. |
+| Signing needs `openssl` | Still true (`openssl` is absent) — but every `openssl` call in the reusable code is replaceable by `cryptography`. |
+| Runtime is modern | a-Shell's Python ships **OpenSSL 1.1.1i (2020)** — old. Watch it for Apple endpoints (PoC-D check 6 tests exactly this). |
+| 49152 open ⇒ VPN up | **Wrong.** Loopback 49152 answers with the VPN off. |
+
+---
+
+# 11. What `cryptography` 3.4.8 can and cannot do — VERIFIED (read from its 3.4.8 source)
+
+**Can do:** RSA key generation, CSR builder, DER/PEM X.509 load, PKCS#1 v1.5 sign/verify,
+AES-GCM, AES-CBC, SHA-256 digests, PKCS#12 load.
+
+**Cannot do:** produce an **Apple code-signing CMS**. `PKCS7SignatureBuilder` in 3.4.8 offers only
+the options `Binary`, `DetachedSignature`, `NoCapabilities`, `NoAttributes`, plus
+`add_signer(cert, key, hash_algorithm)` — there is **no API for custom signed attributes**.
+
+**Why that matters (verified in zsign, MIT):** Apple's signature CMS is built as
+`CMS_PARTIAL | CMS_DETACHED | CMS_NOSMIMECAP | CMS_BINARY` with SHA-256 and then two Apple
+attributes are added explicitly:
+
+- OID `1.2.840.113635.100.9.1` — the CDHashes plist;
+- OID `1.2.840.113635.100.9.2` — the alternate CodeDirectory SHA-256, uppercase hex, wrapped in an
+  ASN.1 SEQUENCE.
+
+`cryptography` cannot emit those, so **the signer must assemble CMS itself.**
+Planned route: **`asn1crypto`** (pure Python, pip-installable on-device by the same mechanism that
+installed `pyaes`) for ASN.1/CMS, plus `cryptography` for RSA and hashing. Fallback: a hand-rolled
+DER writer with no dependency. **Unverified until it runs on-device.**
+
+---
+
+# 12. Breakthrough: an existing pure-Python pipeline we can port
+
+`FrizzleM/SideInstaller`, file **`ish/sideinstaller.py`** (2003 lines, pure Python, written to run
+inside iSH) already implements, with **no native dependency**:
+
+pure-Python AES (own S-box), AES-GCM, AES-CBC · `SRPClient` (RFC 5054 2048-bit + SHA-256) and the
+PBKDF2 password key · a raw WebSocket client · **Anisette v3 including provisioning** · GrandSlam ·
+`AppleAccount` sign-in including trusted-device and SMS 2FA · `app_token` · `DeveloperSession` ·
+teams · device registration · certificate issue/reuse · App ID · provisioning profile · GitHub
+release resolution (with correct alpha/prerelease filtering).
+
+Only two things need native tools, and **both are outside the sign-in path**:
+
+1. `openssl` — key generation, CSR, DER→PEM, modulus comparison, and the local CA/TLS server.
+   Replaceable with `cryptography`.
+2. `zsign` — the actual Mach-O/CMS signature. **Must be written in pure Python.**
+
+**Licence (constrains this repo):** SideInstaller is under a **custom licence — non-commercial,
+source-only redistribution, attribution required, changes must be noted**. The licence text is
+copied to `third_party/SideInstaller-LICENSE.md`. Consequence: **files ported from it cannot be
+relicensed MIT, and this repository cannot be used commercially.** Our own files can stay MIT;
+the ported ones must carry their notice. (Decision requested in §16.)
+
+## 12.1 What we verified ourselves in the Codespace (Linux — not a device)
+
+`python3 poc/poc_login.py --selftest`:
+
+- **PASS** runtime; `cryptography` (RSA-2048 keygen 0.1 s, CSR 611 B, PKCS#1 v1.5 sign+verify);
+  pure-Python AES-CBC round-trip; SRP group confirmed **RFC 5054 2048-bit, g = 2**.
+- **PASS** after trusting Apple's public root (which Linux lacks and iOS has):
+  **anisette v3 provisioning over the real WebSocket succeeded against `ani.sidestore.io`**, and
+  headers `X-Apple-I-MD`, `X-Apple-I-MD-M`, `X-Mme-Device-Id` were minted;
+  and the TLS handshake to `gsa.apple.com` verifies.
+- **Finding:** `gsa.apple.com` chains to the legacy **"Apple Root CA"**, which desktop/Linux trust
+  stores lack (`openssl verify`: *error 19, self-signed certificate in certificate chain*). iOS
+  trusts it. If a-Shell's Python does not, we ship the public root CA — PoC-D check 6 detects this
+  on-device and names the fix.
+- Two bugs in **our glue** found and fixed while testing: the AES self-test used a 17-byte string;
+  and upstream's `anisette_candidates()` needs a string hint (`""`), not `None`.
+
+---
+
+# 13. Revised Phase 1 plan and risk order
+
+Architecture is unchanged from §6. New: **build by porting `ish/sideinstaller.py`**, not from scratch.
+
+Riskiest first:
+
+1. **Pure-Python Mach-O + CMS signer — highest risk, make-or-break.** Needs the CodeDirectory
+   (SHA-256, entitlements hash, DER entitlements), CodeResources, a CMS SignedData carrying the two
+   Apple OIDs, `LC_CODE_SIGNATURE` insertion, and zip repacking. No pure-Python implementation is
+   known to exist (**unverified**). If this fails, the project fails.
+2. **Apple sign-in on-device** — medium, now largely de-risked (the code exists). Unknown: whether
+   a-Shell's **OpenSSL 1.1.1i** and its CA store can talk to `gsa.apple.com`.
+3. **Anisette provisioning on-device** — medium-low (proven over WebSocket here; must run under
+   a-Shell's Python).
+4. **Developer portal** (certificate, App ID, profile) — low (same code; needs a real Apple ID).
+5. **UDID acquisition on iOS 27** — low-medium. SideInstaller states no pairing file is needed on
+   iOS 27; *how* it obtains the UDID without the mobileconfig trick is **unverified**.
+6. **AirDrop install** — low; PoC-B already shows iOS routes it.
+
+---
+
+# 14. Step 1 (authorised now): PoC-D — on-device Apple sign-in
+
+Deliverable: **`poc/poc_login.py`** (untested on a device; checks 1–4 and, with a trusted root,
+5–6 were verified on Linux as described in §12.1). It is the vendored login stack plus our own CLI,
+with exactly two documented changes (header of the file).
+
+**Run these in a-Shell, one line at a time.**
+
+1. Download it:
+
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py -o poc_login.py
+```
+
+2. Credential-free self-test (safe; no Apple ID anywhere):
+
+```
+python3 poc_login.py --selftest
+```
+
+3. Only if all six checks PASS — sign in with a **throwaway** Apple ID:
+
+```
+python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID
+```
+
+What the checks mean:
+
+| Check | PASS means |
+|---|---|
+| 1/6 runtime | a-Shell's Python/SSL respond |
+| 2/6 crypto toolkit | `cryptography` can make keys, CSRs and signatures |
+| 3/6 AES-CBC | the sign-in reply can be decrypted without `openssl` |
+| 4/6 SRP group | the RFC 5054 group constants are intact |
+| 5/6 anisette | an anisette server provisioned and minted headers (**no Apple ID involved**) |
+| 6/6 Apple TLS | a-Shell's Python trusts `gsa.apple.com` |
+
+- Steps 2 and 3 stop after sign-in: **no device registration, no certificate, no profile, no
+  signing, nothing installed.**
+- Report the whole screen. A `6/6 FAIL` is the single most important line — it decides whether we
+  ship Apple's public root CA.
+
+---
+
+# 15. Loopback port scan (one line, for a-Shell)
+
+```
+python3 -c "import socket; f=lambda p:(lambda s:(s.settimeout(0.4),s.connect_ex(('127.0.0.1',p)))[1])(socket.socket()); print([(p,f(p)) for p in range(49150,49161)])"
+```
+
+`connect_ex` returns `0` when something is listening and a non-zero error code (usually `61`) when
+nothing is. Run it **with LocalDevVPN off and again with it on**, and send both lines.
+
+---
+
+# 16. Decisions needed now
+
+1. **Licence:** accept that ported SideInstaller files keep their **non-commercial** licence and
+   this repo therefore cannot be MIT throughout (our own files stay MIT)? Or rewrite the ported
+   parts from the protocol to stay fully MIT?
+2. **Proceed to the signer** (§13 item 1) as Phase 1, or do more login PoCs first?
+3. Anything you want changed about `poc/poc_login.py` before you run it?
