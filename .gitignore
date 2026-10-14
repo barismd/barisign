@@ -1,0 +1,26 @@
+# Secrets — never commit any of these
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+*.rppairing
+*.mobiledevicepairing
+pairing*.plist
+appleid*
+credentials*
+secrets*
+.env
+.env.*
+*.local.json
+
+# Working artifacts
+/dist/
+/build/
+/out/
+*.ipa
+*.app
+/tmp/
+.DS_Store
+__pycache__/
+*.pyc
