@@ -17,6 +17,8 @@ secrets*
 .env
 .env.*
 *.local.json
+*.mobileconfig
+BariSign-*.mobileconfig
 
 # Working artifacts
 /dist/

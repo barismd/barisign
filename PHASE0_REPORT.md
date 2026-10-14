@@ -1593,7 +1593,36 @@ harmless if ignored, but the manual deletion instruction is the one to rely on. 
 **after the run, wait ~11 minutes and look at Settings → General → VPN & Device Management.** If the
 BariSign entry is gone, the key works; if it is still there, delete it by hand.
 
-## 26.4 Recommended test order
+## 26.4 Yes — AirDrop the profile instead of using a QR
+
+**The QR existed for exactly one reason: to hand Device B a URL.** A `.mobileconfig` can be AirDropped
+like any other file, and the callback address is *inside* the profile, so Device B never needs a URL at
+all. That deletes the QR, the Safari step, and — with `--https` — the entire plain-HTTP CA listener,
+which also removes the unresolved "does iOS 27 accept `http://` for profile delivery?" question.
+
+**What AirDrop does not remove:** the listener. The profile has to POST its attributes somewhere, so this
+script must still be running and reachable from Device B when the profile is installed. It is
+"no URL needed", not "no server needed".
+
+| | QR / URL | **AirDrop (`--airdrop`)** |
+|---|---|---|
+| Taps on Device B | scan, Allow, Settings, Install, Install, passcode, Allow | accept, Settings, Install, Install, passcode, Allow |
+| URL or typing needed | yes | no |
+| Profile fetched over HTTP/HTTPS | yes | no (file transfer) |
+| Plain-HTTP CA listener (`--https`) | required (chicken-and-egg) | **not needed** |
+| Depends on `http://` profile delivery | yes (unverified) | **no** |
+| Requires AirDrop to accept the file | no | yes: *Contacts Only* (same Apple ID/contacts) or *Everyone for 10 minutes* |
+
+Implementation: `--airdrop` writes the profile next to the script and prints where it is; found in the
+Files app at **On My iPhone/iPad → a-Shell → barisign**. With `--https --airdrop` it writes
+`BariSign-CA.mobileconfig` **and** `BariSign-UDID.mobileconfig`, to be AirDropped in that order (CA first,
+then trust it, then the UDID profile).
+
+**Unverified:** that iOS 27 installs a `.mobileconfig` received by AirDrop directly (it may land in Files
+first, where tapping it hands it to Settings). Either way it installs; the test will show the exact flow.
+The profile files are gitignored — they contain only the LAN address and the one-time token.
+
+## 26.5 Recommended test order
 
 1. **First, plain**: `python3 -u udid_share.py` — this answers the only question that matters
    (does iOS 27 still send the UDID at all). Keep this run simple; do not mix it with the CA steps.

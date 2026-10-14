@@ -20,6 +20,12 @@
 #    * the UDID is NOT printed until you confirm the device model and iOS
 #      version are the device sitting in front of you
 #
+#  Two ways to get the profile onto Device B:
+#    * default   - scan the QR / open the printed URL (Device B needs no app)
+#    * --airdrop - the profile is written to a file and AirDropped; Device B
+#                  then needs no URL at all. Note the callback address is INSIDE
+#                  the profile, so this listener must still be running here.
+#
 #  PRIVACY: the UDID travels over your own Wi-Fi to this device only.
 #
 #  RUN (Device A, in a-Shell):
@@ -294,6 +300,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         posted.set()
 
 
+def write_beside_script(name, data):
+    """Write a file next to the script, i.e. inside ~/Documents/barisign."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    with open(path, "wb") as handle:
+        handle.write(data)
+    return path
+
+
 def show_qr(url):
     try:
         import segno                                        # noqa: PLC0415
@@ -324,6 +338,7 @@ def ask_confirm(prompt):
 
 def main():
     use_https = "--https" in sys.argv[1:]
+    use_airdrop = "--airdrop" in sys.argv[1:]
     try:
         ip = local_address()
     except Exception as exc:                                # noqa: BLE001
@@ -384,13 +399,17 @@ def main():
         except Exception as exc:                                # noqa: BLE001
             print("Could not start HTTPS: %r" % (exc,))
             return 2
-        # the CA itself cannot be fetched over HTTPS (chicken and egg), so it is
-        # served briefly over plain HTTP, and it is public information.
         state["ca_xml"] = as_xml(ca_profile(certs["ca_der"]))
-        plain_server = http.server.ThreadingHTTPServer((ip, 0), Handler)
-        plain_port = plain_server.server_address[1]
-        ca_url = "http://%s:%d%s/ca.mobileconfig" % (ip, plain_port, PREFIX)
-        threading.Thread(target=plain_server.serve_forever, daemon=True).start()
+        if use_airdrop:
+            # the CA travels by AirDrop too, so no plain-HTTP listener is needed
+            ca_url = None
+        else:
+            # the CA cannot be fetched over HTTPS (chicken and egg), so it is
+            # served briefly over plain HTTP; it is public information.
+            plain_server = http.server.ThreadingHTTPServer((ip, 0), Handler)
+            plain_port = plain_server.server_address[1]
+            ca_url = "http://%s:%d%s/ca.mobileconfig" % (ip, plain_port, PREFIX)
+            threading.Thread(target=plain_server.serve_forever, daemon=True).start()
 
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
@@ -409,9 +428,16 @@ def main():
     if use_https:
         print(" MODE: HTTPS. The target must first install and TRUST the temporary")
         print(" CA below, otherwise iOS will refuse the encrypted address.")
-        print(" STEP 1 - the CA (over plain HTTP, because trust does not exist yet):")
-        print("   %s" % ca_url)
-        show_qr(ca_url)
+        if use_airdrop:
+            ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
+            profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
+            print(" STEP 1 - AirDrop this file to Device B and install it:")
+            print("   %s" % ca_path)
+            print("         (Files app: On My iPad/iPhone -> a-Shell -> barisign)")
+        else:
+            print(" STEP 1 - the CA (over plain HTTP, because trust does not exist yet):")
+            print("   %s" % ca_url)
+            show_qr(ca_url)
         print("   Then: Settings -> General -> About -> Certificate Trust Settings")
         print("         -> switch ON full trust for 'BariSign temporary CA'.")
         print()
@@ -432,7 +458,17 @@ def main():
     print()
     sys.stdout.flush()
 
-    if not use_https:
+    if use_airdrop:
+        if not use_https:
+            profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
+        print(" STEP 2 - AirDrop this file to Device B and install it:")
+        print("   %s" % profile_path)
+        print("         (Files app: On My iPad/iPhone -> a-Shell -> barisign)")
+        print()
+        print(" No QR and no URL needed: the callback address is inside the profile.")
+        print(" This listener still has to stay running and reachable from Device B.")
+        print()
+    elif not use_https:
         show_qr(profile_url)
         print(" Address: %s" % profile_url)
         print()
