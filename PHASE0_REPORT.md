@@ -953,7 +953,35 @@ the same trailing padding.
 device's exact `not well-formed (invalid token)` error. Self-test 3/6 was also strengthened to send
 realistic padded data, so this class of bug cannot come back silently.
 
-## 21.7 Next action
+## 21.7 Masked password entry (restored, without the earlier hang)
+
+The user asked for hidden input again *without* the "stuck on Enter" problem. There is now a sizeable
+body of evidence about what a-Shell does and does not allow, so the implementation follows it:
+
+| Approach | Result on a-Shell |
+|---|---|
+| `getpass.getpass()` | hangs — opens `/dev/tty`, which is not the terminal being typed into |
+| `termios` ECHO-off + `readline()` | hangs — keystrokes stop reaching Python in that mode |
+| `input()` | works, but everything typed is visible |
+| **cbreak + `os.read(fd, 1)` + `*`, bounded by `select`** | **used now** |
+
+`_read_password()` is a three-step ladder:
+
+1. **stdin is a pipe** → read the line. This is how the Shortcut will deliver the password, so the
+   eventual product needs no terminal input at all.
+2. **masked read**: `ICANON`/`ECHO` off, one byte at a time from the raw fd, `*` per keystroke,
+   backspace handled, `Ctrl-C` respected. Every read is bounded by `select`, and the terminal
+   attributes are restored in a `finally`.
+3. **fallback to plain `input()`** if masking is unsupported. If no keystroke arrives for 20 s the
+   masked reader gives up, restores the terminal and says so, so the user can simply retype visibly.
+
+The ladder is what makes this safe: a failure can only downgrade to visible input, never wedge the
+terminal or require restarting a-Shell.
+
+**Verified in the Codespace under a real PTY:** `Password: *******` on screen and the correct secret
+returned; backspace redraws correctly; the pipe path still returns the line unchanged.
+
+## 21.8 Next action
 
 ```
 python3 -u poc_login.py --diag

@@ -337,33 +337,98 @@ def _selftest():
     return 0
 
 
+def _read_password_masked(prompt):
+    """Masked read. Returns (password, worked).
+
+    a-Shell breaks two things: `getpass` (opens /dev/tty, not your terminal) and
+    ECHO-off line reads (keystrokes stop reaching Python). So this uses cbreak
+    (`ICANON` off) and reads one byte at a time from the raw fd, printing `*`.
+    Every read is bounded by `select`, and the terminal is restored in `finally`,
+    so a failure can only mean "fall back", never "restart a-Shell".
+    """
+    fd = sys.stdin.fileno()
+    try:
+        import select
+        import termios
+    except ImportError:
+        return "", False
+
+    try:
+        saved = termios.tcgetattr(fd)
+    except Exception:                                          # noqa: BLE001
+        return "", False
+
+    buf = bytearray()
+    try:
+        new = list(saved)
+        new[3] = new[3] & ~termios.ICANON & ~termios.ECHO
+        new[6] = list(new[6])
+        new[6][termios.VMIN] = 0
+        new[6][termios.VTIME] = 0
+        try:
+            termios.tcsetattr(fd, termios.TCSANOW, new)
+        except Exception:                                      # noqa: BLE001
+            return "", False
+
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        idle_limit = 20.0
+        last = time.time()
+        while True:
+            try:
+                ready, _, _ = select.select([fd], [], [], 1.0)
+            except Exception:                                  # noqa: BLE001
+                break
+            if not ready:
+                if time.time() - last > idle_limit:
+                    return "", False          # nothing arrived -> fall back
+                continue
+            try:
+                chunk = os.read(fd, 1)
+            except Exception:                                  # noqa: BLE001
+                break
+            if not chunk:
+                break
+            last = time.time()
+            byte = chunk[0]
+            if byte in (0x0A, 0x0D):                            # Return
+                break
+            if byte in (0x7F, 0x08):                            # Backspace
+                if buf:
+                    buf.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            if byte == 0x03:                                    # Ctrl-C
+                raise KeyboardInterrupt
+            buf.append(byte)
+            sys.stdout.write("*")
+            sys.stdout.flush()
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        return bytes(buf).decode("utf-8", "replace"), True
+    finally:
+        try:
+            termios.tcsetattr(fd, termios.TCSANOW, saved)
+        except Exception:                                      # noqa: BLE001
+            pass
+
+
 def _read_password(prompt):
-    """Read a password without ever wedging the terminal.
+    """Hidden when possible, visible when not, and never wedged.
 
-    Two earlier attempts hung on a-Shell: `getpass` (opens /dev/tty, which is not
-    the terminal you type into) and then a `termios` ECHO-off read (a-Shell stops
-    delivering keystrokes to Python in that mode). So: no termios at all, plain
-    `input()`, and a `select` timeout so we always come back.
-
-    If stdin is a pipe (how the Shortcut will do it) the pipe is used instead.
+    Order: (1) a pipe means the Shortcut is driving -> just read it;
+    (2) try the masked reader; (3) fall back to plain `input()`, which is known to
+    work on a-Shell but shows what you type.
     """
     if not sys.stdin.isatty():
-        line = sys.stdin.readline()
-        return line.rstrip("\r\n")
+        return sys.stdin.readline().rstrip("\r\n")
 
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-    try:
-        import select                                          # noqa: PLC0415
-        ready, _, _ = select.select([sys.stdin], [], [], 120)
-        if not ready:
-            print()
-            print("No input after 120 seconds — giving up so a-Shell stays usable.")
-            raise SystemExit(4)
-    except SystemExit:
-        raise
-    except Exception:                                          # noqa: BLE001
-        pass
+    secret, worked = _read_password_masked(prompt)
+    if worked:
+        return secret
+
+    print("(masking is not supported here — type it again, it will be visible)")
     try:
         return input("")
     except EOFError:
@@ -375,9 +440,8 @@ def _login(email, server):
     print("This PoC only writes inside: %s" % POC_STATE)
     print("Apple ID : %s" % email)
     print("SRP-6a: the password becomes a proof; it is never sent and never saved.")
-    print("a-Shell cannot hide what you type, so the password WILL be visible on")
-    print("screen (and may stay in the scrollback — run `clear` afterwards).")
-    print("If stdin is a pipe (the Shortcut does this), the pipe is used instead.")
+    print("Your typing is masked with '*' where a-Shell allows it. If masking is")
+    print("not supported you will be told, and it will be visible instead.")
     print()
     print("If this account uses two-factor authentication, Apple will ask for a")
     print("code and a prompt will appear here.")
