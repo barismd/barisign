@@ -99,9 +99,8 @@ and you are shown which version you are about to get. `variants.json` is the mac
 | File | What it is |
 |---|---|
 | **`GUIDE.md`** | the step-by-step guide for what works today |
-| `PHASE0_REPORT.md` | all research, device results, dead ends and why, with dates |
+| `docs/PHASE0_REPORT.md` | all research, device results, dead ends and why, with dates |
 | `variants.json` | the variant registry and the runtime resolution rules |
-| `cloudflare-worker/` | a fallback UDID endpoint if a network ever blocks the local CA route |
 | `poc/` | the working scripts: `udid_share.py` (UDID), `poc_login.py` (Apple sign-in) |
 | `THIRD_PARTY_NOTICES.md` | licences and attribution |
 | `AGENTS.md` | the working rules for this project |

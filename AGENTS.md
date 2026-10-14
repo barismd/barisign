@@ -14,10 +14,11 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
 - **AirDrop is the primary install route.** Private-HTTPS `itms-services` is a documented fallback only;
-  loopback `itms-services` is rejected (see `PHASE0_REPORT.md` §5).
+  loopback `itms-services` is rejected (see `docs/PHASE0_REPORT.md` §5).
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
 - Test devices: **iPhone 13 (iOS 27)** = main target; **iPad (A16)** = AirDrop receiver.
-- Phase 0 complete → only **PoC-A/B/C** (`POC_GUIDE.md`) are authorised before Phase 1.
+- Phase 0/1: the UDID stage is verified (`poc/udid_share.py`); Apple sign-in is verified
+  (`poc/poc_login.py`). Next: the developer portal (stage 3) and the signer (stage 4).
 - Never use GitHub `releases/latest` for SideStore (it returns `0.7.0-alpha`); list releases and
   reject `alpha`/`beta`/`rc` tags.
 - **Licence constraint:** code ported from `FrizzleM/SideInstaller` is **isolated** in

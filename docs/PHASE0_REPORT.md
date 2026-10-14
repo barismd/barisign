@@ -2732,3 +2732,34 @@ python3 -u udid_share.py --https --airdrop --udid-only
 
 This is device-verified end to end: the UDID arrives, nothing leaves the local network, and after the
 one-time CA trust every fetch is a single profile.
+
+---
+
+# 50. Cleanup (2026-10-14): the project was reorganised and dead code removed
+
+The user asked for a clean, simple, coherent tree. What changed:
+
+**Removed**
+- `cloudflare-worker/` — the public-endpoint fallback. The local-CA route is verified working and strictly
+  better (the UDID never leaves the network), so the Worker was unused complexity. Its design and the
+  session+key security scheme are described in §39–41 if it is ever needed again.
+- `POC_GUIDE.md` — the original PoC-A/B/C instructions. Their results live in §9–19; the file was obsolete.
+- `UDID_TEST.md` — merged into `GUIDE.md`, which is now the single guide.
+- From `poc/udid_share.py` (1106 → 515 lines): the whole **MDM branch** (§43–49: `mdm_profile`,
+  `make_mdm_identity`, the hand-built PKCS#12 writer, the DER helpers), the `--mdm`, `--combined`,
+  `--diag-profiles` and `--lifetime` flags, the empty/Web-Clip diagnostic profiles, the QR path
+  (`segno`/`qrcode`), the plain-HTTP CA server and the per-run URL printing.
+
+**Kept, because they are the working pipeline**
+- `poc/udid_share.py` — UDID retrieval only, one flow: persistent CA → leaf → HTTPS → AirDrop → confirm.
+- `poc/poc_login.py` — Apple sign-in.
+- `third_party/` — `sideinstaller/` (the sign-in stack + its licence), `apple-roots/`, `ca-bundle/`.
+- `variants.json`, `GUIDE.md`, `README.md`, `THIRD_PARTY_NOTICES.md`, `AGENTS.md`, and this report
+  (moved to `docs/`).
+
+**The legacy PKCS#12 writer was deleted from the script.** It was verified against OpenSSL and is
+documented in §49, so it can be rebuilt from the report if a future idea revives the MDM route.
+
+Verified after the cleanup: the script compiles, all four routes answer correctly (`tls-check` 200,
+profile 200, wrong path 404, POST 200 then 409), the captured fields are right, the CA is reused across
+runs, and only the leaf certificate is served.

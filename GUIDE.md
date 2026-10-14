@@ -1,115 +1,65 @@
-# BariSign — complete guide
+# BariSign — guide
 
-**State of the world right now.** The hardest unknown is solved: on your iOS 27 device, Apple's
-`Profile Service` configuration profile **does** report the UDID (you saw it on udid.tech). Everything
-below is the honest, current picture: what works today, what you can do right now, and what is still
-being built.
+What works **today**, verified on real devices (iPhone 13 + iPad, iOS 27), and what is still being built.
 
 | Stage | What it does | Status |
 |---|---|---|
-| 1 | Get the target device's **UDID** with no computer, no app | ✅ **works** (tested on your device) |
-| 2 | Sign in to Apple with the **free Apple ID** (anisette + SRP + 2FA) | ✅ **works** (tested on your device) |
-| 3 | Register the UDID, create App ID + certificate + provisioning profile | 🚧 being built (code exists in the reference projects; not in BariSign yet) |
-| 4 | **Sign the IPA** (Mach-O + Apple CMS signature) | 🚧 being built — the last big piece |
-| 5 | Install by **AirDrop** | ✅ **works** (tested: a signed IPA installs) |
+| 1 | Get the target device's **UDID** — no computer, no app on the target, no third party | ✅ works |
+| 2 | Sign in to Apple with a **free Apple ID** (anisette + SRP-6a + 2FA) | ✅ works |
+| 3 | Register the UDID, create App ID + certificate + provisioning profile | 🚧 to build |
+| 4 | **Sign the IPA** (Mach-O + Apple CMS signature) | 🚧 to build — the last big piece |
+| 5 | Install by **AirDrop** | ✅ works |
 
-So right now you can do stages 1, 2 and 5 by hand. Stages 3 and 4 are what the signer will automate.
+Stages 1, 2 and 5 can be done by hand today. Stages 3 and 4 are what automation still has to provide, so
+**you cannot install SideStore with this yet.**
 
 ---
 
-## Step 1 — Get the UDID **privately** (your own endpoint, 5 minutes, once)
+## Step 1 — Get the UDID (private, no third party)
 
-udid.tech works, but it sees your UDID. The same mechanism on **your own** Cloudflare Worker keeps it
-private. Full detail in `cloudflare-worker/README.md`; the short version:
-
-1. In **Safari**, sign in at `dash.cloudflare.com` (free account).
-2. **Workers & Pages → Create → Worker**, name `barisign`, **Deploy**.
-3. **Edit code** → delete everything → paste all of `cloudflare-worker/worker.js` → **Deploy**.
-4. **Storage & Databases → KV → Create namespace**, name `BARISIGN`.
-5. Worker → **Settings → Bindings → Add → KV namespace**: Variable name **`UDID_KV`**,
-   namespace `BARISIGN` → **Deploy**.
-6. Your endpoint is `https://barisign.<your-subdomain>.workers.dev`.
-
-### The UDID step — fixed, and it is now a one-time setup
-
-**Why the internet services need only ONE profile:** their server certificate chains to a **public CA**
-(Let's Encrypt and friends), so your phone already trusts it and nothing has to be installed first. Their
-profile contains only the `Profile Service` payload — **no CA**. We are our own authority, so our CA must
-be installed and trusted before iOS will talk to our URL.
-
-**The bug that made it work once and then never again:** the script generated a **brand-new CA on every
-run**, valid for six hours. So the CA you had installed and trusted was *never* the CA the next run signed
-with, and iOS answered *"MDM certificate is invalid"*. Fixed: the CA is created **once**, stored next to
-the script (`barisign-ca.pem` / `barisign-ca.key`, never committed), and reused from then on.
-
-**What that means for you:** the CA is installed and trusted **once per device**. After that, every UDID
-fetch is a **single profile**.
-
-> **Also settled:** putting the CA and the UDID request in one profile does **not** work. iOS shows the CA
-> but reports the nested `Profile Service` payload as *unknown data*. The two-payload idea is dead; the
-> ordered two-profile flow is the one that works.
+A free Apple ID signs apps for a specific device, so the device's **UDID** must be known. iOS reports it
+from a `Profile Service` profile, but only over HTTPS with a certificate iOS trusts. This script serves
+exactly that from your own iPad over your own Wi-Fi.
 
 ```
-python3 -u udid_share.py --https --airdrop
+cd ~/Documents/barisign
+curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/poc/udid_share.py" -o udid_share.py
+python3 -c "compile(open('udid_share.py').read(),'x','exec'); print('file OK')"
+python3 -u udid_share.py
 ```
 
-1. **Install `BariSign-CA.mobileconfig`** (only on the first run, or if you delete it).
-2. **Settings → General → About → Certificate Trust Settings → switch ON full trust** for
-   *BariSign temporary CA*. You can confirm it worked with the `…/tls-check` URL the script prints: a
-   padlock and `TLS OK`.
-3. Press **Return** in a-Shell, then **install `BariSign-UDID.mobileconfig`**.
-4. a-Shell prints the model and iOS build, you answer `y`, and the UDID is shown.
+The script writes two files and opens a preview of each. **Do these in order — the order is the whole
+trick:**
 
-**Two more fixes, both from the certificate itself:**
+1. Share **`BariSign-CA.mobileconfig`** to the other device (the preview's top-right button → AirDrop) and
+   install it.
+2. On that device: **Settings → General → About → Certificate Trust Settings → switch ON full trust** for
+   the row named **"BariSign CA XX:XX"** (the script prints the exact name).
+3. Check it: open the `…/tls-check` address the script prints, in **Safari** on that device. A padlock and
+   `TLS OK` means the trust is right.
+4. Press **Return** in a-Shell, share **`BariSign-UDID.mobileconfig`**, and install it.
+5. iOS will say the profile is **empty** — that is expected. The UDID has already been sent.
+6. Back in a-Shell: the model and iOS build are shown; answer `y` and the **UDID** is printed.
 
-- **The CA profile is now named after its own fingerprint** — e.g. *"BariSign CA 73:D9:69:05"*. Older runs
-  left several profiles all called "BariSign temporary CA", so the trust switch could easily be flipped on
-  the *wrong* entry. The name is printed by the script, and the profile identifier is unchanged, so
-  installing a new CA **replaces** the old one instead of piling up.
-- **The server now sends the leaf certificate only.** A TLS server should never send the root: the device
-  already has our CA in its trust store, and a chain carrying a self-signed root can be refused by strict
-  validators — which is exactly what Apple's enrolment check is.
+The whole exchange stays on your Wi-Fi. Nothing is sent to any server, and there is no DNS, no account and
+no certificate to manage.
 
-### The message "this profile is empty" is EXPECTED — and the UDID still arrives
+### From the second time onwards — one profile
 
-Device-confirmed: with the CA trusted, installing the UDID profile shows *"this profile is empty"* and the
-UDID **is still sent**. That is correct behaviour, not a failure: a `Profile Service` payload installs no
-settings, so iOS has nothing to list — the enrolment POST happens regardless, and nothing is left
-configured on the device.
-
-### Single profile, from the second run onwards
-
-The CA is a **one-time** step per device. After it is trusted, every later UDID fetch is **one profile**:
+The CA only has to be installed and trusted **once per device**. After that:
 
 ```
-python3 -u udid_share.py --https --airdrop --udid-only
+python3 -u udid_share.py --udid-only
 ```
 
-That writes and shares **only** `BariSign-UDID.mobileconfig` (no CA step, no trust step). If it fails,
-run the same command **without** `--udid-only` once, to reinstall the CA.
+That shares **only** `BariSign-UDID.mobileconfig`. If it fails, run the plain command once to reinstall the
+CA.
 
-**Before you start, delete every old profile:** Settings → General → VPN & Device Management → remove
-every *BariSign* entry, then check Certificate Trust Settings has no BariSign row left.
+### Cleaning up
 
-**Test it (use the iPad first — iPhones may hit the one-hour Security Delay):**
-
-```
-https://barisign.<subdomain>.workers.dev/new          → shows a session URL
-```
-Open the `…/s/<session>` URL **in Safari**, tap *Download the UDID profile*, then
-**Settings → General → VPN & Device Management → the profile → Install** → passcode.
-
-Then read the result:
-
-```
-https://barisign.<subdomain>.workers.dev/result/<session>
-→ {"udid":"00008110-…","product":"iPad15,7","version":"27.0","serial":"…"}
-```
-
-The result is returned **once** and expires after 15 minutes. `/new` sessions last 30 minutes.
-
-**Afterwards, on the target:** Settings → General → VPN & Device Management → delete the BariSign
-profile. It configures nothing and installs nothing, but it should not be left lying around.
+On the target: **Settings → General → VPN & Device Management** → remove every *BariSign* entry. The UDID
+profile asks iOS to delete itself ten minutes after install (`DurationUntilRemoval`), but do not rely on
+it.
 
 ---
 
@@ -118,76 +68,78 @@ profile. It configures nothing and installs nothing, but it should not be left l
 In a-Shell, in `~/Documents/barisign`:
 
 ```
-curl -sL "https://github.com/barismd/barisign/blob/main/poc/poc_login.py?raw=true" -o poc_login.py
-curl -sL "https://github.com/barismd/barisign/blob/main/third_party/sideinstaller/signin.py?raw=true" -o signin.py
-curl -sL "https://github.com/barismd/barisign/blob/main/third_party/apple-roots/apple-roots.pem?raw=true" -o apple-roots.pem
-curl -sL "https://github.com/barismd/barisign/blob/main/third_party/ca-bundle/cacert.pem?raw=true" -o cacert.pem
+curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py" -o poc_login.py
+curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py" -o signin.py
+curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/third_party/apple-roots/apple-roots.pem" -o apple-roots.pem
+curl -sSL "https://raw.githubusercontent.com/barismd/barisign/main/third_party/ca-bundle/cacert.pem" -o cacert.pem
 python3 -u poc_login.py --selftest
 python3 -u poc_login.py --login YOUR-APPLE-ID
 ```
 
-It stops after sign-in: no device registered, nothing installed. Your password is never transmitted
-(SRP-6a) and never written to disk.
+It stops after sign-in: no device registered, nothing installed. The password is never transmitted
+(SRP-6a) and never written to disk. With 2FA, Apple sends a code and the script prompts for it.
 
 ---
 
-## Step 3 — Register the UDID and get a profile (being built)
+## Step 3 — Register the UDID and get a profile (to build)
 
-The plan, once built, runs entirely from the iPad:
+Planned, and it will run entirely from the signing device:
 
-1. a-Shell (`poc/…`) asks Apple for your teams and certificates.
-2. It registers the UDID you collected in Step 1 (a free account can hold a limited number of devices).
-3. It creates an App ID for the chosen variant and downloads a provisioning profile listing that device.
-4. It creates (or reuses) a development certificate tied to a key generated **on the device**.
+1. ask Apple for your teams and certificates;
+2. register the UDID from Step 1 (a free account holds a limited number of devices);
+3. create an App ID for the chosen variant and download a provisioning profile listing that device;
+4. create or reuse a development certificate tied to a key generated **on the device**.
 
-**Manual alternative in the meantime:** open `developer.apple.com` in Safari → *Certificates, Identifiers
-& Profiles* → **Devices → +** → paste the UDID from Step 1. That works from the phone today; the rest
-(App ID, certificate, profile) is fiddly by hand but possible.
+**Manual alternative today:** open `developer.apple.com` in Safari → *Certificates, Identifiers & Profiles*
+→ **Devices → +** → paste the UDID. The rest (App ID, certificate, profile) is doable by hand but fiddly.
 
 ---
 
-## Step 4 — Sign the IPA (being built — the last big piece)
+## Step 4 — Sign the IPA (to build — the last big piece)
 
 An IPA is a zip; the app inside must carry a valid Apple code signature: a CodeDirectory over every page,
-entitlements, and a CMS signature with Apple's two custom attributes. This is the one component that has
-to be written from scratch in pure Python, and it is what §13 of `PHASE0_REPORT.md` flagged as the
-make-or-break item. Until it exists, the pipeline cannot produce something the device will launch.
+entitlements, and a CMS signature with Apple's two custom attributes. This must be written from scratch in
+pure Python and is the make-or-break item (`docs/PHASE0_REPORT.md`, §13). Until it exists, nothing this
+project produces will launch.
 
 ---
 
 ## Step 5 — Install by AirDrop (works today)
 
-Once the IPA is validly signed for the target's UDID:
+Once an IPA is validly signed for the target's UDID:
 
-1. On the signing device: `view /absolute/path/App.ipa` (a-Shell's `view` opens a preview with a **share**
-   button), or use the Files app.
-2. Share → **AirDrop** → pick the other device.
+1. On the signing device: `python3 -u udid_share.py --view /absolute/path/App.ipa` (a preview opens), or
+   use the Files app.
+2. Share → **AirDrop** → the other device.
 3. On the target: accept. **iOS installs it by itself — there is no extra "Install" tap.**
-4. Open the app.
-
-If it installs but will not open, the signature is not valid for that device (wrong UDID, expired
-certificate, or a broken signature).
+4. Open the app. If it installs but will not open, the signature is not valid for that device.
 
 ---
 
-## Caveats worth knowing (all verified)
+## Caveats (all verified on device)
 
-- **Safari only.** Chrome and in-app browsers save the profile as a download instead of handing it to
+- **Safari only.** Chrome and in-app browsers save a profile as a download instead of handing it to
   Settings, which looks like nothing happening.
-- **Security Delay.** On an **iPhone** running iOS 26.4+, installing *any* configuration profile at a
-  location iOS does not consider familiar triggers a **one-hour** delay (Face ID → 1 hour → Face ID). At
-  home it does not, and **iPad is unaffected**. If you hit it: tap *Start Security Delay*, keep the page
-  open, and come back when iOS notifies you.
+- **Security Delay.** On an **iPhone** running iOS 26.4+, installing *any* profile at a location iOS does
+  not consider familiar triggers a **one-hour** delay (Face ID → 1 hour → Face ID). Do it at home, or use
+  an **iPad**, which is unaffected.
 - **Free Apple ID limits:** 3 apps installed at a time (SideStore counts as one), a limited number of App
   IDs, and signing expires every 7 days.
-- **The UDID is not a credential.** It is an identifier developers paste into portals every day. It is not
-  an Apple ID, password, or pairing record, and none of those are involved in Step 1.
+- **The UDID is not a credential** — it is an identifier developers paste into portals daily. No Apple ID,
+  password or pairing record is involved in Step 1.
 
----
+## Troubleshooting Step 1
 
-## What happens after Step 1 and 2 are done
+| What you see | What it means |
+|---|---|
+| `RESULT: UDID received` + the model you expected | ✅ done |
+| `no UDID arrived within 300 seconds` | the profile was not installed, or the trust switch is off — check the `…/tls-check` padlock |
+| *"MDM certificate is invalid"* on the target | the CA's trust switch is OFF, or an **older** BariSign CA is installed — delete it in VPN & Device Management and install the current one |
+| the profile screen never appears | you are not in Safari, or the preview was closed — use `python3 -u udid_share.py --view BariSign-UDID.mobileconfig` |
+| iOS says the profile is **empty** | expected — the UDID was already sent |
+| `*** … is not a private address` | both devices must be on your own Wi-Fi |
 
-The remaining work is code, not discovery: the developer-portal calls (Stage 3) and the signer (Stage 4),
-then a Shortcut that chains Step 1 → 2 → 3 → 4 → 5 with the UDID step done by scanning a QR that the
-signing device displays. When those exist, this guide collapses into: *tap the Shortcut, scan a code,
-accept an AirDrop.*
+## What comes next
+
+Stage 3 (developer portal) and Stage 4 (the signer), then a Shortcut that chains everything. At that point
+this guide collapses into: *tap the Shortcut, scan a code, accept an AirDrop.*
