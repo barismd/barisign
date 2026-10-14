@@ -400,6 +400,18 @@ def write_diag_profiles():
     print("These contain no usable callback address; they are for installation only.")
 
 
+def _wait_return():
+    """Pause so only ONE preview is open at a time. Plain input(): a-Shell handles
+    it (verified on device), and nothing here masks anything."""
+    sys.stdout.write(" Press Return when you are ready for the next file... ")
+    sys.stdout.flush()
+    try:
+        input("")
+    except EOFError:
+        pass
+    print()
+
+
 def offer_share(path):
     """Share the file out of a-Shell.
 
@@ -558,21 +570,12 @@ def main():
     print(" PRODUCT and VERSION. No certificate, no VPN, no proxy, no Wi-Fi.")
     print()
     if use_https:
-        print(" MODE: HTTPS. The target must first install and TRUST the temporary")
-        print(" CA below, otherwise iOS will refuse the encrypted address.")
-        if use_airdrop:
-            ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
-            profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-            print(" STEP 1 - share the temporary CA with Device B and install it:")
-            offer_share(ca_path)
-        else:
-            print(" STEP 1 - the CA (over plain HTTP, because trust does not exist yet):")
-            print("   %s" % ca_url)
-            show_qr(ca_url)
-        print("   Then: Settings -> General -> About -> Certificate Trust Settings")
-        print("         -> switch ON full trust for 'BariSign temporary CA'.")
+        print(" MODE: HTTPS. TWO profiles, in this order: the temporary CA first,")
+        print(" then the UDID request. iOS cannot trust a certificate before it is")
+        print(" installed, which is why this cannot be a single file.")
+        if not use_airdrop:
+            print(" STEP 1 (CA) URL: %s" % ca_url)
         print()
-        print(" STEP 2 - the UDID profile (over HTTPS):")
     print(" Listening only on %s, for %d seconds, with a one-time path." % (ip, WINDOW_SECONDS))
     if private:
         print(" That address is private (a home/hotspot network): %s" % ip)
@@ -590,12 +593,21 @@ def main():
     sys.stdout.flush()
 
     if use_airdrop:
-        if not use_https:
-            profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        print(" STEP 2 - share the profile with Device B and install it:")
+        if use_https:
+            ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
+        profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
+        if use_https:
+            print(" STEP 1 of 2 - the temporary CA. Share it, install it, then switch")
+            print("              trust ON: Settings -> General -> About ->")
+            print("              Certificate Trust Settings -> 'BariSign temporary CA'.")
+            offer_share(ca_path)
+            _wait_return()
+            print(" STEP 2 of 2 - now the UDID profile:")
         offer_share(profile_path)
-        print(" No QR and no URL needed: the callback address is inside the profile.")
-        print(" This listener still has to stay running and reachable from Device B.")
+        print()
+        print(" The callback address is inside the profile, so Device B never needs a")
+        print(" URL. Keep a-Shell in the FOREGROUND: the request happens while iOS")
+        print(" installs, so the listener must be answering right then.")
         print()
     elif not use_https:
         show_qr(profile_url)

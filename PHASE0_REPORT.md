@@ -1975,3 +1975,26 @@ file also cannot trust its own certificate before the request happens. So:
 **Next test:** plain `python3 -u udid_share.py --airdrop` (HTTP callback, our server, single profile, no
 CA). Keep the script running while the target taps Install/Allow, because the request happens during
 install — and read back the exact error text if it fails.
+
+---
+
+# 34. `--https` delivery fixed: one preview at a time, CA first
+
+The user's point: `--airdrop` alone produces **one profile with an `http://` callback and no CA** (that is
+the single-profile test), and the `--https` flow used to open **both** previews at once, so it was not
+delivered "properly". Fixed:
+
+- `--airdrop` (no `--https`) → **one file**, `BariSign-UDID.mobileconfig`, `http://` callback, **no CA**.
+- `--https --airdrop` → **two files** and they are now handed over **strictly one at a time**:
+  1. `BariSign-CA.mobileconfig` opens in the preview → share → install → switch trust ON in
+     Settings → General → About → Certificate Trust Settings;
+  2. the script pauses (`Press Return…`, plain `input()`, which works on a-Shell) so the two previews never
+     overlap;
+  3. then `BariSign-UDID.mobileconfig` opens → share → install → Allow.
+
+Verified in the Codespace: the HTTPS profile's callback is `https://<lan-ip>:<port>/<token>/udid`, the CA
+payload is `com.apple.security.root` with the certificate bytes present, the lifetime keys stay off by
+default, and `_wait_return()` exists. Untested on device.
+
+Reminder that matters for both flows: **the request is made while iOS installs the profile**, so a-Shell
+must be in the foreground and the listener answering at that moment.
