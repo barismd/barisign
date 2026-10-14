@@ -809,3 +809,66 @@ curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/sid
 ```
 python3 -u poc_login.py --login YOUR-APPLE-ID
 ```
+
+---
+
+# 21. Round 6 — anisette TLS failed in `--login` but passed in `--selftest`
+
+Both `--login` attempts failed inside `connect_anisette` with, for **every** server including a
+plain-HTTP one:
+
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+self signed certificate in certificate chain (_ssl.c:1028)
+```
+
+Two observations:
+
+- The earlier empty-store signature (`X509: NO_CERTIFICATE_OR_CRL_FOUND`) is **gone**, so a trust store
+  *is* being loaded now; the chain is rejected for a different reason.
+- The same code path passed check 5/6 in the round-3 selftest on the same device.
+
+## 21.1 Fix: load every CA bundle available, not just the first one
+
+`_select_ca_bundle()` previously picked **one** source (`certifi`, else the shipped file). If that one
+source lacks a root a server uses — or is unexpectedly unavailable — every TLS connection fails.
+`_select_ca_bundles()` now collects **all** sources and loads all of them (`certifi` **and** the
+shipped `third_party/ca-bundle/cacert.pem`), on top of whatever the default context provides. This
+removes "the chosen bundle is missing a root" as a failure mode. Verification stays ON.
+
+## 21.2 New `--diag` mode (and diagnostics before every sign-in)
+
+`python3 -u poc_login.py --diag` prints the default CA file/dir, **every bundle loaded and where it
+came from**, how many roots a default context has, then performs real handshakes (verification ON,
+same contexts the real code uses) to `gsa.apple.com`, `github.com`, `ani.sidestore.io` and
+`ani.sidestore.zip`, reporting which context each used.
+
+`--login` now also prints the CA diagnostic before contacting anything, so the next attempt carries
+the evidence.
+
+What the output decides:
+
+- **All hosts OK but anisette still fails** → the anisette servers are unreachable or changed on that
+  network; try `--server`.
+- **`gsa.apple.com` and `github.com` also FAIL** while they load fine in Safari → something on the
+  network is intercepting TLS. We never disable verification; we report it and stop.
+
+## 21.3 Not yet explained (honest status)
+
+We do **not** yet know why the anisette hosts failed in `--login` while the earlier `--selftest`
+passed. It is one of: the selected bundle lacked a root, transient TLS interception, or the servers'
+certificates changed. §21.1 removes the first; §21.2 identifies the rest on the next run.
+
+Cheap experiment: note the **VPN state** (LocalDevVPN/StosVPN on or off) for each attempt and try both
+ways. The VPN was on for one of the earlier failing rounds.
+
+## 21.4 Next action
+
+```
+python3 -u poc_login.py --diag
+```
+Then, if the handshakes look healthy:
+
+```
+python3 -u poc_login.py --login YOUR-APPLE-ID
+```

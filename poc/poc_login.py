@@ -86,35 +86,36 @@ def _find_file(name):
     return None
 
 
-APPLE_ROOTS = _find_file("apple-roots.pem")
-if APPLE_ROOTS:
-    signin.APPLE_CA_FILE = APPLE_ROOTS
+def _select_ca_bundles():
+    """Every CA source we can find — we load ALL of them.
 
-
-def _select_ca_bundle():
-    """Pick a CA bundle.
-
-    a-Shell's Python ships an EMPTY trust store: `ssl.create_default_context()`
-    has no roots, so every https:// request fails ('no certificate or crl found'
-    / 'self signed certificate in certificate chain'). We therefore load a real
-    bundle. We never disable verification.
+    a-Shell's own trust store is empty, and a single bundle can be missing a root
+    that a particular server uses. Loading every available bundle removes that
+    failure mode. Certificate verification stays ON.
     """
+    found = []
     try:
         import certifi                                     # noqa: PLC0415
         where = certifi.where()
         if where and os.path.isfile(where):
-            return where, "certifi (already on the device)"
+            found.append((os.path.abspath(where), "certifi (on the device)"))
     except Exception:                                      # noqa: BLE001
         pass
     shipped = _find_file("cacert.pem")
-    if shipped:
-        return shipped, "shipped bundle (third_party/ca-bundle/cacert.pem)"
-    return None, "none found"
+    if shipped and all(os.path.abspath(shipped) != path for path, _ in found):
+        found.append((shipped, "shipped third_party/ca-bundle/cacert.pem"))
+    return found
 
 
-CA_BUNDLE, CA_BUNDLE_SOURCE = _select_ca_bundle()
-if CA_BUNDLE:
-    signin.set_ca_bundle(CA_BUNDLE)
+CA_BUNDLES = _select_ca_bundles()
+for _path, _label in CA_BUNDLES:
+    signin.set_ca_bundle(_path)
+if not CA_BUNDLES:
+    print("WARNING: no CA bundle found anywhere; https will very likely fail.")
+
+APPLE_ROOTS = _find_file("apple-roots.pem")
+if APPLE_ROOTS:
+    signin.APPLE_CA_FILE = APPLE_ROOTS
 
 # Never let the sign-in exchange look like a hang.
 signin.PROGRESS = lambda message: print("    ... %s" % message, flush=True)
@@ -124,13 +125,41 @@ def _tls_diagnostics():
     paths = ssl.get_default_verify_paths()
     print("default CA file : %s" % (paths.cafile or "(none)"))
     print("default CA dir  : %s" % (paths.capath or "(none)"))
-    print("CA bundle used  : %s" % (CA_BUNDLE or "(none)"))
-    print("CA bundle source: %s" % CA_BUNDLE_SOURCE)
+    print("bundles loaded  : %d" % len(CA_BUNDLES))
+    for path, label in CA_BUNDLES:
+        print("   - %s  [%s]" % (path, label))
+    if not CA_BUNDLES:
+        print("   (none found — https will fail)")
     try:
         roots = ssl.create_default_context().get_ca_certs()
-        print("roots in default context: %d" % len(roots))
+        print("roots in a default context: %d" % len(roots))
     except Exception as exc:                               # noqa: BLE001
-        print("roots in default context: unknown (%r)" % (exc,))
+        print("roots in a default context: unknown (%r)" % (exc,))
+
+
+def _diag():
+    """One-shot: is TLS healthy, and which context does each host use?"""
+    _hr("TLS diagnostic")
+    _tls_diagnostics()
+    print()
+    print("Handshakes (verification ON, exactly as the real code does it):")
+    for host in ("gsa.apple.com", "github.com", "ani.sidestore.io", "ani.sidestore.zip"):
+        context = signin._ctx_for(host)
+        which = "Apple context" if context is getattr(signin, "_APPLE_CTX", None) else "general context"
+        try:
+            raw = socket.create_connection((host, 443), timeout=20)
+            try:
+                tls = context.wrap_socket(raw, server_hostname=host)
+                print("  %-22s OK  %s  (%s)" % (host, tls.version(), which))
+                tls.close()
+            finally:
+                raw.close()
+        except Exception as exc:                           # noqa: BLE001
+            print("  %-22s FAIL (%s) -> %s" % (host, which, str(exc)[:90]))
+    print()
+    print("If gsa.apple.com and github.com both fail here while they load fine in")
+    print("Safari, something on the network is intercepting TLS. Do NOT disable")
+    print("verification — send this whole screen instead.")
 
 
 def _ensure_dir(path):
@@ -331,10 +360,10 @@ def _login(email, server):
     print("SRP-6a: the password becomes a proof; it is never sent and never saved.")
     print("Type the password and press Return. Nothing will appear as you type.")
     print()
-    print("NOTE: if this account has two-factor authentication, Apple will ask for")
-    print("a code — a prompt will appear here, or a notification on your other")
-    print("Apple devices. Prefer a THROWAWAY account for this test.")
+    print("If this account uses two-factor authentication, Apple will ask for a")
+    print("code and a prompt will appear here.")
     print()
+    _tls_diagnostics()
     anisette, gs = connect_anisette(server or "", _state_path())
     account = AppleAccount(email, gs, anisette)
 
@@ -365,11 +394,13 @@ def _login(email, server):
 
 def _usage():
     print("usage: python3 poc_login.py --selftest [--server URL]")
+    print("       python3 poc_login.py --diag")
     print("       python3 poc_login.py --login EMAIL [--server URL]")
     print()
     print("  --selftest   check the runtime, crypto, AES, anisette and Apple TLS")
     print("               (no Apple ID involved at all)")
-    print("  --login      sign in with a throwaway Apple ID (stops after sign-in)")
+    print("  --diag       print the CA bundles and test TLS to a few hosts")
+    print("  --login      sign in with an Apple ID (stops after sign-in)")
     print("  --server     use this anisette server instead of the public list")
 
 
@@ -377,11 +408,14 @@ def _main(argv):
     email = None
     server = None
     selftest = False
+    diag = False
     rest = list(argv)
     while rest:
         arg = rest.pop(0)
         if arg == "--selftest":
             selftest = True
+        elif arg == "--diag":
+            diag = True
         elif arg == "--login":
             email = rest.pop(0) if rest else None
         elif arg == "--server":
@@ -394,6 +428,9 @@ def _main(argv):
             _usage()
             return 2
 
+    if diag:
+        _diag()
+        return 0
     if selftest:
         return _selftest()
     if email:
