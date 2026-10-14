@@ -862,7 +862,32 @@ certificates changed. §21.1 removes the first; §21.2 identifies the rest on th
 Cheap experiment: note the **VPN state** (LocalDevVPN/StosVPN on or off) for each attempt and try both
 ways. The VPN was on for one of the earlier failing rounds.
 
-## 21.4 Next action
+## 21.4 `--diag` now also proves where a connection actually goes
+
+Added: each host's **resolved IP addresses** and, on success, the **issuer of the certificate it
+actually presented**. This makes a redirect or TLS interception impossible to miss — if a host
+resolves to `127.0.0.1` / `10.7.x.x`, or the issuer is not the real CA, we will see it immediately.
+
+Working example from the Codespace:
+
+```
+gsa.apple.com        OK  TLSv1.3 Apple ctx   issuer=Apple Server Authentication CA  [17.179.252.2]
+github.com           OK  TLSv1.3 general ctx issuer=Sectigo Public Server Authentication CA DV E36  [140.82.121.4]
+ani.sidestore.io     OK  TLSv1.3 general ctx issuer=YE1  [89.117.146.208]
+```
+
+**Hypothesis to test (unverified):** StosVPN/LocalDevVPN install DNS settings so the device can reach
+its own services. If, while the VPN is on, those DNS settings catch ordinary hostnames too, then every
+`https://` request would land on a local service with a self-signed certificate — which is exactly the
+`self signed certificate in certificate chain` seen in §21, for every host at once, including a
+plain-HTTP one that redirected. Running `--diag` with the VPN **off** and then **on** tests this
+directly.
+
+Design note that follows from this: **our sign-and-AirDrop flow may not need the VPN at all.** The VPN
+exists so SideStore can reach the device's own services for installing/refreshing later. If it breaks
+TLS during signing, the Shortcut should ask for it only where it is genuinely required.
+
+## 21.5 Next action
 
 ```
 python3 -u poc_login.py --diag

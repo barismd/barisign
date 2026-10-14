@@ -142,23 +142,40 @@ def _diag():
     _hr("TLS diagnostic")
     _tls_diagnostics()
     print()
-    print("Handshakes (verification ON, exactly as the real code does it):")
+    print("Hosts (verification ON, exactly as the real code does it):")
     for host in ("gsa.apple.com", "github.com", "ani.sidestore.io", "ani.sidestore.zip"):
+        try:
+            infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+            ips = ", ".join(sorted({info[4][0] for info in infos}))
+        except Exception as exc:                           # noqa: BLE001
+            ips = "<DNS failed: %s>" % exc
         context = signin._ctx_for(host)
-        which = "Apple context" if context is getattr(signin, "_APPLE_CTX", None) else "general context"
+        which = "Apple ctx" if context is getattr(signin, "_APPLE_CTX", None) else "general ctx"
         try:
             raw = socket.create_connection((host, 443), timeout=20)
             try:
                 tls = context.wrap_socket(raw, server_hostname=host)
-                print("  %-22s OK  %s  (%s)" % (host, tls.version(), which))
+                issuer = ""
+                try:
+                    cert = tls.getpeercert()
+                    for rdn in cert.get("issuer", ()):
+                        for key, value in rdn:
+                            if key == "commonName":
+                                issuer = value
+                except Exception:                          # noqa: BLE001
+                    pass
+                print("  %-20s OK   %-7s %-11s issuer=%s  [resolved to %s]"
+                      % (host, tls.version(), which, issuer or "?", ips))
                 tls.close()
             finally:
                 raw.close()
         except Exception as exc:                           # noqa: BLE001
-            print("  %-22s FAIL (%s) -> %s" % (host, which, str(exc)[:90]))
+            print("  %-20s FAIL %-11s -> %s  [resolved to %s]"
+                  % (host, which, str(exc)[:80], ips))
     print()
-    print("If gsa.apple.com and github.com both fail here while they load fine in")
-    print("Safari, something on the network is intercepting TLS. Do NOT disable")
+    print("Reading this: if a host resolves to 127.0.0.1 / 10.7.x.x, or the successful")
+    print("issuer is not the real CA (Let's Encrypt / Apple / DigiCert …), then")
+    print("something on the device or network is redirecting TLS. Never disable")
     print("verification — send this whole screen instead.")
 
 
