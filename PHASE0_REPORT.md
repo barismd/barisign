@@ -1715,3 +1715,43 @@ move to the Settings-based pairing plan in §22.3.
 
 **Not yet known:** which of the three actually fails. Nothing in this section is confirmed until the user
 reports back.
+
+---
+
+# 28. Why `open` produced no share sheet (answered from source)
+
+`open` is implemented in **`ios_system/shell_cmds_ios/open.m`** (read from source, 2026-10-14). Its own
+comment says: *"The `openurl` command still available. The `open` command checks if the passed argument
+is a file path, if it is, it opens it with an `UIActivityViewController` and if not, it calls the
+`openurl` command."* So the share sheet was the right expectation — but the implementation fails
+**silently** in two ways:
+
+1. **Path not found → it degrades to `openurl`.** If `fileExistsAtPath:` is false, `open_main` calls
+   `openurl_main` and the argument is treated as a **URL**. Nothing visible happens for a bare filename.
+   Note it resolves the path against `NSFileManager.defaultManager.currentDirectoryPath`, which need not
+   be the a-Shell shell's own current directory.
+2. **`keyWindow` is nil.** The presentation code uses
+   `[UIApplication sharedApplication].keyWindow` — deprecated since iOS 13, and a-Shell is scene-based
+   (`SceneDelegate.swift`). When it is nil the code writes *"Cannot find a window. This command require
+   an UI for opening files."* to **stderr** and then calls `presentViewController` on a nil controller,
+   which does nothing.
+
+It also sets `excludedActivityTypes` to exclude Notes, and uses a `popoverPresentationController`, which
+on iPad needs a valid source view — another silent-no-op path.
+
+**Conclusion: do not rely on `open` here.** The reliable route is the Files app (a-Shell's Documents is
+visible there), which is also what the user switched to. `poc/udid_share.py` now always prints the
+absolute path plus the Files location, tries `open` with an **absolute** path, and suggests
+`view <file>` (Quick Look) to confirm the file is readable. `open` is documented as a convenience, not a
+dependency.
+
+Diagnosis for anyone who wants to pin down which of the two it is, in a-Shell:
+
+```
+ls -l barsign-test1-empty.mobileconfig      # does the shell see it?
+open "$PWD/barsign-test1-empty.mobileconfig"  # absolute path
+view barsign-test1-empty.mobileconfig        # Quick Look; proves it is readable
+```
+
+If the absolute path works and the relative one does not, it was cause 1. If neither works and stderr
+says "Cannot find a window", it was cause 2.

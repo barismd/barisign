@@ -361,15 +361,31 @@ def write_diag_profiles():
 
 
 def offer_share(path):
-    """a-Shell ships an `open` command that presents the iOS share sheet for a
-    file, so there is no need to leave the app and go to Files. os.system reaches
-    a-Shell's own commands."""
-    print(" Opening the share sheet for: %s" % os.path.basename(path))
-    print(" (if nothing appears, type:  open %s )" % os.path.basename(path))
+    """Share the file out of a-Shell.
+
+    `open <file>` is implemented in ios_system as the iOS share sheet
+    (UIActivityViewController), but it can fail SILENTLY in two ways:
+      * if the path is not found it falls back to treating the argument as a URL
+        (openurl) and nothing visible happens;
+      * if UIApplication.keyWindow is nil - a deprecated API, and a-Shell is
+        scene-based - it prints "Cannot find a window" to stderr and then
+        presents on a nil controller.
+    So we try it, and always print the reliable route as well: the Files app.
+    """
+    absolute = os.path.abspath(path)
+    print(" File for Device B:")
+    print("   %s" % absolute)
+    print(" In the Files app: On My iPhone/iPad -> a-Shell -> barisign -> %s"
+          % os.path.basename(path))
+    print(" Trying the share sheet (open with an ABSOLUTE path):")
+    print("   open %s" % absolute)
     try:
-        os.system("open %s" % path)
+        os.system("open %s" % absolute)
     except Exception as exc:                                   # noqa: BLE001
-        print(" Could not open the share sheet automatically: %r" % (exc,))
+        print(" Could not run the share sheet: %r" % (exc,))
+    print("   If no share sheet appeared: use the Files app route above, or run")
+    print("     view %s     (Quick Look preview - proves the file is readable)"
+          % os.path.basename(path))
 
 
 def show_qr(url):

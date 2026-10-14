@@ -4,10 +4,18 @@ Your Device B answered: **"Profil yüklenemedi, bilinmeyen bir hata oluştu"** �
 So we first find **which layer** iOS is refusing, with three throwaway profiles, and only then run the
 real thing.
 
-**Good news on the other question:** a-Shell has an `open` command that presents the **iOS share sheet**
-for a file, so you no longer leave a-Shell and go through Files. `open barsign-test1-empty.mobileconfig`
-→ share sheet → AirDrop. (Verified: `open` exists in a-Shell's command set and is documented as the
-"share a file with other apps" command.)
+**On sharing out of a-Shell:** `open <file>` *is* implemented as the iOS share sheet
+(`UIActivityViewController`) in `ios_system/shell_cmds_ios/open.m`, but it **fails silently** in two
+cases, so treat it as a convenience and **use the Files app as the reliable route**:
+
+1. If the path is not found, `open` silently falls back to treating the argument as a **URL** (the
+   `openurl` command) and nothing visible happens.
+2. If `UIApplication.keyWindow` is nil — a deprecated API, and a-Shell is scene-based — it prints
+   *"Cannot find a window"* to stderr and then presents on a nil controller: nothing appears.
+
+So: **Files app → On My iPhone/iPad → a-Shell → barisign → long-press the file → Share → AirDrop.**
+If you want to try `open`, always give it the **absolute** path it prints, and check for that stderr
+message. `view <file>` (Quick Look) is a good way to confirm the file is readable.
 
 ---
 
@@ -30,11 +38,11 @@ python3 -u udid_share.py --diag-profiles
 That writes three files and stops. Share and install them on Device B **in this order**, and tell me
 which ones fail:
 
-| Share it with | What it is | If it fails |
+| File (share from Files, or try `open` with the full path) | What it is | If it fails |
 |---|---|---|
-| `open barsign-test1-empty.mobileconfig` | a profile that installs **nothing** | unsigned profiles cannot be installed on Device B at all (or AirDrop delivery is the problem) → we try sending it another way |
-| `open barsign-test2-profservice.mobileconfig` | `Profile Service`, **only** the keys Apple documents | **iOS 27 no longer accepts the `Profile Service` payload** → this whole no-app route is dead, and we fall back to the Settings pairing route |
-| `open barsign-test3-profservice-lifetime.mobileconfig` | the same **plus** `DurationUntilRemoval` + `PayloadExpirationDate` | those two extra keys are what iOS refuses — which is very likely, since the first version of the profile carried them |
+| `barsign-test1-empty.mobileconfig` | a profile that installs **nothing** | unsigned profiles cannot be installed on Device B at all (or AirDrop delivery is the problem) → we try sending it another way |
+| `barsign-test2-profservice.mobileconfig` | `Profile Service`, **only** the keys Apple documents | **iOS 27 no longer accepts the `Profile Service` payload** → this whole no-app route is dead, and we fall back to the Settings pairing route |
+| `barsign-test3-profservice-lifetime.mobileconfig` | the same **plus** `DurationUntilRemoval` + `PayloadExpirationDate` | those two extra keys are what iOS refuses — which is very likely, since the first version of the profile carried them |
 
 The files contain **no usable callback address** (they point at `192.0.2.1`, which is unroutable). They
 exist only to test installation. Install each one, note the result, then **remove it** (Settings →
@@ -55,14 +63,10 @@ python3 -u udid_share.py --airdrop
 ```
 
 It prints the whole profile (one `Profile Service` payload, asking only for UDID, PRODUCT, VERSION),
-writes `BariSign-UDID.mobileconfig`, **and opens the share sheet by itself**. If the sheet does not
-appear, type:
+writes `BariSign-UDID.mobileconfig`, tries the share sheet, and prints the absolute path.
 
-```
-open BariSign-UDID.mobileconfig
-```
-
-Then AirDrop to Device B. Keep a-Shell in the foreground; it waits **5 minutes**.
+Then send it to Device B the reliable way: **Files → On My iPhone/iPad → a-Shell → barisign →
+long-press `BariSign-UDID.mobileconfig` → Share → AirDrop**. Keep a-Shell in the foreground; it waits **5 minutes**.
 
 Both devices must be on the same Wi-Fi. On iOS 26.2 and later, if Device B is not in your contacts,
 AirDrop asks for an **AirDrop code** — share it and enter it on Device A.
