@@ -12,20 +12,21 @@ What works **today**, verified on real devices (iPhone 13 + iPad, iOS 27), and w
 
 ---
 
-## Get it once, then keep it updated
+## Get it (no git needed)
 
-a-Shell ships `git`, so there is no reason to copy files by hand:
-
-```
-git clone https://github.com/barismd/barisign.git ~/Documents/barisign
-cd ~/Documents/barisign
-```
-
-From then on, one command fetches the newest version and checks that everything still compiles:
+In a-Shell: `mkdir` and `curl` only.
 
 ```
-sh bin/update
+mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
+curl -sSL "https://github.com/barismd/barisign/blob/main/install.sh?raw=true" -o install.sh
+sh install.sh
 ```
+
+The installer downloads every file it needs and checks that they compile. Run it again any time to
+**update** — it overwrites the program files and leaves your certificate authority
+(`poc/barisign-ca.*`) alone, so already-trusted devices stay trusted. `sh bin/update` does the same.
+
+> `git` also works if your copy is a git checkout (`git pull`), but it is not required.
 
 ### One command for everything
 

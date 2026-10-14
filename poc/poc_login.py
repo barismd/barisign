@@ -61,9 +61,9 @@ except ImportError as exc:                                    # noqa: PERF203
     print("  curl -sL <REPO>/third_party/sideinstaller/signin.py -o signin.py")
     sys.exit(2)
 
-# a-Shell only allows writes under ~/Documents; the rest of the home directory
-# is read-only. Everything we create lives here.
-POC_HOME = os.path.join(os.path.expanduser("~"), "Documents", "barisign")
+# a-Shell only allows writes under ~/Documents, and we keep everything inside the
+# installed folder so a copy works wherever it is unpacked.
+POC_HOME = os.path.dirname(_HERE)
 POC_STATE = os.path.join(POC_HOME, "state")
 
 # Apple's public root CA, as published (see third_party/apple-roots/README.md).

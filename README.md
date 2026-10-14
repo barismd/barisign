@@ -22,13 +22,15 @@ computer**, driven entirely by an **iOS Shortcut**.
 Until the last row exists, BariSign cannot produce something your device will launch. Everything above it
 is done.
 
-**Getting it** (a-Shell ships `git`):
+**Getting it** — no git needed, just `curl`:
 
 ```
-git clone https://github.com/barismd/barisign.git ~/Documents/barisign
-cd ~/Documents/barisign
-sh bin/update          # later: fetch the newest version and check it compiles
+mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
+curl -sSL "https://github.com/barismd/barisign/blob/main/install.sh?raw=true" -o install.sh
+sh install.sh
 ```
+
+Run `sh install.sh` again (or `sh bin/update`) any time to update.
 
 Then one command drives every stage, passing each stage's result to the next:
 
