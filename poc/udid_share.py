@@ -412,19 +412,21 @@ def offer_share(path):
     print("   %s" % absolute)
     print(" In the Files app: On My iPhone/iPad -> a-Shell -> barisign -> %s"
           % os.path.basename(path))
-    print(" BEST ROUTE, one command, opens the Files app AT this folder:")
-    print("   openurl shareddocuments://%s" % os.path.dirname(absolute))
-    print("   then long-press the file there and choose Share -> AirDrop.")
+    print(" BEST IN-APP ROUTE:  view  (Quick Look has a SHARE button, top-right)")
+    print("   view %s" % absolute)
+    print("   -> in the preview, tap the share (square-and-arrow) button -> AirDrop.")
+    print("    (a-Shell's own commands have no 'share'; 'view' uses")
+    print("     UIDocumentInteractionController, which carries a share button, unlike")
+    print("     the broken 'open' - see PHASE0_REPORT section 28/31.)")
     print()
-    print(" Also trying the in-app share sheet (open with an ABSOLUTE path).")
-    print(" Note: a-Shell's own commands list has no 'share'; the only in-app")
-    print(" share sheet is this 'open', which can fail silently (see PHASE0_REPORT"
-          " section 28):")
-    print("   open %s" % absolute)
+    print(" ALTERNATIVE: open the Files app AT this folder, one command:")
+    print("   openurl shareddocuments://%s" % os.path.dirname(absolute))
+    print("   then long-press the file -> Share -> AirDrop.")
+    print()
     try:
-        os.system("open %s" % absolute)
+        os.system("view %s" % absolute)
     except Exception as exc:                                   # noqa: BLE001
-        print(" Could not run the share sheet: %r" % (exc,))
+        print(" Could not run the preview: %r" % (exc,))
 
 
 def show_qr(url):

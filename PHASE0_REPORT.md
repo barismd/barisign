@@ -1847,3 +1847,45 @@ AirDrop it"*. What changes is how the UDID enters. The user decides among the th
 recommendation is **1** (SideInstaller as the bootstrapper: it gets the UDID or installs SideStore
 directly, and BariSign handles the signing/refreshing/variants after). This is the point to stop and
 confirm direction before writing more code.
+
+---
+
+# 31. Follow-up: the HTTP hypothesis, and the working in-app share path
+
+The user pointed out two things that had not been tested or settled.
+
+## 31.1 The Profile Service URL was always `http://` — an untested hypothesis
+
+Every failed `Profile Service` run used an **`http://` callback URL**, while the Web Clip that installed
+used an **`https://` URL**. Apple's (archived) OTA guide itself uses `https://profileserver.example.com`.
+It is genuinely plausible that iOS 27 refuses the `Profile Service` payload at install time because its
+callback URL is not HTTPS — which would mean the route is **alive via HTTPS**, and §30's "dead" conclusion
+was premature. The test is the already-built `--https --airdrop` flow, which produces a CA and a profile
+whose callback is `https://<lan-ip>:<port>/<token>/udid`:
+
+```
+python3 -u udid_share.py --https --airdrop
+```
+
+Steps: install and **trust** `BariSign-CA.mobileconfig` (Settings → General → About → Certificate Trust
+Settings), then install `BariSign-UDID.mobileconfig`. If it installs — and especially if the POST then
+arrives — the no-app route is restored, with HTTPS as a hard requirement. **Unverified until that run.**
+
+## 31.2 The in-app share sheet that actually works: `view`
+
+Read the source rather than guessing: a-Shell's `view` is implemented in `a-Shell/SceneDelegate.swift`
+(`func preview(arguments:)`) as **`UIDocumentInteractionController.presentPreview`** — a Quick Look
+preview whose navigation bar carries a **share (action) button**. Unlike `open`, it does not depend on
+the deprecated `keyWindow` (its last `ios_system` change is from 2022). So the reliable in-a-Shell share
+path is:
+
+```
+view /absolute/path/to/BariSign-UDID.mobileconfig
+```
+
+→ tap the share button in the preview → AirDrop. `poc/udid_share.py` now leads with exactly this, and
+keeps `openurl shareddocuments://<dir>` (Files) as the alternative.
+
+Verified facts so far, unchanged: there is **no `share` command** in a-Shell; `open <file>` degrades to
+`openurl` when the path is missing and presents on `keyWindow` otherwise; `view` uses
+`UIDocumentInteractionController`. All from the repositories, 2026-10-14.
