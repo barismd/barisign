@@ -352,9 +352,11 @@ def make_mdm_identity(ca_cert, ca_key, password):
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]),
                            critical=False)
             .sign(ca_key, hashes.SHA256()))
+    # NOTE: `cryptography` can only encrypt a PKCS#12 with PBES2/AES, and iOS has a
+    # long history of refusing those. An UNENCRYPTED archive is the safe choice here:
+    # the profile itself is the transport, and Apple's Password key is optional.
     return pkcs12.serialize_key_and_certificates(
-        b"BariSign", key, cert, [ca_cert],
-        serialization.BestAvailableEncryption(password.encode()))
+        b"BariSign", key, cert, [ca_cert], serialization.NoEncryption())
 
 
 def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity_password=""):
@@ -422,7 +424,7 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity
         "PayloadVersion": 1,
         "PayloadIdentifier": "io.barisign.mdm.profile",
         "PayloadUUID": str(uuid.uuid4()).upper(),
-        "PayloadDisplayName": "BariSign - UDID (one profile)",
+        "PayloadDisplayName": "BariSign - UDID (MDM v2)",
         "PayloadDescription":
             "Temporary. Adds a throwaway CA, reports this device's identifiers once, and adds one removable icon. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
@@ -817,9 +819,14 @@ def main():
     if use_airdrop:
         if use_mdm:
             mdm_path = write_beside_script("BariSign-ONE.mobileconfig", state["mdm_xml"])
-            print(" ONE-PROFILE MODE (MDM experiment): the certificate, the check-in and")
-            print(" a visible marker are all in this single file. If it installs, iOS")
-            print(" checks in on its own - no trust switch, no second profile.")
+            print(" ONE-PROFILE MODE (MDM v2): CA + client identity + MDM check-in +")
+            print(" marker, all in this single file. Look for \"(MDM v2)\" in the profile")
+            print(" name on the device - if it does not say v2, it is an old file.")
+            import plistlib as _pl
+            print(" payloads in this file: %s"
+                  % [x["PayloadType"] for x in _pl.loads(state["mdm_xml"])["PayloadContent"]])
+            print(" If it installs, iOS checks in on its own - no trust switch, no")
+            print(" second profile.")
             offer_share(mdm_path)
             print()
         if use_https and not use_udid_only and not use_mdm:
