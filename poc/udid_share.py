@@ -86,7 +86,7 @@ def udid_profile(callback_url, lifetime=False):
     profile = {
         "PayloadContent": {
             "URL": callback_url,
-            "DeviceAttributes": ["UDID", "PRODUCT", "VERSION"],
+            "DeviceAttributes": ["UDID", "PRODUCT", "VERSION", "SERIAL"],
         },
         "PayloadType": "Profile Service",
         "PayloadVersion": 1,
@@ -97,6 +97,10 @@ def udid_profile(callback_url, lifetime=False):
             "Temporary and unsigned. Sends this device's UDID, model and iOS version to "
             "the BariSign script on your own Wi-Fi. Nothing else. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
+        # short-lived: iOS is asked to remove the profile by itself 10 minutes after
+        # install. It is harmless if ignored (the payload configures nothing), and it
+        # cannot break the install - the earlier install failures were the CA identity.
+        "DurationUntilRemoval": PROFILE_LIFETIME_SECONDS,
     }
     if lifetime:
         profile["PayloadExpirationDate"] = (
@@ -228,7 +232,7 @@ def make_certs(ip):
                  .public_key(leaf_key.public_key())
                  .serial_number(x509.random_serial_number())
                  .not_valid_before(now - datetime.timedelta(minutes=5))
-                 .not_valid_after(now + datetime.timedelta(days=7))
+                 .not_valid_after(now + datetime.timedelta(days=1))   # short-lived
                  .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
                  .add_extension(x509.SubjectKeyIdentifier.from_public_key(
                      leaf_key.public_key()), critical=False)
@@ -656,8 +660,16 @@ def main():
         print(" iOS answered 'MDM certificate is invalid'.)")
         print(" If the target still has an OLDER BariSign CA installed, delete it.")
         print()
-        print(" Order matters: 1) install the CA, 2) switch its full trust ON,")
-        print(" 3) ONLY THEN install the UDID profile.")
+        print(" Do these in order - the order is the whole trick:")
+        print("   1. install  BariSign-CA.mobileconfig")
+        print("   2. Settings > General > About > Certificate Trust Settings")
+        print("      -> switch ON the row named  \"BariSign CA %s\""
+              % state.get("ca_fingerprint", "?"))
+        print("   3. check it: open the tls-check URL below in Safari on Device B")
+        print("      (a padlock + TLS OK = the trust is right)")
+        print("   4. only then install  BariSign-UDID.mobileconfig")
+        print("   5. iOS will say the profile is empty - that is expected, the UDID")
+        print("      request has already been sent")
         if not use_airdrop:
             print(" STEP 1 (CA) URL: %s" % ca_url)
         print()
