@@ -121,7 +121,39 @@ if APPLE_ROOTS:
 signin.PROGRESS = lambda message: print("    ... %s" % message, flush=True)
 
 
+POC_VERSION = "0.6.0"
+
+
+def _signin_integrity():
+    """Catch a stale signin.py on the device instead of failing later at Apple.
+
+    Reproduces the device bug: Apple's reply is AES-CBC with PKCS#7 padding. The
+    padding byte used here is 6, which is NOT XML whitespace, so an implementation
+    that forgets to strip it cannot parse the result.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        plain = b"barisign-x"                       # 10 bytes -> 6 bytes of padding
+        padded = plain + bytes([6]) * 6
+        key, iv = bytes(16), bytes(16)
+        encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+        blob = encryptor.update(padded) + encryptor.finalize()
+        got = signin.aes_cbc_decrypt(key, iv, blob)
+    except Exception as exc:                                  # noqa: BLE001
+        print("signin.py check  : UNKNOWN (%r)" % (exc,))
+        return
+    if got == plain:
+        print("signin.py check  : OK (PKCS#7 padding stripping present)")
+    else:
+        print("signin.py check  : *** STALE *** got %d bytes, expected %d"
+              % (len(got), len(plain)))
+        print("                   -> re-download signin.py: this copy predates the fix")
+
+
 def _tls_diagnostics():
+    print("poc_login.py ver : %s" % POC_VERSION)
+    print("signin.py ver    : %s" % getattr(signin, "VERSION", "(none - stale file?)"))
+    _signin_integrity()
     paths = ssl.get_default_verify_paths()
     print("default CA file : %s" % (paths.cafile or "(none)"))
     print("default CA dir  : %s" % (paths.capath or "(none)"))

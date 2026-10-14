@@ -118,6 +118,10 @@ SRP_g = 2
 
 _TTY = sys.stdout.isatty()
 
+# BariSign: bumped whenever this file changes, so a stale copy on a device is
+# immediately visible instead of producing a mysterious failure.
+VERSION = "0.3.0-unpad"
+
 # CHANGED BY BARISIGN. A no-op hook the front end can replace so the sign-in
 # exchange is never silent. a-Shell gives no output at all between the password
 # prompt and Apple's answer, which is indistinguishable from a hang.

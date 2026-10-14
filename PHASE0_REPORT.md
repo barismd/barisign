@@ -981,7 +981,27 @@ terminal or require restarting a-Shell.
 **Verified in the Codespace under a real PTY:** `Password: *******` on screen and the correct secret
 returned; backspace redraws correctly; the pipe path still returns the line unchanged.
 
-## 21.8 Next action
+## 21.8 Round 8 — the padding fix was never on the device
+
+The user re-ran and got the **byte-identical** failure (`column 2644` for both key candidates), after
+reporting that masking now works (`Password: ********`). Cause: `aes_cbc_decrypt()` lives in
+**`signin.py`**, where the PKCS#7 fix was made — but the instruction for that round only re-downloaded
+`poc_login.py`. A stale `signin.py` therefore reproduced the old bug exactly, which is why the error did
+not change by even one character. **That was an instruction error on our side.**
+
+Two guards added so a stale file can never masquerade as a mystery failure again:
+
+- **Version markers**: `signin.py` carries `VERSION` and `poc_login.py` carries `POC_VERSION`; both are
+  printed by every mode (`--diag`, `--selftest`, `--login`).
+- **Integrity self-check**: at start-up the PoC performs a padded AES-CBC round-trip through
+  `signin.aes_cbc_decrypt()` using a pad byte that is **not** XML whitespace (6). If padding is not
+  stripped it prints `*** STALE ***  got 16 bytes, expected 10  -> re-download signin.py`, which turns
+  exactly this failure mode into a one-line diagnosis.
+
+Verified: the check prints `OK (PKCS#7 padding stripping present)` with the current file, and prints the
+`*** STALE ***` warning when the fix is removed.
+
+## 21.9 Next action
 
 ```
 python3 -u poc_login.py --diag
