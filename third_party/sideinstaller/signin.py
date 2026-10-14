@@ -17,7 +17,13 @@
 #      on top of `cryptography`, because a-Shell has no openssl and this function
 #      is on the sign-in path;
 #    * the now-unused openssl() helper was deleted;
-#    * the file was cut down to the list above.
+#    * the file was cut down to the list above;
+#    * _ctx_for()/APPLE_CA_FILE added: Apple's root CA is trusted for *.apple.com
+#      only, because a-Shell's Python does not carry it and the gsa.apple.com
+#      handshake fails otherwise. Certificate verification is never disabled;
+#    * plist_request() now refuses non-apple.com hosts, so an Apple-bound proof
+#      can never be redirected;
+#    * upstream's unused RELEASE_API constant and download() helper were removed.
 # =============================================================================
 
 
@@ -81,7 +87,8 @@ BUNDLED_ANISETTE = [
 # stop after this many so a bad day doesn't turn into a long wait.
 MAX_ANISETTE_TRIES = 6
 
-RELEASE_API = "https://api.github.com/repos/FrizzleM/SideInstaller/releases"
+# (Upstream also defined a RELEASE_API constant pointing at api.github.com. It is
+#  removed here: this slice never fetches releases, so there is no such call.)
 # Matches the machineName SideInstaller itself sends, so a certificate minted
 # here is the same one the app would look for later.
 MACHINE_NAME = os.environ.get("MACHINE_NAME", "SideInstaller")
@@ -172,6 +179,28 @@ class Fail(Exception):
 
 SSL_CTX = ssl.create_default_context()
 
+# CHANGED BY BARISIGN. Apple's servers chain to Apple's own root CA. The Python
+# inside a-Shell ships its own CA file and does not trust it, so the handshake to
+# gsa.apple.com fails with CERTIFICATE_VERIFY_FAILED. poc_login.py points
+# APPLE_CA_FILE at Apple's public root (shipped in third_party/apple-roots/) and
+# it is added ONLY for apple.com hosts. Verification is never disabled.
+APPLE_CA_FILE = None
+_APPLE_CTX = None
+
+
+def is_apple_host(host):
+    return bool(host) and (host == "apple.com" or host.endswith(".apple.com"))
+
+
+def _ctx_for(host):
+    global _APPLE_CTX
+    if APPLE_CA_FILE and is_apple_host(host):
+        if _APPLE_CTX is None:
+            _APPLE_CTX = ssl.create_default_context()
+            _APPLE_CTX.load_verify_locations(APPLE_CA_FILE)
+        return _APPLE_CTX
+    return SSL_CTX
+
 
 def request(method, url, headers=None, body=None, timeout=60, redirects=5):
     """Return (status, header_dict, body_bytes). Follows redirects."""
@@ -183,7 +212,7 @@ def request(method, url, headers=None, body=None, timeout=60, redirects=5):
         path += "?" + parts.query
 
     if parts.scheme == "https":
-        conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=SSL_CTX)
+        conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=_ctx_for(host))
     else:
         conn = http.client.HTTPConnection(host, port, timeout=timeout)
 
@@ -222,44 +251,7 @@ def request(method, url, headers=None, body=None, timeout=60, redirects=5):
     return status, got, data
 
 
-def download(url, dest, headers=None):
-    """Stream a URL to a file, printing progress. Returns the byte count."""
-    parts = urllib.parse.urlsplit(url)
-    port = parts.port or (443 if parts.scheme == "https" else 80)
-    if parts.scheme == "https":
-        conn = http.client.HTTPSConnection(parts.hostname, port, timeout=120, context=SSL_CTX)
-    else:
-        conn = http.client.HTTPConnection(parts.hostname, port, timeout=120)
-    path = parts.path + ("?" + parts.query if parts.query else "")
-    try:
-        conn.request("GET", path, headers=dict(headers or {}, **{"Host": parts.netloc}))
-        response = conn.getresponse()
-        if response.status in (301, 302, 303, 307, 308):
-            location = response.getheader("Location")
-            response.read()
-            conn.close()
-            return download(urllib.parse.urljoin(url, location), dest, headers)
-        if response.status != 200:
-            raise Fail("Download failed (HTTP %d): %s" % (response.status, url))
-        total = int(response.getheader("Content-Length") or 0)
-        written = 0
-        with open(dest, "wb") as handle:
-            while True:
-                chunk = response.read(65536)
-                if not chunk:
-                    break
-                handle.write(chunk)
-                written += len(chunk)
-                if total and _TTY:
-                    sys.stdout.write("\r    %d%% (%.1f MB)" % (written * 100 // total, written / 1e6))
-                    sys.stdout.flush()
-        if total and _TTY:
-            sys.stdout.write("\r" + " " * 32 + "\r")
-            sys.stdout.flush()
-        return written
-    finally:
-        conn.close()
-
+# (Upstream's download() helper was removed: unused in this slice.)
 
 # ----------------------------------------------------------------------------
 # openssl
@@ -536,7 +528,7 @@ class WebSocket:
         path = (parts.path or "/") + ("?" + parts.query if parts.query else "")
 
         raw = socket.create_connection((parts.hostname, port), timeout=timeout)
-        self.sock = SSL_CTX.wrap_socket(raw, server_hostname=parts.hostname) if secure else raw
+        self.sock = _ctx_for(parts.hostname).wrap_socket(raw, server_hostname=parts.hostname) if secure else raw
 
         nonce = base64.b64encode(secrets.token_bytes(16)).decode()
         handshake = (
@@ -867,6 +859,13 @@ class GrandSlam:
         return self.url_bag[key]
 
     def plist_request(self, url, body, extra_headers=None):
+        # CHANGED BY BARISIGN. Every authenticated request this class makes is
+        # Apple's (sign-in proof, 2FA, anisette provisioning). Refuse anything
+        # that is not an apple.com host, so a spoofed URL bag cannot redirect a
+        # credential-derived proof to a third party.
+        target = urllib.parse.urlsplit(url).hostname or ""
+        if not is_apple_host(target):
+            raise Fail("Refusing to send an authenticated Apple request to %r." % target)
         headers = self.base_headers()
         headers.update(extra_headers or {})
         payload = plistlib.dumps(body, fmt=plistlib.FMT_XML)

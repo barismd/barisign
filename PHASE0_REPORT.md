@@ -497,3 +497,97 @@ nothing is. Run it **with LocalDevVPN off and again with it on**, and send both 
 1. Flip the repository to public (step 1 above).
 2. Run PoC-D in a-Shell (§14) and send the whole screen.
 3. Report the §15 port-scan output (VPN off and on).
+
+---
+
+# 17. Round 2 — device results (iPad15,7, a-Shell) and fixes
+
+iPad selftest: checks **1–4 PASS**, check **5 FAILED** with `PermissionError(1, 'Operation not
+permitted')`, check **6 FAILED** with `CERTIFICATE_VERIFY_FAILED` on `gsa.apple.com`. All four
+follow-up items were fixed without running anything on the device.
+
+## 17.1 Writable paths (a-Shell only writes under `~/Documents`)
+
+Confirmed on-device: `mkdir -p ~/barisign` is refused because the container home is read-only.
+Fix: every file the PoC writes now lives under **`~/Documents/barisign`**
+(`POC_HOME` = `~/Documents/barisign`, state at `~/Documents/barisign/state/anisette.json`).
+`_ensure_dir()` prints the exact path and a full traceback if creation fails, and the top-level
+handler catches `PermissionError` anywhere and prints the offending path plus a traceback.
+
+## 17.2 Apple trust (fixes check 6)
+
+Root cause confirmed: a-Shell's Python carries its own CA list, which does not include Apple's root
+(Apple's own devices do trust it, but Python here does not).
+
+Fix: **`third_party/apple-roots/apple-roots.pem`** is shipped and used **only for `*.apple.com`**
+hosts, via `signin._ctx_for(host)`; the default context is untouched for every other host.
+**Verification is never disabled.**
+
+| | |
+|---|---|
+| Source URL | `https://www.apple.com/appleca/AppleIncRootCertificate.cer` (from <https://www.apple.com/certificateauthority/>) |
+| Subject | `C=US, O=Apple Inc., OU=Apple Certification Authority, CN=Apple Root CA` |
+| SHA-256 | `B0:B1:73:0E:CB:C7:FF:45:05:14:2C:49:F1:29:5E:6E:DA:6B:CA:ED:7E:2C:68:C5:BE:91:B5:A1:10:01:F0:24` |
+| Apple's published value | same, at <https://support.apple.com/en-us/121672>, row "Apple Root CA" |
+
+The fingerprint is **pinned in `poc_login.py`** (`APPLE_ROOT_FINGERPRINTS`); check 6 hashes the file,
+refuses to trust it unless it matches, then handshakes with the Apple context and asserts the Apple
+context was really used. Only the root is needed — the server sends the intermediate
+"Apple Server Authentication CA" itself.
+
+## 17.3 Why the script mentioned `api.github.com/repos/FrizzleM/SideInstaller/releases`
+
+It is upstream's `RELEASE_API` constant, part of SideInstaller's own "download my latest release"
+flow. **The function that used it (`latest_release_ipa`) was never part of our slice**, so it was a
+dead constant, not a call. It has been **removed**, along with upstream's unused `download()` helper
+(both are now noted as removed in `third_party/sideinstaller/signin.py`). The only remaining
+non-Apple network target in the login path is the anisette server.
+
+## 17.4 Where the Apple ID password can go — audit
+
+| Step | Where the password/time is | What leaves the device |
+|---|---|---|
+| `poc_login.py` | `getpass.getpass()` — no echo, one local variable | nothing |
+| `AppleAccount.login(password, ask_code)` | passes it down as an argument | nothing |
+| `srp_password_key(password, salt, iters, protocol)` | `hashlib.sha256(password.encode())`, then PBKDF2-HMAC-SHA256 | nothing (pure local compute) |
+| `SRPClient.process(email, password_key, salt, B)` | computes the proof | nothing |
+| `plist_request(gs.url("gsService"), …)` | sends `M1` (proof), `A2k` (public ephemeral), `u` (email) | the **proof**, never the password |
+| 2FA (if Apple asks) | `ask_code()` reads the code you type | the code to `gsa.apple.com` only |
+| after login | `password = None` | — |
+
+Guarantee added: **`GrandSlam.plist_request()` now refuses any URL that is not an `apple.com` host**,
+so even a tampered URL bag cannot redirect the proof or a 2FA code to a third party. Verified locally:
+`plist_request("https://evil.example.com/steal", …)` → *"Refusing to send an authenticated Apple
+request to 'evil.example.com'."*
+
+Hosts actually contacted by the login PoC: the anisette server (identity headers only — no Apple ID,
+no password, no token) and `gsa.apple.com` (SRP proof and, if needed, the 2FA reply).
+`appleid.apple.com` appears only inside a help message, and `gsa.apple.com/auth/verify/phone/securitycode`
+is used only if you choose SMS 2FA.
+
+## 17.5 Verification of the fixes (run in the Codespace, Linux)
+
+- `python3 poc/poc_login.py --selftest` → **PASS** on all six checks, with the shipped Apple root
+  alone (no `SSL_CERT_FILE` workaround), reporting the pinned fingerprint.
+- The flat on-device layout (three files in one folder) was tested: `apple-roots.pem` is found next
+  to the script and the CLI runs.
+- Host-guard test above passes.
+
+## 17.6 Updated on-device commands
+
+```
+mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py -o signin.py
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py -o poc_login.py
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/apple-roots/apple-roots.pem -o apple-roots.pem
+```
+```
+python3 poc_login.py --selftest
+```
+Then, only if all six PASS: `python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID`

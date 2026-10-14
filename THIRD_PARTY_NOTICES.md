@@ -37,6 +37,15 @@ copyright notice travel with it, the changes we made are listed both in that fol
 the file header, we credit "SideInstaller by FrizzleM" with a link, and **we redistribute no
 SideInstaller binaries or IPAs** (we don't host any IPAs at all).
 
+## Certificates
+
+### Apple Root CA — `third_party/apple-roots/`
+
+- Source: `https://www.apple.com/appleca/AppleIncRootCertificate.cer` (Apple PKI page)
+- SHA-256: `B0:B1:73:0E:CB:C7:FF:45:05:14:2C:49:F1:29:5E:6E:DA:6B:CA:ED:7E:2C:68:C5:BE:91:B5:A1:10:01:F0:24`
+- Apple publishes this fingerprint at <https://support.apple.com/en-us/121672>; it was verified to
+  match. Public trust anchor, redistributable. Used only for `*.apple.com` hosts.
+
 ## Referenced projects (not copied)
 
 Used for protocol research, verification, or as runtime dependencies. Their releases are consumed

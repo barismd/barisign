@@ -5,13 +5,17 @@
 #  third_party/sideinstaller/signin.py, which is under a different licence.
 # =============================================================================
 #
-#  RUN IT (on the iPhone, in a-Shell):
+#  RUN IT (on the iPad/iPhone, in a-Shell):
 #
-#      mkdir -p ~/barisign && cd ~/barisign
-#      curl -sL <REPO>/third_party/sideinstaller/signin.py -o signin.py
-#      curl -sL <REPO>/poc/poc_login.py -o poc_login.py
+#      mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
+#      curl -sL <REPO>/third_party/sideinstaller/signin.py   -o signin.py
+#      curl -sL <REPO>/poc/poc_login.py                      -o poc_login.py
+#      curl -sL <REPO>/third_party/apple-roots/apple-roots.pem -o apple-roots.pem
 #      python3 poc_login.py --selftest
 #      python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID
+#
+#  NOTE: a-Shell can only write inside ~/Documents. Every file this PoC writes
+#  (anisette identity, caches) goes under ~/Documents/barisign. Nothing else.
 #
 #  WHAT IT DOES
 #  -----------
@@ -35,9 +39,10 @@ import socket
 import ssl
 import sys
 import time
+import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# Works both when the two files sit side by side (the on-device layout) and when
+# Works both when the files sit side by side (the on-device layout) and when
 # this is run from a checkout of the repository.
 for _candidate in (os.path.join(_HERE, "third_party", "sideinstaller"),
                    os.path.join(_HERE, "..", "third_party", "sideinstaller")):
@@ -47,15 +52,59 @@ for _candidate in (os.path.join(_HERE, "third_party", "sideinstaller"),
 sys.path.insert(0, _HERE)
 
 try:
+    import signin
     from signin import (Fail, SRP_N, SRP_g, AppleAccount, aes_cbc_decrypt,
                         ask, connect_anisette, request)
 except ImportError as exc:                                    # noqa: PERF203
     print("Could not import signin.py: %s" % exc)
-    print("Download it next to this file:")
+    print("Download it next to this file (from the repository):")
     print("  curl -sL <REPO>/third_party/sideinstaller/signin.py -o signin.py")
     sys.exit(2)
 
-POC_STATE = os.path.join(os.path.expanduser("~"), ".barisign-poc")
+# a-Shell only allows writes under ~/Documents; the rest of the home directory
+# is read-only. Everything we create lives here.
+POC_HOME = os.path.join(os.path.expanduser("~"), "Documents", "barisign")
+POC_STATE = os.path.join(POC_HOME, "state")
+
+# Apple's public root CA, as published (see third_party/apple-roots/README.md).
+# Pin the SHA-256 so a swapped file cannot be trusted silently.
+APPLE_ROOT_FINGERPRINTS = {
+    "b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024":
+        "Apple Root CA",
+}
+
+
+def _find_apple_roots():
+    for base in (os.path.join(_HERE, "..", "third_party", "apple-roots"),
+                 os.path.join(_HERE, "third_party", "apple-roots"),
+                 os.path.join(POC_HOME, "apple-roots"),
+                 _HERE):
+        candidate = os.path.join(base, "apple-roots.pem")
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return None
+
+
+APPLE_ROOTS = _find_apple_roots()
+if APPLE_ROOTS:
+    signin.APPLE_CA_FILE = APPLE_ROOTS
+
+
+def _ensure_dir(path):
+    """a-Shell can only write inside ~/Documents. Say so loudly when it cannot."""
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        print()
+        print("COULD NOT CREATE DIRECTORY: %s" % path)
+        print("a-Shell only permits writes inside ~/Documents.")
+        traceback.print_exc()
+        raise SystemExit(2)
+    return path
+
+
+def _state_path():
+    return os.path.join(_ensure_dir(POC_STATE), "anisette.json")
 
 
 def _hr(label):
@@ -127,9 +176,9 @@ def _selftest():
     _hr("5/6 anisette server (no Apple ID involved)")
     print("Exercises the server list, provisioning and header minting.")
     print("This is the step most likely to be slow or flaky.")
+    print("State directory: %s" % POC_STATE)
     try:
-        os.makedirs(POC_STATE, exist_ok=True)
-        anisette, _gs = connect_anisette("", os.path.join(POC_STATE, "anisette.json"))
+        anisette, _gs = connect_anisette("", _state_path())
         headers = anisette.headers()
         print("anisette server : %s (v%s)" % (anisette.url, anisette.version))
         print("headers obtained: %s" % ", ".join(sorted(headers)))
@@ -137,17 +186,42 @@ def _selftest():
     except Exception as exc:                                  # noqa: BLE001
         failures.append("anisette: %r" % (exc,))
         print("SELFTEST 5/6: FAIL -> %r" % (exc,))
+        traceback.print_exc()
 
-    _hr("6/6 Apple GrandSlam TLS trust (gsa.apple.com)")
-    print("Sign-in starts with a TLS connection to gsa.apple.com. Apple's chain is")
-    print("rooted in Apple's own CA, which Linux often does not trust but Apple")
-    print("devices do. This is a plain handshake, so it isolates that one question.")
+    _hr("6/6 Apple trust (gsa.apple.com)")
+    print("a-Shell's Python does not ship Apple's root CA, so the handshake to")
+    print("gsa.apple.com fails unless the shipped root is trusted. We verify that")
+    print("file's SHA-256 against Apple's published fingerprint first.")
+    print("trust file : %s" % (APPLE_ROOTS or "NOT FOUND"))
     try:
-        context = ssl.create_default_context()
+        if not APPLE_ROOTS:
+            raise Fail("apple-roots.pem not found next to the script")
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+
+        with open(APPLE_ROOTS, "rb") as handle:
+            pem = handle.read()
+        seen = []
+        for block in re.findall(rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
+                                pem, re.DOTALL):
+            cert = x509.load_pem_x509_certificate(block)
+            fingerprint = cert.fingerprint(hashes.SHA256()).hex()
+            seen.append(fingerprint)
+            label = APPLE_ROOT_FINGERPRINTS.get(fingerprint)
+            if label:
+                pretty = ":".join(fingerprint[i:i + 2] for i in range(0, 64, 2)).upper()
+                print("pinned root verified: %s" % label)
+                print("  SHA-256: %s" % pretty)
+        if not set(seen) & set(APPLE_ROOT_FINGERPRINTS):
+            raise Fail("apple-roots.pem holds no pinned Apple root; found %d cert(s)" % len(seen))
+
+        context = signin._ctx_for("gsa.apple.com")
+        if context is signin.SSL_CTX:
+            raise Fail("the Apple-only trust context was not used")
         raw = socket.create_connection(("gsa.apple.com", 443), timeout=20)
         try:
             tls = context.wrap_socket(raw, server_hostname="gsa.apple.com")
-            print("TLS handshake OK (%s)" % tls.version())
+            print("TLS handshake OK (%s) using the Apple-root context" % tls.version())
             tls.close()
         finally:
             raw.close()
@@ -155,14 +229,8 @@ def _selftest():
     except Exception as exc:                                  # noqa: BLE001
         text = str(exc)
         print("SELFTEST 6/6: FAIL -> %s" % text[:200])
-        if "certificate verify failed" in text:
-            print()
-            print("DIAGNOSIS: this Python does not trust the chain gsa.apple.com sends.")
-            print("This is EXPECTED on Linux/desktop and is NOT a bug there.")
-            print("If it happens ON THE IPHONE it is a real blocker, and the fix is to")
-            print("ship Apple's public root CA in a trust file next to the script.")
-            print("Please report this line verbatim.")
-        failures.append("Apple GrandSlam TLS trust: %s" % text[:120])
+        traceback.print_exc()
+        failures.append("Apple trust: %s" % text[:120])
 
     _hr("result")
     if failures:
@@ -177,12 +245,12 @@ def _selftest():
 
 def _login(email, server):
     _hr("sign-in")
-    os.makedirs(POC_STATE, exist_ok=True)
+    print("This PoC only writes inside: %s" % POC_STATE)
     print("Apple ID : %s" % email)
     print("SRP-6a: the password becomes a proof; it is never sent and never saved.")
     print("Use a THROWAWAY account that can still sign in.")
     print()
-    anisette, gs = connect_anisette(server or "", os.path.join(POC_STATE, "anisette.json"))
+    anisette, gs = connect_anisette(server or "", _state_path())
     account = AppleAccount(email, gs, anisette)
 
     password = getpass.getpass("Password (not shown, not stored): ")
@@ -255,6 +323,13 @@ if __name__ == "__main__":
         print()
         print("FAILED: %s" % exc)
         sys.exit(1)
+    except PermissionError as exc:
+        print()
+        print("PERMISSION ERROR — a-Shell refused to write:")
+        print("  path: %s" % (exc.filename or "(not reported)"))
+        print("a-Shell only permits writes inside ~/Documents/barisign.")
+        traceback.print_exc()
+        sys.exit(3)
     except KeyboardInterrupt:
         print()
         sys.exit(130)
