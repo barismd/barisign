@@ -30,7 +30,12 @@ cd ~/Documents/barisign
 sh bin/update          # later: fetch the newest version and check it compiles
 ```
 
-Four wrappers do the work: `sh bin/udid`, `sh bin/login`, `sh bin/portal`, `sh bin/update`.
+Then one command drives every stage, passing each stage's result to the next:
+
+```
+sh bin/barisign          # guided: check -> pick a variant -> UDID -> Apple -> portal
+sh bin/barisign status   # what is already known
+```
 
 ---
 
@@ -111,7 +116,7 @@ and you are shown which version you are about to get. `variants.json` is the mac
 | **`GUIDE.md`** | the step-by-step guide for what works today |
 | `docs/PHASE0_REPORT.md` | all research, device results, dead ends and why, with dates |
 | `variants.json` | the variant registry and the runtime resolution rules |
-| `bin/` | the four one-word commands: `update`, `udid`, `login`, `portal` |
+| `bin/barisign` | the single entry point for every stage |
 | `poc/` | the scripts behind them: `udid_share.py`, `poc_login.py`, `poc_portal.py` |
 | `THIRD_PARTY_NOTICES.md` | licences and attribution |
 | `AGENTS.md` | the working rules for this project |

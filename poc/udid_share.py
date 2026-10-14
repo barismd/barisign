@@ -60,6 +60,10 @@ CA_KEY_NAME = "barisign-ca.key"
 state = {"claimed": False, "result": None}
 posted = threading.Event()
 
+# Set when a UDID is received, so a caller (poc/barisign.py) can read it without
+# scraping the printed output.
+LAST_UDID = None
+
 
 # ---------------------------------------------------------------------------
 # The profiles we hand over
@@ -499,6 +503,8 @@ def main():
         return 3
 
     print()
+    global LAST_UDID
+    LAST_UDID = result["udid"]
     print("RESULT: UDID received:")
     print()
     print("    %s" % result["udid"])

@@ -27,14 +27,26 @@ From then on, one command fetches the newest version and checks that everything 
 sh bin/update
 ```
 
-The four commands used below are tiny wrappers in `bin/`:
+### One command for everything
 
-| Command | What it runs |
-|---|---|
-| `sh bin/update` | `git pull` + compile check |
-| `sh bin/udid` | `poc/udid_share.py` — read the UDID |
-| `sh bin/login` | `poc/poc_login.py` — Apple sign-in |
-| `sh bin/portal` | `poc/poc_portal.py` — developer portal (stage 3) |
+`bin/barisign` drives every stage, and the stages **share what they learn** (the UDID, your Apple ID, the
+team, the certificate, the profile) through a small state file, so nothing is ever retyped:
+
+```
+sh bin/barisign            # guided run: check -> variant -> UDID -> Apple -> portal
+sh bin/barisign check      # runtime + crypto + anisette + Apple TLS, nothing else
+sh bin/barisign udid       # stage 1 — read another device's UDID
+sh bin/barisign login      # stage 2 — sign in to Apple
+sh bin/barisign portal     # stage 3 — register the UDID + certificate + profile
+sh bin/barisign status     # what is already known
+sh bin/barisign forget     # clear the saved state (the local CA is kept)
+sh bin/update              # git pull + compile check
+```
+
+The state lives in `state/barisign.json` next to the scripts, and never holds a password.
+
+The individual scripts are still there (`poc/udid_share.py`, `poc/poc_login.py`, `poc/poc_portal.py`) and
+`bin/udid`, `bin/login`, `bin/portal` run them directly if you prefer.
 
 > **Shortcuts for your fingers (optional):** a-Shell runs `~/.profile` in every new window, so aliases
 > can live there. First check it is writable: `touch ~/.profile && echo writable`. If it says writable,
@@ -52,7 +64,7 @@ exactly that from your own iPad over your own Wi-Fi.
 
 ```
 cd ~/Documents/barisign
-sh bin/udid
+sh bin/barisign udid
 ```
 
 It writes two files and opens a preview of each. **Do these in order — the order is the whole trick:**
@@ -74,7 +86,7 @@ The whole exchange stays on your Wi-Fi — no server, no DNS, no account, no cer
 The CA only has to be installed and trusted **once per device**:
 
 ```
-sh bin/udid --udid-only
+sh bin/barisign udid --udid-only
 ```
 
 That shares **only** `BariSign-UDID.mobileconfig`. If it fails, run the plain command once to reinstall
@@ -90,8 +102,8 @@ On the target: **Settings → General → VPN & Device Management** → remove e
 
 ```
 cd ~/Documents/barisign
-sh bin/login --selftest            # checks the runtime, crypto, anisette and Apple TLS
-sh bin/login --login YOUR-APPLE-ID
+sh bin/barisign check                 # runtime, crypto, anisette, Apple TLS
+sh bin/barisign login                 # asks for the Apple ID and password
 ```
 
 It stops after sign-in: no device registered, nothing installed. The password is never transmitted
@@ -107,7 +119,7 @@ without asking.
 
 ```
 cd ~/Documents/barisign
-sh bin/portal --email YOUR-APPLE-ID --udid <UDID from step 1>
+sh bin/barisign portal        # uses the UDID and Apple ID saved by the earlier stages
 ```
 
 A first run with the defaults is a safe smoke test: it registers the UDID and uses the throwaway
@@ -115,8 +127,7 @@ identifier `com.barisign.smoke`. For a real variant, pass the identifier it need
 for example:
 
 ```
-sh bin/portal --email YOU@example.com --udid <UDID> \
-    --bundle-id com.SideStore.SideStore --device-name "My iPhone"
+sh bin/barisign portal --bundle-id com.SideStore.SideStore
 ```
 
 You will be asked for your Apple ID password again (nothing is kept between runs). The script prints the
@@ -174,7 +185,7 @@ Once an IPA is validly signed for the target's UDID:
 | `RESULT: UDID received` + the model you expected | ✅ step 1 done |
 | `no UDID arrived within 300 seconds` | the profile was not installed, or the CA trust switch is off — check the `…/tls-check` padlock |
 | *"MDM certificate is invalid"* | the CA's trust switch is OFF, or an **older** BariSign CA is installed — delete it and install the current one |
-| the profile screen never appears | you are not in Safari, or the preview was closed — `sh bin/udid --view BariSign-UDID.mobileconfig` |
+| the profile screen never appears | you are not in Safari, or the preview was closed — `python3 poc/udid_share.py --view BariSign-UDID.mobileconfig` |
 | iOS says the profile is **empty** | expected — the UDID was already sent |
 | portal: *"no developer team"* | accept the free developer agreement once at `developer.apple.com` in Safari |
 | portal: error **7460** | the account is at its certificate limit (free accounts get two) — the script asks before revoking |
