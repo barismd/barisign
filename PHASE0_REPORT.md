@@ -2551,3 +2551,50 @@ UDID profile, and the CA stays the same across runs.
 | 5. AirDrop install of a signed IPA | ✅ works on device |
 | 3. Register UDID + App ID + certificate + profile | 🚧 to build |
 | 4. **Mach-O + CMS signer** | 🚧 to build — the last substantial piece |
+
+---
+
+# 45. "CA + UDID in one profile" is impossible — two independent Apple rules
+
+The user asked again for the certificate and the request in a single profile. It cannot be done, and the
+two reasons are independent of each other and of our code:
+
+1. **Structure.** A `Profile Service` profile has its **top-level** `PayloadType` set to the literal string
+   `Profile Service` and its `PayloadContent` as a **dictionary** (`URL` + `DeviceAttributes`) — Apple's
+   archived guide: *"The payload type must not be changed; the phone expects to see the literal string
+   'Profile Service'."* A normal Configuration profile carries an **array** of payloads. We tested nesting
+   the request inside that array: **iOS displayed the CA and reported the request as "unknown data"**.
+   *(the `--combined` flag was removed after that test.)*
+2. **Trust.** The CA is only trusted after the user switches it on in
+   **Settings → General → About → Certificate Trust Settings**, and that switch only exists **after** the
+   CA profile is installed. The UDID request is made **while** the profile is being evaluated, so a single
+   install can never have the certificate trusted in time. Device-confirmed: without that toggle it fails,
+   with it it works.
+
+So the honest answer is: **two installs the first time, one profile every time after.** Anything claiming
+otherwise either uses a **public** certificate (a third party sees the UDID, or DNS is needed) or does not
+actually work.
+
+## 45.1 What was added anyway, because it is genuinely useful
+
+- **Short-lived server certificate, long-lived CA** — the standard split, and it answers *"is it because
+  the certificates expire?"*: the CA stays 2 years (so the trust is done **once**), while the leaf is now
+  **1 day** and re-issued from that same CA on every run. Nothing about expiry was ever the problem.
+- **`DurationUntilRemoval: 600`** on the UDID profile: iOS is asked to delete the profile by itself ten
+  minutes after install. It is safe to include now — the earlier install failures were the CA identity, not
+  these keys (that was the wrong diagnosis at the time).
+- **`SERIAL`** added to `DeviceAttributes`, so the model/version confirmation has more to match on.
+- The output now prints a **numbered 1–5 checklist** with the trust step in the middle, because the order
+  is the whole trick.
+
+## 45.2 If one profile with no trust step is the goal, it is a different trade
+
+| | own CA (current) | public certificate |
+|---|---|---|
+| Profiles on a fresh device | **2** (once) | **1** |
+| Trust toggle | **once** | none |
+| Who sees the UDID | **nobody but the two devices** | the endpoint that serves the certificate (Worker / tunnel), or a DNS provider in the DuckDNS case |
+| Verdict | verified working | works, but pays with privacy or setup |
+
+The user's goals — one profile, no trust step, no third party — cannot all hold at the same time. That is
+Apple's design, and it is now confirmed by both documentation and device tests.
