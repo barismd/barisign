@@ -1665,3 +1665,53 @@ was updated to match.
    (does iOS 27 still send the UDID at all). Keep this run simple; do not mix it with the CA steps.
 2. **Then, if it worked, with HTTPS**: `python3 -u udid_share.py --https` — same test, but the CA must
    be installed and trusted on the target first, so allow more taps.
+
+---
+
+# 27. Device report: profile refused — diagnosis, and the a-Shell share sheet
+
+Device B answered **"Profil yüklenemedi, bilinmeyen bir hata oluştu"** (profile could not be installed,
+an unknown error occurred) for the AirDropped `.mobileconfig`. Two things came out of it.
+
+## 27.1 The share sheet does NOT require leaving a-Shell
+
+The user asked why the Files app was needed at all. It is not: a-Shell ships an **`open` command that
+presents the iOS share sheet for a file** (verified — `Resources/bin/open` exists in `holzschu/a-shell`,
+and the community guide documents it as *"Use `open <file>` to share a file with other apps"*, alongside
+`view`, `play` and `internalbrowser`). So:
+
+```
+open BariSign-UDID.mobileconfig
+```
+
+opens the share sheet in place, and AirDrop is two taps from there. `poc/udid_share.py --airdrop` now
+invokes it itself through `os.system` (a-Shell runs commands in-process, and `os.system` reaches them),
+printing the same command as a fallback. The Files-app detour is gone from the test steps.
+
+Also from Apple's own documentation: on **iOS 26.2 and later**, AirDropping to a device whose owner is
+not in your contacts requires an **AirDrop code** — relevant for the two-different-Apple-IDs case.
+
+## 27.2 The profile was refused — isolating the cause
+
+The likely culprit is ours: the first version added **`DurationUntilRemoval`** and
+**`PayloadExpirationDate`**. Apple's reference says `PayloadExpirationDate` *"is only used if the profile
+is delivered via over-the-air profile delivery"*, and `DurationUntilRemoval` comes from the archived OTA
+enrollment flow — neither belongs in an initial, manually installed profile as confidently as we assumed.
+A profile iOS rejects is worse than a leftover one, so **both keys are now OFF by default**
+(`--lifetime` brings them back).
+
+Because a refusal is a dead end for diagnosis, `--diag-profiles` now writes three throwaway profiles that
+pin the layer:
+
+| File | What it proves if it fails |
+|---|---|
+| `barsign-test1-empty.mobileconfig` (installs nothing) | unsigned profiles cannot be installed on the device at all, or the delivery method is the problem |
+| `barsign-test2-profservice.mobileconfig` (only Apple's documented keys) | **iOS 27 rejects the `Profile Service` payload** → the whole no-app route is dead |
+| `barsign-test3-profservice-lifetime.mobileconfig` (documented keys + the two lifetime keys) | the two lifetime keys are what iOS refuses — the most likely single answer |
+
+They carry an unroutable placeholder callback (`192.0.2.1`), so they are installation tests only. The
+user installs them in order and reports which fail; then we either fix the profile or retire the route and
+move to the Settings-based pairing plan in §22.3.
+
+**Not yet known:** which of the three actually fails. Nothing in this section is confirmed until the user
+reports back.
