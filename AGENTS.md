@@ -5,6 +5,13 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 
 ## Confirmed decisions (user)
 
+- **Audience = everyone, no computer.** Users are expected to sign in with their **main Apple ID**
+  (2FA supported); the README must say plainly why that is safe.
+- **Two-device flow is the headline UX:** Device A signs and **AirDrops**; Device B receives and gets
+  SideStore. Single-device (AirDrop/Files to self) is also supported.
+- **Open item:** registering a *second* device's UDID with no computer is **unverified** on iOS 27.
+  Must stay called out in the README until resolved.
+
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
 - **AirDrop is the primary install route.** Private-HTTPS `itms-services` is a documented fallback only;
   loopback `itms-services` is rejected (see `PHASE0_REPORT.md` §5).

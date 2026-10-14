@@ -24,6 +24,8 @@
 #    * plist_request() now refuses non-apple.com hosts, so an Apple-bound proof
 #      can never be redirected;
 #    * upstream's unused RELEASE_API constant and download() helper were removed;
+#    * GrandSlam.url() validates that every URL taken from Apple's URL bag is an
+#      apple.com host, so a tampered bag cannot redirect the proof or a 2FA code;
 #    * set_ca_bundle() added: a-Shell's Python has an EMPTY trust store, so a CA
 #      bundle must be loaded for every host or all https:// fails.
 # =============================================================================
@@ -879,7 +881,16 @@ class GrandSlam:
     def url(self, key):
         if key not in self.url_bag:
             raise Fail("Apple's URL bag has no '%s' entry." % key)
-        return self.url_bag[key]
+        value = self.url_bag[key]
+        # CHANGED BY BARISIGN. Every URL here comes from Apple's own bag and
+        # carries an authenticated request (the SRP proof, the 2FA code, the
+        # identity token). Validate it at the single point where it is produced,
+        # so a tampered bag cannot point one of them at a third party.
+        host = urllib.parse.urlsplit(value).hostname or ""
+        if not is_apple_host(host):
+            raise Fail("Apple's URL bag pointed '%s' at %r, which is not an "
+                       "apple.com host. Refusing." % (key, host))
+        return value
 
     def plist_request(self, url, body, extra_headers=None):
         # CHANGED BY BARISIGN. Every authenticated request this class makes is

@@ -738,3 +738,67 @@ curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.p
 ```
 python3 -u poc_login.py --login YOUR-APPLE-ID
 ```
+
+---
+
+# 20. Round 5 — 2FA answer, URL-bag hardening, README rewrite
+
+## 20.1 Is 2FA supported? YES
+
+Verified by reading the vendored sign-in code. `AppleAccount.login()` loops over the sign-in states
+and handles both Apple flows:
+
+| Flow | What the code does |
+|---|---|
+| Trusted device | `GET gs.url("trustedDeviceSecondaryAuth")` to push a code (or Apple already pushed it, reported in `sm`), then prompts for the code and `GET gs.url("validateCode")` with a `security-code` header |
+| SMS | `GET gs.url("secondaryAuth")`, then `POST https://gsa.apple.com/auth/verify/phone/securitycode` |
+
+The sign-in is retried (up to 10 times) until Apple settles, so a wrong code can be re-entered.
+**Status: implemented and reviewed, but not yet exercised on a device — untested.**
+
+## 20.2 Hardening added: Apple's URL bag is now validated
+
+All authenticated requests take their URL from Apple's own URL bag, which is a trust boundary. Every
+one of the SRP proof, the 2FA code and the identity token is bound for an Apple host, so
+`GrandSlam.url()` now **refuses any bag entry that is not an `apple.com` host**. This covers
+`gsService`, `validateCode`, `trustedDeviceSecondaryAuth`, `secondaryAuth`, `midStartProvisioning`
+and `midFinishProvisioning` in a single place. Verified: a bag entry pointing `gsService` at
+`evil.example.com` is rejected with a clear message.
+
+## 20.3 Free Apple ID limits — now verified, not remembered
+
+Taken from SideStore's own FAQ (<https://docs.sidestore.io/docs/faq>):
+
+- a free Apple Account can have **3 apps installed at a time, including SideStore itself**;
+- there is a **10 App ID limit**;
+- a paid ($99/year) account removes the 3-app limit and extends the expiry to a year.
+
+## 20.4 README rewritten
+
+`README.md` is now written for a general audience and covers:
+
+- the **two-device flow** (Device A signs and AirDrops → Device B receives and installs) with a
+  diagram and step-by-step instructions, plus the single-device option;
+- **why using a main Apple ID is safe**: SRP-6a (the password is never transmitted, not even to
+  Apple), the anisette server sees only a random identifier, nothing sensitive is written to disk, no
+  third-party signing service, TLS verification never disabled, no telemetry, and the **complete list
+  of hosts contacted**;
+- 2FA support (§20.1);
+- the verified free-account limits (§20.3);
+- the honest **registration caveat**: a second device's UDID needs registering, and doing that without
+  a computer is **unverified** on iOS 27;
+- the licence reality (non-commercial parts).
+
+## 20.5 Next action
+
+Re-run the sign-in PoC with a 2FA account; the code should now prompt for the verification code:
+
+```
+cd ~/Documents/barisign
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py -o signin.py
+```
+```
+python3 -u poc_login.py --login YOUR-APPLE-ID
+```
