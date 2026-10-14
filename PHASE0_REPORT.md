@@ -1889,3 +1889,44 @@ keeps `openurl shareddocuments://<dir>` (Files) as the alternative.
 Verified facts so far, unchanged: there is **no `share` command** in a-Shell; `open <file>` degrades to
 `openurl` when the path is missing and presents on `keyWindow` otherwise; `view` uses
 `UIDocumentInteractionController`. All from the repositories, 2026-10-14.
+
+---
+
+# 32. The CA profile installed — and a free test that needs no certificate
+
+Device result: **`BariSign-CA.mobileconfig` installed on the target**, so profiles and AirDrop delivery
+work end to end. Nothing was POSTed, which is expected: the CA payload contains no callback URL, and the
+`Profile Service` profile was never installed.
+
+## 32.1 Why the CA and the UDID request cannot be one profile
+
+It is a format constraint, not a choice. The two live in **different top-level structures**:
+
+- a `Configuration` profile has top-level `PayloadType = "Configuration"` and `PayloadContent` as an
+  **array** of payloads (this is where a `com.apple.security.root` certificate goes);
+- the `Profile Service` request has top-level `PayloadType = "Profile Service"` and `PayloadContent` as a
+  **dictionary** (`URL` + `DeviceAttributes`) — Apple's archived guide: *"The payload type must not be
+  changed; the phone expects to see the literal string 'Profile Service'."*
+
+So a CA and a Profile Service request cannot be merged into one file. Installations are one profile at a
+time anyway (iOS installs them individually), so the minimum for the HTTPS route is genuinely **two
+installs**: trust the CA, then install the request.
+
+Ways to soften that: AirDrop **both files in one selection** (Files → select both → Share → AirDrop), and
+the two Install taps are unavoidable. Or, once the CA is trusted, serve the request over the now-trusted
+HTTPS and hand the target a **link/QR** instead of a second file — one download fewer, not one install
+fewer.
+
+## 32.2 A decisive test that needs NO certificate at all
+
+The confound in §30/§31 was that the Web Clip had an `https://` URL and the Profile Service profiles had
+`http://`. Added **`barsign-test4-profservice-https.mobileconfig`**: the *same* Profile Service payload
+with an ordinary `https://example.com/udid` callback. No CA, no trust step.
+
+- **It installs** → the payload type is supported, and `http://` was the reason iOS refused. The route is
+  alive; HTTPS (and therefore the temporary CA) becomes mandatory, and the minimum is the two installs
+  above.
+- **It is still refused** → the `Profile Service` payload itself is retired on iOS 27, HTTPS or not, and
+  §30's conclusion stands.
+
+This is a two-minute test and it separates the two explanations properly. **Unverified until it is run.**

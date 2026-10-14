@@ -56,6 +56,7 @@ Long-press each file → **Share → AirDrop** → Device B, **in this order**:
 |---|---|---|
 | `barsign-test1-webclip.mobileconfig` | a **Web Clip** (one removable Home Screen icon) | **the control.** If this installs, unsigned profiles work and any later failure is about the payload type. If it does **not** install, the problem is profile installation or the AirDrop delivery, not our payload |
 | `barsign-test2-profservice.mobileconfig` | `Profile Service`, **only** Apple's documented keys | **iOS 27 rejects the `Profile Service` payload** → this whole no-app route is dead |
+| `barsign-test4-profservice-https.mobileconfig` | the **same** payload with an ordinary `https://` callback — **no certificate, no trust step** | **the decisive one.** Installs ⇒ the payload type is fine and `http://` was the problem; still refused ⇒ the payload is retired on iOS 27 |
 | `barsign-test3-profservice-lifetime.mobileconfig` | the same plus the two lifetime keys | informational (they are off by default now) |
 
 Install each one, note the exact result, then remove it: for the Web Clip, long-press the icon →

@@ -372,13 +372,19 @@ def write_diag_profiles():
         ("barsign-test2-profservice.mobileconfig", udid_profile(placeholder),
          "Profile Service with ONLY the documented keys. If this one fails, iOS 27 no "
          "longer accepts the payload type and this whole route is dead."),
+        ("barsign-test4-profservice-https.mobileconfig",
+         udid_profile("https://example.com/udid"),
+         "DECISIVE: identical payload, but an ordinary HTTPS callback. NO certificate "
+         "and NO trust step needed. If this installs, the payload type is fine and the "
+         "http:// URL was what iOS refused. If it is still refused, the Profile Service "
+         "payload itself is retired on iOS 27."),
         ("barsign-test3-profservice-lifetime.mobileconfig",
          udid_profile(placeholder, lifetime=True),
          "The same plus DurationUntilRemoval / PayloadExpirationDate. Informational "
          "only now: those keys are OFF by default."),
     ]
     here = os.path.dirname(os.path.abspath(__file__))
-    print("Three test profiles written to %s" % here)
+    print("Four test profiles written to %s" % here)
     print()
     print("Open that folder in the Files app with this one command, then long-press")
     print("each file and Share -> AirDrop:")
