@@ -1300,3 +1300,82 @@ Run in a-Shell, in order, only when authorised:
    `python3 -c "import socket,struct,plistlib; msg=plistlib.dumps({'Request':'QueryType','Label':'b','ClientVersion':'1'}); s=socket.create_connection(('10.7.0.1',62078),timeout=5); s.sendall(struct.pack('>I',len(msg))+msg); print(s.recv(4096)[:120])"`
 
 **STOP — Phase A ends here.** Waiting for the user's go before any implementation.
+
+---
+
+# 23. UDID acquisition — source review, and the QR direction
+
+Follow-up research requested after Phase A. Sources read: `SideStore/SideStore` (Swift),
+`FrizzleM/SideInstaller` (`ish/sideinstaller.py`), `nab138/iloader` (Rust/Tauri), plus Apple docs.
+
+## 23.1 How each project actually gets a UDID
+
+| Project | Mechanism | Needs |
+|---|---|---|
+| **iloader** (desktop) | usbmuxd over USB: `get_pair_record(&device.udid)` (`src-tauri/src/pairing.rs:69`), rppairing file cached per UDID (`pairing.rs:326`) | a **computer** |
+| **SideStore** (on-device) | reads *its own* UDID from the pairing-backed lockdown session (`fetchUDID()`, `Views/Settings/Auth/AccountVerificationRow.swift:177`) | a **pairing record** |
+| **SideStore** (second device) | its Devices/Profiles screens let you **type or paste another device's UDID** and register it: `DevicesListView.swift:191` ("Device UDID"), `ProfilePortalDetailView.swift:206` ("Add Custom Device ID / UDID") | the UDID as text |
+| **SideInstaller** (legacy, iSH) | Apple's **`Profile Service` configuration profile** with `DeviceAttributes: ["UDID", …]` posting back to a local HTTP server (`udid_mobileconfig()`, `Handler.do_POST`, regex on the CMS-signed body) | a server + a profile install on the target |
+| **SideInstaller** (iOS 27, native) | the Settings-initiated **pairable host** flow → RPPairing → RSD → lockdown `GetValue` | the full native tunnel stack |
+
+**Key consequence:** SideStore already implements "register a second device by UDID". Everything hinges
+only on getting that UDID string off Device B.
+
+## 23.2 Can a Shortcut on Device B produce its own UDID? **No.**
+
+Apple's *Get Device Details* action returns OS, device type, system version, system build, device model,
+device hostname and device name — **no UDID** (Apple Shortcuts User Guide; Matthew Cassinelli's action
+reference). There is no Shortcuts action, and no JavaScript-for-Shortcuts API, that exposes it. So
+**Device B cannot display a QR containing its own UDID** — that direction is impossible, and it is worth
+knowing before building it.
+
+## 23.3 The QR works in the other direction
+
+Device B must be *asked* for its UDID. The only route that needs **no app on Device B** and is
+implementable in a-Shell is Apple's documented **Profile Service** profile:
+
+```
+Device A (a-Shell)                     Device B (nothing installed)
+ shows a QR  ────────────────────────►  Camera → Safari → download profile
+ serves /udid.mobileconfig              install it (Settings → VPN & Device Management)
+ ◄──────────────────────────────────── POST /udid  (CMS-signed plist containing the UDID)
+```
+
+Which is exactly the payload `udid_mobileconfig()` in SideInstaller's iSH script uses
+(`PayloadType: "Profile Service"`, `DeviceAttributes: ["UDID", …]`). **We wrote our own implementation**
+— the payload format is Apple's, documented in the archived *Over-the-Air Profile Delivery* guide — and
+our code is MIT; no SideInstaller code was copied.
+
+**Implemented:** `poc/udid_share.py` (a-Shell, stdlib only; QR via `segno`/`qrcode` if present, else it
+prints the URL). It serves the profile, captures the POST, prints the UDID, and never writes it to a
+file. **UNTESTED on a device.** *Verified here in simulation only:* the three routes respond, and a
+simulated CMS-wrapped POST yields the UDID and gets a minimal `Configuration` profile back.
+
+**The one decisive unknown:** whether iOS 27 still honours the Profile Service `DeviceAttributes`. The
+web evidence is inconclusive — Apple's documentation of it is archived (2018) and public "get my UDID"
+services still operate in 2026, which suggests it survives, but that is **unverified**. The script is
+built to answer exactly this: if Device B installs the profile and no UDID arrives, the route is dead on
+iOS 27 and §22.3's Settings-based pairing remains.
+
+## 23.4 Script execution on Device B
+
+Checked and rejected: Shortcuts' only scripting surface is *Run JavaScript on Web Page* (needs a Safari
+page and cannot read the UDID), and Shortcuts has no API that exposes device identifiers. So "Shortcut
+runs a script on Device B that produces the UDID" is not a route. Safari + one temporary profile is the
+closest thing to "no app", and `poc/udid_share.py` implements it.
+
+## 23.5 Next action (waiting for go)
+
+```
+cd ~/Documents/barisign
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/udid_share.py -o udid_share.py
+```
+```
+python3 -m pip install segno
+```
+```
+python3 -u udid_share.py
+```
+Then scan with Device B's Camera. Report: did the profile install, and did the UDID arrive?
