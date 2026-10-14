@@ -155,15 +155,19 @@ which is the point of LiveContainer.
 
 ## Important: which devices can run the app
 
-A free Apple ID signs apps for **specific devices**. Every device that will *run* SideStore has to be
-registered once with your Apple ID, which needs that device's UDID.
+A free Apple ID signs apps for **specific devices**, so the receiver's **UDID** has to be registered
+with your Apple ID. After extensive on-device testing on iOS 27, the one app-free way to obtain it — a
+`Profile Service` configuration profile — turned out to be **retired by Apple** (the profile is refused;
+see `PHASE0_REPORT.md` §30). So the receiver's UDID has to come from one of:
 
-- The device that runs BariSign can be registered automatically.
-- Registering a **second** device (Device B, the AirDrop receiver) is the one step still being worked
-  out for a computer-free setup, and is marked **unverified** on iOS 27.
+1. **an app on the receiver** that reveals it (SideStore's Devices screen has *Copy UDID*;
+   SideInstaller has an on-device pairing tool), or
+2. **iOS 27's Settings pairing** (target taps a pairable host and types a PIN) — needs a native host, or
+3. **a computer, once**.
 
-This is called out plainly rather than hidden: the two-device AirDrop flow above is the goal, and this
-registration step is the remaining piece. If you only care about one device, there is no issue at all.
+Once the UDID is known, everything else stays computer-free: the Shortcut picks the variant, signs the
+build for that UDID, and AirDrops it. This is the current, verified state of the project and the
+remaining decision to make.
 
 ---
 

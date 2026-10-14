@@ -1805,3 +1805,45 @@ prints the precise command, built from its own real container path, for both `--
 The long-term answer is Shortcuts: a-Shell ships **`Put File` / `Get File` intents**, so the Shortcut can
 pull the file out of a-Shell and use its own share/AirDrop action — no reliance on a-Shell's broken
 `open`. That is recorded as a requirement for `SHORTCUT_BUILD_GUIDE.md`.
+
+---
+
+# 30. DECISIVE: the `Profile Service` route is DEAD on iOS 27
+
+Device result (2026-10-14):
+
+| File | Result |
+|---|---|
+| empty `Configuration` profile | refused with "this profile is empty" (test-design mistake, now fixed) |
+| **Web Clip** (`com.apple.webClip.managed`) | **INSTALLED** ✓ |
+| `Profile Service` (minimal, documented keys only) | **refused — error** |
+| `Profile Service` + lifetime keys | **refused — error** |
+
+The Web Clip is a payload iOS certainly supports and it installed through the same AirDrop path, so the
+**delivery method and unsigned profiles are fine** — the failure is specifically the **`Profile Service`
+payload type**. Apple has retired it. This confirms §23.3's risk and closes the question from §29.2: the
+no-app-on-target route through a configuration profile is **not possible on iOS 27**, for everybody, not
+just this device.
+
+## 30.1 What this means for the goal
+
+A free Apple ID signs for a **specific device UDID**, so the receiver's UDID is unavoidable, and the only
+computer-free, app-free way to obtain it (the profile) is now gone. The remaining ways to get a second
+device's UDID with no computer are:
+
+1. **The receiver runs an app that reveals it** — SideStore's Devices screen has *Copy UDID*;
+   SideInstaller has an on-device pairing tool. These are native apps, installed once (SideInstaller is
+   itself a PC-free installer on iOS 27).
+2. **iOS 27 Settings pairing** (target taps the advertised pairable host under Developer Mode and types
+   a PIN) — verified to exist, but the host side needs the RPPairing/tunnel/RSD stack, which §22.6 judged
+   **not feasible in pure Python in a-Shell**.
+3. **A computer, once**, to produce a pairing file (or read the UDID in Finder). Everything after that
+   can stay computer-free.
+
+## 30.2 Decision needed
+
+BariSign's Shortcut + a-Shell is still the right tool for *"pick a variant, sign it for a known UDID,
+AirDrop it"*. What changes is how the UDID enters. The user decides among the three above; the honest
+recommendation is **1** (SideInstaller as the bootstrapper: it gets the UDID or installs SideStore
+directly, and BariSign handles the signing/refreshing/variants after). This is the point to stop and
+confirm direction before writing more code.
