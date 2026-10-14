@@ -11,16 +11,29 @@ driven by an **iOS Shortcut**.
 
 ## What you get
 
-Four variants, chosen in the Shortcut:
+Five variants, chosen in the Shortcut:
 
-| # | Variant | Notes |
-|---|---|---|
-| 1 | **SideStore** | stable release |
-| 2 | **SideStore nightly** | *may be unstable* |
-| 3 | **LiveContainer + SideStore** | stable release |
-| 4 | **LiveContainer + SideStore nightly** | *may be unstable* |
+| # | Variant | Source | Notes |
+|---|---|---|---|
+| 1 | **SideStore** | `SideStore/SideStore` | stable release |
+| 2 | **SideStore nightly** | `SideStore/SideStore` | *may be unstable* |
+| 3 | **LiveContainer + SideStore** | `LiveContainer/LiveContainer` | stable; one combined IPA |
+| 4 | **LiveContainer + SideStore nightly** | `LiveContainer/LiveContainer` | *may be unstable* |
+| 5 | **AltStore Classic** | `altstoreio/AltStore` | stable; **only one channel exists** |
 
-You are shown **exactly which version** you are about to get, before anything is downloaded.
+You are shown **exactly which version** you are about to get, before anything is downloaded. The
+version of every variant is resolved at runtime from its official release page — never pinned here.
+`variants.json` is the machine-readable list.
+
+**About AltStore:** AltStore Classic v2.3 (2026-09-30) added computer-free sideloading through a
+*"Remote AltServer"* setup step, and its release notes credit the SideStore team. It requires **iOS 17.4
+or newer**. It ships **one** release and no nightly/beta IPA, so there is nothing to pick between — and
+its download filename contains the version, so it must be matched by pattern rather than a fixed name.
+AltStore PAL is an EU-only marketplace and is **not** an installable IPA, so it is out of scope.
+
+**Which should you pick?** SideStore is the community's untethered choice and what this project is
+built around. LiveContainer is for running more apps than the free-account limit allows. AltStore
+Classic is the long-established alternative with the largest app catalogue.
 
 ---
 

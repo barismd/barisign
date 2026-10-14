@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "note": "Canonical variant registry for BariSign. URLs are ALWAYS resolved at runtime; nothing here pins a version. Used by the Shortcut and by the (future) a-Shell scripts.",
+  "resolution": {
+    "releases_endpoint": "https://api.github.com/repos/{repo}/releases?per_page=30",
+    "stable": "newest release where prerelease == false AND the tag matches no alpha/beta/rc (case-insensitive). Do NOT use /releases/latest for SideStore: it currently returns 0.7.0-alpha.",
+    "nightly": "the release whose tag is exactly 'nightly' (a rolling release; its assets are replaced in place, so show the asset's updated_at, not the release's published_at)",
+    "asset": "the first asset whose name matches asset_pattern, ending in .ipa. Match by pattern, never by a fixed versioned filename: AltStore embeds the version in the asset name.",
+    "version_to_show": "for nightly use the asset updated_at date; for stable use the tag"
+  },
+  "warnings": {
+    "nightly": "Nightly builds are pre-release and may be unstable.",
+    "free_account": "A free Apple ID can have 3 apps installed at a time (SideStore counts as one) and signing expires every 7 days."
+  },
+  "variants": [
+    {
+      "id": "sidestore-stable",
+      "name": "SideStore (stable)",
+      "repo": "SideStore/SideStore",
+      "channel": "stable",
+      "asset_pattern": "SideStore.ipa",
+      "licence": "AGPL-3.0",
+      "notes": "Untethered: refreshes itself on-device. No AltServer."
+    },
+    {
+      "id": "sidestore-nightly",
+      "name": "SideStore (nightly)",
+      "repo": "SideStore/SideStore",
+      "channel": "nightly",
+      "asset_pattern": "SideStore.ipa",
+      "licence": "AGPL-3.0",
+      "warning": "nightly",
+      "notes": "Rolling pre-release build from the project's own nightly pipeline."
+    },
+    {
+      "id": "livecontainer-sidestore-stable",
+      "name": "LiveContainer + SideStore (stable)",
+      "repo": "LiveContainer/LiveContainer",
+      "channel": "stable",
+      "asset_pattern": "LiveContainer+SideStore.ipa",
+      "licence": "AGPL-3.0",
+      "notes": "Single combined IPA published by the LiveContainer project. Apps run inside LiveContainer do not each use an app slot.",
+      "asset_url_encoding": "the + is percent-encoded as %2B in browser_download_url"
+    },
+    {
+      "id": "livecontainer-sidestore-nightly",
+      "name": "LiveContainer + SideStore (nightly)",
+      "repo": "LiveContainer/LiveContainer",
+      "channel": "nightly",
+      "asset_pattern": "LiveContainer+SideStore.ipa",
+      "licence": "AGPL-3.0",
+      "warning": "nightly"
+    },
+    {
+      "id": "altstore-classic-stable",
+      "name": "AltStore Classic (stable)",
+      "repo": "altstoreio/AltStore",
+      "channel": "stable",
+      "asset_pattern": ".ipa",
+      "licence": "AGPL-3.0",
+      "notes": "Minimum iOS 17.4. v2.3 (2026-09-30) added computer-free sideloading through a 'Remote AltServer' setup step and credits the SideStore team; the exact mechanism is unverified by us. AltStore PAL is EU-only and is not an installable IPA, so it is out of scope.",
+      "only_channel": true,
+      "observed_asset_example": "AltStore_Classic_Notarized_2_3.ipa (40616419 bytes, updated 2026-09-30)",
+      "no_nightly_reason": "altstoreio/AltStore has exactly ONE release; older tags exist but carry no release and no assets, so there is no installable nightly/beta IPA."
+    }
+  ]
+}

@@ -1622,7 +1622,44 @@ then trust it, then the UDID profile).
 first, where tapping it hands it to Settings). Either way it installs; the test will show the exact flow.
 The profile files are gitignored — they contain only the LAN address and the one-time token.
 
-## 26.5 Recommended test order
+## 26.5 Variant list extended with AltStore (verified)
+
+Requested by the user: offer AltStore next to the SideStore variants. Checked against the GitHub API on
+2026-10-14 rather than from memory:
+
+| Variant | Repo | Channel | Asset | Verified |
+|---|---|---|---|---|
+| SideStore stable | `SideStore/SideStore` | newest clean release (`0.6.4`) | `SideStore.ipa` | yes |
+| SideStore nightly | `SideStore/SideStore` | tag `nightly` (rolling) | `SideStore.ipa` | yes |
+| LiveContainer + SideStore stable | `LiveContainer/LiveContainer` | newest clean release (`3.8.0`) | `LiveContainer+SideStore.ipa` | yes |
+| LiveContainer + SideStore nightly | `LiveContainer/LiveContainer` | tag `nightly` | `LiveContainer+SideStore.ipa` | yes |
+| **AltStore Classic stable** | `altstoreio/AltStore` | newest clean release (`v2.3`) | `AltStore_Classic_Notarized_2_3.ipa` | yes |
+
+Findings that matter for the resolver:
+
+1. **AltStore has exactly one release.** `v2.3`, published 2026-09-30, asset `AltStore_Classic_Notarized_2_3.ipa`
+   (40,616,419 bytes, asset updated 2026-09-30). Older tags exist (`beta4`, `beta3.1`, `v1.6.3`, …) but
+   **carry no release and no assets** — the API returns 404 — so there is **no installable AltStore
+   nightly or beta IPA**. Hence five variants, not six.
+2. **AltStore's asset name embeds the version.** The resolver must match `.ipa` by **pattern**, never by
+   a fixed filename. This is the same class of trap as SideStore's `releases/latest` returning
+   `0.7.0-alpha`, which is why `variants.json` says "resolve at runtime".
+3. **AltStore v2.3 claims computer-free sideloading.** Its own release notes: *"Remote AltServer —
+   Supports sideloading apps without a computer. Install, refresh, and (de-)activate apps from anywhere
+   with a WiFi connection … Thanks @jkcoxson and the entire SideStore team for making this possible!"*
+   It also raises the **minimum to iOS 17.4**. The exact mechanism is **unverified by us** — that is a
+   SideInstaller-style claim we have not read the code for. It does mean AltStore is no longer
+   automatically disqualified by the "needs a computer" rule the way it used to be.
+4. **AltStore PAL is out of scope:** it is an EU-only marketplace delivered under the DMA, not an
+   installable IPA — and irrelevant for a user in Turkey.
+5. AltStore is **AGPL-3.0**, the same as SideStore and LiveContainer: we consume its released IPA, we do
+   not copy its code.
+
+`variants.json` at the repository root is now the machine-readable list (5 variants, the resolution
+rules, the alpha-tag trap, the asset-pattern rule, and the warning strings). The README variant table
+was updated to match.
+
+## 26.6 Recommended test order
 
 1. **First, plain**: `python3 -u udid_share.py` — this answers the only question that matters
    (does iOS 27 still send the UDID at all). Keep this run simple; do not mix it with the CA steps.
