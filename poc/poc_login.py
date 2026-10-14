@@ -121,7 +121,7 @@ if APPLE_ROOTS:
 signin.PROGRESS = lambda message: print("    ... %s" % message, flush=True)
 
 
-POC_VERSION = "0.6.0"
+POC_VERSION = "0.7.0"
 
 
 def _signin_integrity():
@@ -369,14 +369,17 @@ def _selftest():
     return 0
 
 
-def _read_password_masked(prompt):
-    """Masked read. Returns (password, worked).
+def _read_line(prompt, mask=False, idle_limit=20.0):
+    """Read one line byte-by-byte in cbreak mode. Returns (text, worked).
 
-    a-Shell breaks two things: `getpass` (opens /dev/tty, not your terminal) and
-    ECHO-off line reads (keystrokes stop reaching Python). So this uses cbreak
-    (`ICANON` off) and reads one byte at a time from the raw fd, printing `*`.
-    Every read is bounded by `select`, and the terminal is restored in `finally`,
-    so a failure can only mean "fall back", never "restart a-Shell".
+    Why not `input()`: a-Shell's terminal does not reliably return to its original
+    mode after a masked read, so a later `input()` can end up invisible or blocked
+    on a bare carriage return. Reading every prompt through the same mechanism
+    means we never depend on the terminal being in a "normal" state.
+
+    `mask=True` prints `*`; `mask=False` echoes what you type. Every read is
+    bounded by `select`, so this can never wedge, and the terminal attributes are
+    restored (and verified) in `finally`.
     """
     fd = sys.stdin.fileno()
     try:
@@ -393,7 +396,9 @@ def _read_password_masked(prompt):
     buf = bytearray()
     try:
         new = list(saved)
-        new[3] = new[3] & ~termios.ICANON & ~termios.ECHO
+        if mask:
+            new[3] = new[3] & ~termios.ECHO
+        new[3] = new[3] & ~termios.ICANON          # deliver bytes without waiting
         new[6] = list(new[6])
         new[6][termios.VMIN] = 0
         new[6][termios.VTIME] = 0
@@ -404,7 +409,6 @@ def _read_password_masked(prompt):
 
         sys.stdout.write(prompt)
         sys.stdout.flush()
-        idle_limit = 20.0
         last = time.time()
         while True:
             try:
@@ -413,7 +417,7 @@ def _read_password_masked(prompt):
                 break
             if not ready:
                 if time.time() - last > idle_limit:
-                    return "", False          # nothing arrived -> fall back
+                    return "", False            # nothing arrived -> let caller decide
                 continue
             try:
                 chunk = os.read(fd, 1)
@@ -428,35 +432,63 @@ def _read_password_masked(prompt):
             if byte in (0x7F, 0x08):                            # Backspace
                 if buf:
                     buf.pop()
-                    sys.stdout.write("\b \b")
+                    if mask:
+                        sys.stdout.write("\b \b")
+                    else:
+                        sys.stdout.write("\b \b")
                     sys.stdout.flush()
                 continue
             if byte == 0x03:                                    # Ctrl-C
                 raise KeyboardInterrupt
             buf.append(byte)
-            sys.stdout.write("*")
+            if mask:
+                sys.stdout.write("*")
+            else:
+                sys.stdout.write(bytes([byte]).decode("utf-8", "replace"))
             sys.stdout.flush()
         sys.stdout.write("\n")
         sys.stdout.flush()
         return bytes(buf).decode("utf-8", "replace"), True
     finally:
+        _restore_terminal(fd)
+
+
+def _restore_terminal(fd):
+    """Put the terminal back, and say so if we could not."""
+    try:
+        import termios
+    except ImportError:
+        return
+    for _attempt in range(2):
         try:
-            termios.tcsetattr(fd, termios.TCSANOW, saved)
+            current = termios.tcgetattr(fd)
+            current[3] = current[3] | termios.ICANON | termios.ECHO | termios.ISIG
+            current[6] = list(current[6])
+            current[6][termios.VMIN] = 1
+            current[6][termios.VTIME] = 0
+            termios.tcsetattr(fd, termios.TCSANOW, current)
         except Exception:                                      # noqa: BLE001
-            pass
+            return
+        try:
+            if termios.tcgetattr(fd)[3] & termios.ECHO:
+                return
+        except Exception:                                      # noqa: BLE001
+            return
+    print()
+    print("NOTE: this terminal did not accept its settings back. If the shell looks")
+    print("odd afterwards (no echo), close and reopen a-Shell — nothing is broken.")
 
 
 def _read_password(prompt):
     """Hidden when possible, visible when not, and never wedged.
 
-    Order: (1) a pipe means the Shortcut is driving -> just read it;
-    (2) try the masked reader; (3) fall back to plain `input()`, which is known to
-    work on a-Shell but shows what you type.
+    (1) a pipe means the Shortcut is driving -> read it; (2) masked cbreak read;
+    (3) plain `input()` as a last resort.
     """
     if not sys.stdin.isatty():
         return sys.stdin.readline().rstrip("\r\n")
 
-    secret, worked = _read_password_masked(prompt)
+    secret, worked = _read_line(prompt, mask=True)
     if worked:
         return secret
 
@@ -488,7 +520,12 @@ def _login(email, server):
         raise Fail("No password entered.")
 
     def ask_code(label):
-        return re.sub(r"\D", "", ask(label))
+        # Also through our own reader: after a masked read, a-Shell's terminal may
+        # not accept a plain input() again.
+        entered, worked = _read_line("%s: " % label, mask=False)
+        if not worked:
+            entered = ask(label)
+        return re.sub(r"\D", "", entered)
 
     account.login(password, ask_code)
     password = None

@@ -1001,7 +1001,43 @@ Two guards added so a stale file can never masquerade as a mystery failure again
 Verified: the check prints `OK (PKCS#7 padding stripping present)` with the current file, and prints the
 `*** STALE ***` warning when the fix is removed.
 
-## 21.9 Next action
+## 21.9 Round 9 — PADDING FIX CONFIRMED; reached the 2FA prompt; one terminal bug left
+
+With the current `signin.py` on the device (`0.3.0-unpad`, integrity check **OK**), the sign-in path got
+all the way through:
+
+```
+... Apple accepted the proof; verifying Apple's own proof
+A message with a verification code has been sent to your other devices ...
+Two-factor code:
+```
+
+So the PKCS#7 fix is confirmed on a real device and **Apple's 2FA push is reached**. (A control run with
+the literal account name `YOUR-APPLE-ID` returned Apple's `-20101 "account information was entered
+incorrectly"`, which is the expected answer for a fake account and further confirms the request reaches
+Apple correctly.)
+
+**Remaining bug:** the `Two-factor code:` prompt did not accept typing — invisible, and Return blocked.
+
+**Cause:** the masked password read leaves a-Shell's terminal in cbreak/no-echo mode and it does **not**
+accept the settings being put back. Any later plain `input()` is then unusable — it is exactly why the
+``/`
+` and echo handling of our own reader worked while `input()` did not. This is a-Shell behaviour,
+not something we can fix by asking nicer.
+
+**Fix: never depend on `input()` again.**
+- `_read_line(prompt, mask)` now serves **every** prompt: `mask=True` for the password, `mask=False`
+  (echoed) for the 2FA code. It reads bytes in cbreak mode, handles ``, backspace and `Ctrl-C`, and is
+  bounded by `select`.
+- `_restore_terminal()` re-enables `ICANON|ECHO|ISIG` from the *current* attributes, then **verifies**
+  the result and only warns if the terminal genuinely refuses (with a note that closing and reopening
+  a-Shell fixes it — nothing is broken).
+- `ask_code()` (used by both the trusted-device and SMS 2FA flows) is routed through the same reader.
+
+**Verified in the Codespace under a real PTY:** one process, password prompt prints `*******` and
+returns the secret, the next prompt echoes `123456` and returns it.
+
+## 21.10 Next action
 
 ```
 python3 -u poc_login.py --diag
