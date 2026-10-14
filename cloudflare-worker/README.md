@@ -38,13 +38,22 @@ Device A (signer)                     Device B (target, nothing installed)
 
 ## Use it
 
-- Pick a random token (any long random string). Open
-  `https://barisign.<subdomain>.workers.dev/s/<TOKEN>` on **Device B in Safari**, or show that URL as a
-  QR from Device A.
-- On Device B: **Download the UDID profile** → Settings → General → VPN & Device Management → the
-  profile → **Install** → passcode.
-- On Device A: `GET https://…/result/<TOKEN>` → JSON with `udid`, `product`, `version`, `serial`.
-  It is returned **once** and then deleted from the store.
+Easiest — let the Worker create the session (`GET /new`, valid 30 minutes):
+
+```
+GET  https://…/new                    -> { "session": "…", "url": "…/s/…" }
+open https://…/s/<session>            on Device B in Safari (or show it as a QR)
+POST /udid/<session>                  is done by iOS when the profile is installed
+GET  https://…/result/<session>       -> { "udid": "…", "product": "…", … }
+```
+
+`/new` answers JSON when asked with `Accept: application/json` (that is what the signer's script uses)
+and an HTML page otherwise. Or pick your own long random token and skip `/new`:
+open `…/s/<TOKEN>` on Device B, then read `…/result/<TOKEN>` on Device A.
+
+On Device B: **Download the UDID profile** → Settings → General → VPN & Device Management → the
+profile → **Install** → passcode. The result is returned **once** and expires after 15 minutes even if
+never read.
 
 ## Notes that matter
 
