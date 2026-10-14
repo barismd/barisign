@@ -2310,3 +2310,26 @@ This also finally explains the friction the user saw during the earlier profile 
 With the UDID solved, the chain becomes: register that UDID with the free Apple ID (Apple sign-in already
 works on-device, §21.10) → sign the chosen variant for it → AirDrop → the app installs. **The CMS/Mach-O
 signer is now the only unbuilt piece**, exactly as §13 predicted.
+
+---
+
+# 40. CONFIRMED ON DEVICE: the Profile Service route works on iOS 27
+
+The user ran the industry-standard profile flow on their own iOS 27 device and it returned **UDID, IMEI,
+serial number and device name**. That is the confirmation §39 predicted, and it closes the search for a
+computer-free UDID path:
+
+- the payload is **not** retired (our earlier §30 was wrong and was already retracted);
+- the only requirement is **HTTPS with a publicly trusted certificate** — which is why `http://` failed,
+  why a user-installed CA failed with *"MDM certificate is invalid"*, and why a real public endpoint
+  succeeds;
+- **no computer, no app on the target, no Developer Mode, no certificate to manage** are needed.
+
+Stages now confirmed on hardware: **UDID retrieval (1), Apple sign-in with free account and 2FA (2), and
+AirDrop installation of a signed IPA (5)**. Still to build: the developer-portal calls (3) and the
+pure-Python Mach-O + CMS **signer** (4) — §13's make-or-break item, and now the only substantial piece of
+work left.
+
+Written: `GUIDE.md` — the complete current flow, with each stage marked working or being built, the exact
+steps to test, and the caveats (Safari-only, the iOS 26.4+ one-hour Security Delay on iPhone, free-account
+limits).
