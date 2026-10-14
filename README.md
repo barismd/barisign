@@ -3,9 +3,9 @@
 Install **SideStore** — or **LiveContainer + SideStore** — on an iPhone or iPad **with no computer**,
 driven by an **iOS Shortcut**.
 
-> **Status: early development.** Nothing is installable yet. The on-device tests are passing one by
-> one and this README describes the target experience. Anything not yet confirmed on a real device is
-> labelled *untested*.
+> **Status: early development.** Nothing is installable yet — but **Apple sign-in with 2FA is verified
+> on a real device** (iPad, iOS 27). This README describes the target experience. Anything not yet
+> confirmed on a device is labelled *untested*.
 
 ---
 
@@ -118,8 +118,9 @@ host, so even a tampered reply cannot redirect your sign-in proof or a verificat
 The Shortcut will ask you to type the code, and then continues. Your main Apple ID with 2FA on is
 expected to work — this is the recommended setup.
 
-*(This path is implemented and has been reviewed, but it has not yet been exercised on a real device
-by BariSign — reported as **untested** until someone runs it.)*
+*(**Verified on a real device** — iPad, iOS 27: the code was pushed, typed in, accepted by Apple, and
+sign-in completed. Only the password is masked as you type; the verification code is shown on purpose,
+so a mistyped code is obvious rather than a mystery.)*
 
 ---
 

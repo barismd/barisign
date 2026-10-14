@@ -121,7 +121,7 @@ if APPLE_ROOTS:
 signin.PROGRESS = lambda message: print("    ... %s" % message, flush=True)
 
 
-POC_VERSION = "0.7.0"
+POC_VERSION = "0.7.1"
 
 
 def _signin_integrity():
@@ -432,10 +432,7 @@ def _read_line(prompt, mask=False, idle_limit=20.0):
             if byte in (0x7F, 0x08):                            # Backspace
                 if buf:
                     buf.pop()
-                    if mask:
-                        sys.stdout.write("\b \b")
-                    else:
-                        sys.stdout.write("\b \b")
+                    sys.stdout.write("\b \b")
                     sys.stdout.flush()
                 continue
             if byte == 0x03:                                    # Ctrl-C
@@ -520,8 +517,9 @@ def _login(email, server):
         raise Fail("No password entered.")
 
     def ask_code(label):
-        # Also through our own reader: after a masked read, a-Shell's terminal may
-        # not accept a plain input() again.
+        # Deliberately NOT masked (mask=False): a verification code is not a
+        # secret, and seeing it on screen makes a wrong code obvious instead of
+        # turning it into a mystery failure. Only the password is masked.
         entered, worked = _read_line("%s: " % label, mask=False)
         if not worked:
             entered = ask(label)

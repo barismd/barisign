@@ -1021,13 +1021,15 @@ Apple correctly.)
 
 **Cause:** the masked password read leaves a-Shell's terminal in cbreak/no-echo mode and it does **not**
 accept the settings being put back. Any later plain `input()` is then unusable — it is exactly why the
-``/`
+`
+`/`
 ` and echo handling of our own reader worked while `input()` did not. This is a-Shell behaviour,
 not something we can fix by asking nicer.
 
 **Fix: never depend on `input()` again.**
 - `_read_line(prompt, mask)` now serves **every** prompt: `mask=True` for the password, `mask=False`
-  (echoed) for the 2FA code. It reads bytes in cbreak mode, handles ``, backspace and `Ctrl-C`, and is
+  (echoed) for the 2FA code. It reads bytes in cbreak mode, handles `
+`, backspace and `Ctrl-C`, and is
   bounded by `select`.
 - `_restore_terminal()` re-enables `ICANON|ECHO|ISIG` from the *current* attributes, then **verifies**
   the result and only warns if the terminal genuinely refuses (with a note that closing and reopening
@@ -1037,7 +1039,39 @@ not something we can fix by asking nicer.
 **Verified in the Codespace under a real PTY:** one process, password prompt prints `*******` and
 returns the secret, the next prompt echoes `123456` and returns it.
 
-## 21.10 Next action
+## 21.10 Round 10 — **MILESTONE: full Apple sign-in achieved on-device**
+
+```
+Password (not shown, not stored): ********
+... Apple accepted the proof; verifying Apple's own proof
+A message with a verification code has been sent to your other devices ...
+Two-factor code: 995908
+...
+---- result --------------------------------------------------
+LOGIN: PASS — signed in as Barış Mert
+```
+
+Confirmed on a real device (iPad15,7 / iOS 27 / a-Shell), end to end: the anisette identity, SRP-6a,
+Apple's acceptance of our proof, our verification of Apple's proof, the trusted-device 2FA push, the
+code entry, and a real session. The anisette failover also demonstrated itself — `ani.sidestore.io`
+rejected the stored identity, `.app` provisioned successfully, and the PoC continued.
+
+Two smaller things settled in the same round:
+
+- **The 2FA code is deliberately NOT masked** (`mask=False`). A verification code is not a secret, and
+  showing it makes a mistyped code obvious instead of a mystery. Only the password is masked. A
+  redundant duplicate branch in the backspace handling was removed, and the intent is now written in a
+  comment, so the difference cannot later look like a bug.
+- `poc_login.py` → `0.7.1` (its `signin.py` dependency is unchanged at `0.3.0-unpad`).
+
+**Verified in the Codespace under a real PTY:** password prompt shows `*******`, the 2FA prompt echoes
+`998877`, and both return the correct value in one process.
+
+**What this de-risks:** §13's risk item 2 (Apple sign-in on-device) is now **done and verified**. The
+remaining unknown from that list is the OpenSSL 1.1.1i / CA-store question, which §21.6–21.8 also
+resolved in practice.
+
+## 21.11 Next action
 
 ```
 python3 -u poc_login.py --diag
