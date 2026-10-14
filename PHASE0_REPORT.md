@@ -2035,3 +2035,48 @@ file compiles (verified through the GitHub contents API, which is not CDN-cached
 `raw.githubusercontent.com` served the stale copy for a while. The reliable download URL for now is
 `https://github.com/barismd/barisign/blob/main/poc/udid_share.py?raw=true`, and any download should be
 followed by `python3 -c "compile(open('udid_share.py').read(),'x','exec'); print('file OK')"`.
+
+---
+
+# 36. STOP: the app-free UDID route is closed; state of the project
+
+This is the point where the same problem has failed more than twice, so per the project rules the work
+stops here rather than trying another variation.
+
+## 36.1 What is confirmed working (verified on the user's devices)
+
+| Capability | Status |
+|---|---|
+| a-Shell runtime (Python 3.13, `cryptography`, pip for pure-Python packages) | **works** |
+| Anisette v3 provisioning over WebSocket | **works** |
+| **Apple ID sign-in: SRP-6a, Apple's proof accepted, trusted-device 2FA, session obtained** | **works** (`LOGIN: PASS`) |
+| Apple's TLS trust solved (empty CA store; shipped Apple root + Mozilla bundle) | **works** |
+| Masked password entry and the 2FA-code prompt on a-Shell's terminal | **works** |
+| AirDrop of a signed IPA installs on the target | **works** (unsigned won't launch, as expected) |
+| Configuration profiles install (Web Clip control, CA profile) | **works** |
+| `view` gives an in-a-Shell preview with a share button | **works** |
+
+## 36.2 What does not work
+
+| Attempt | Result |
+|---|---|
+| Getting a second device's UDID app-free via a `Profile Service` profile | iOS contacts the callback URL (405 from example.com proved it) and then refuses the enrollment: with `http://` it fails, with our `https://` it reports **"MDM certificate is invalid"** |
+| Trusting our temporary CA to satisfy that check | not resolved after several attempts; iOS treats the endpoint as an MDM enrollment server with strict certificate requirements |
+| A single combined profile (CA + request) | impossible: different top-level profile structures (§32.1), and a file cannot trust its own certificate in time |
+| `open` for the share sheet | silently broken (deprecated `keyWindow`, path fallback) |
+| Pure-Python single-device install / on-device pairing | not feasible (§22.6) |
+
+## 36.3 Honest conclusion
+
+The **receiver's UDID cannot be obtained app-free on iOS 27** by any route we could implement in a-Shell.
+Everything else in the pipeline works. The remaining options all require one of:
+
+1. an app on the receiver that reveals the UDID (SideStore's *Copy UDID*, or SideInstaller's pairing tool);
+2. **one** computer, once, to produce a pairing file / read the UDID;
+3. a native pairing host (a Rust/Swift project, not a-Shell Python).
+
+Recommendation: accept (1) or (2), and keep BariSign for what it demonstrably does — choose the variant,
+sign for a known UDID with the user's own free Apple ID, and AirDrop the result.
+
+Also recorded: this is the point to consider a stronger model for further work, since the same blocker has
+now been attempted several times.
