@@ -30,37 +30,39 @@ private. Full detail in `cloudflare-worker/README.md`; the short version:
    namespace `BARISIGN` → **Deploy**.
 6. Your endpoint is `https://barisign.<your-subdomain>.workers.dev`.
 
-### Two ways to get the UDID — and which one is which
+### The UDID step — fixed, and it is now a one-time setup
 
 **Why the internet services need only ONE profile:** their server certificate chains to a **public CA**
 (Let's Encrypt and friends), so your phone already trusts it and nothing has to be installed first. Their
-profile contains only the `Profile Service` payload — **no CA**. We are our own authority, so our CA has to
-be installed and trusted before iOS will talk to our URL, which is why ours has historically meant **two
-profiles**.
+profile contains only the `Profile Service` payload — **no CA**. We are our own authority, so our CA must
+be installed and trusted before iOS will talk to our URL.
 
-**`--combined` (experiment, one profile).** Both things in a single Configuration profile — the root
-certificate and the UDID request, as two payloads in the same file. Verified to build correctly
-(`['com.apple.security.root', 'Profile Service']`), **but untested on a device**: unknown whether iOS
-accepts a nested `Profile Service` payload and applies the certificate early enough for the request.
+**The bug that made it work once and then never again:** the script generated a **brand-new CA on every
+run**, valid for six hours. So the CA you had installed and trusted was *never* the CA the next run signed
+with, and iOS answered *"MDM certificate is invalid"*. Fixed: the CA is created **once**, stored next to
+the script (`barisign-ca.pem` / `barisign-ca.key`, never committed), and reused from then on.
+
+**What that means for you:** the CA is installed and trusted **once per device**. After that, every UDID
+fetch is a **single profile**.
+
+> **Also settled:** putting the CA and the UDID request in one profile does **not** work. iOS shows the CA
+> but reports the nested `Profile Service` payload as *unknown data*. The two-payload idea is dead; the
+> ordered two-profile flow is the one that works.
 
 ```
-python3 -u udid_share.py --combined --airdrop       # ONE file: BariSign-ONE.mobileconfig
+python3 -u udid_share.py --https --airdrop
 ```
 
-**`--https` (verified working on device).** Two profiles, in order:
-
-```
-python3 -u udid_share.py --https --airdrop          # CA first, then the UDID profile
-```
-
-1. install **BariSign-CA.mobileconfig**
+1. **Install `BariSign-CA.mobileconfig`** (only on the first run, or if you delete it).
 2. **Settings → General → About → Certificate Trust Settings → switch ON full trust** for
-   *BariSign temporary CA*
-3. press Return in a-Shell, then install **BariSign-UDID.mobileconfig**
+   *BariSign temporary CA*. You can confirm it worked with the `…/tls-check` URL the script prints: a
+   padlock and `TLS OK`.
+3. Press **Return** in a-Shell, then **install `BariSign-UDID.mobileconfig`**.
+4. a-Shell prints the model and iOS build, you answer `y`, and the UDID is shown.
 
-> The trust switch comes **after** the CA profile and **before** the UDID profile. That ordering is what
-> makes it work — installing the UDID profile first gives *"MDM certificate is invalid"*.
-> You can check trust with the `…/tls-check` URL the script prints: a padlock and `TLS OK` means it is on.
+If the target still holds an **older BariSign CA**, delete it first
+(Settings → General → VPN & Device Management) and install the new one; the script prints the CA
+fingerprint it is using, so you can check you have the right one.
 
 **Test it (use the iPad first — iPhones may hit the one-hour Security Delay):**
 

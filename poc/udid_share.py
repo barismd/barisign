@@ -144,6 +144,74 @@ def as_xml(profile):
 # trust for it, which is the price of "only the signer sees the UDID".
 # ---------------------------------------------------------------------------
 
+def _ca_paths():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "barisign-ca.pem"), os.path.join(here, "barisign-ca.key")
+
+
+def load_or_create_ca():
+    """REUSE the same CA every run.
+
+    This was the bug that made it work once and then fail forever: the CA used to be
+    regenerated on every run with a 6-hour life, so the CA the user had installed and
+    trusted was never the CA the next run signed with. iOS then answers
+    "MDM certificate is invalid".
+
+    Now the CA is created once, stored next to this script (never in the repository;
+    *.pem and *.key are gitignored), and reused. Install and trust it ONE time, and
+    every later run needs only the UDID profile.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    cert_path, key_path = _ca_paths()
+    if os.path.isfile(cert_path) and os.path.isfile(key_path):
+        try:
+            with open(cert_path, "rb") as fh:
+                cert = x509.load_pem_x509_certificate(fh.read())
+            with open(key_path, "rb") as fh:
+                key = serialization.load_pem_private_key(fh.read(), password=None)
+            return cert, key
+        except Exception:                                        # noqa: BLE001
+            pass                                                 # fall through and remake
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "BariSign temporary CA")])
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    cert = (x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=730))   # 2 years
+            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                           critical=False)
+            .add_extension(x509.KeyUsage(
+                digital_signature=False, content_commitment=False, key_encipherment=False,
+                data_encipherment=False, key_agreement=False, key_cert_sign=True,
+                crl_sign=True, encipher_only=False, decipher_only=False), critical=True)
+            .sign(key, hashes.SHA256()))
+    with open(cert_path, "wb") as fh:
+        fh.write(cert.public_bytes(serialization.Encoding.PEM))
+    with open(key_path, "wb") as fh:
+        os.chmod(key_path, 0o600)
+        fh.write(key.private_bytes(serialization.Encoding.PEM,
+                                   serialization.PrivateFormat.TraditionalOpenSSL,
+                                   serialization.NoEncryption()))
+    return cert, key
+
+
+def ca_fingerprint(ca_cert):
+    import hashlib as _h
+    der = ca_cert.public_bytes(__import__("cryptography").hazmat.primitives
+                               .serialization.Encoding.DER)
+    return ":".join("%02X" % b for b in _h.sha256(der).digest()[:8])
+
+
 def make_certs(ip):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -151,32 +219,16 @@ def make_certs(ip):
     from cryptography.x509.oid import NameOID
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "BariSign temporary CA")])
-    ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    ca_cert = (x509.CertificateBuilder()
-               .subject_name(ca_name)
-               .issuer_name(ca_name)
-               .public_key(ca_key.public_key())
-               .serial_number(x509.random_serial_number())
-               .not_valid_before(now - datetime.timedelta(minutes=5))
-               .not_valid_after(now + datetime.timedelta(hours=6))
-               .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-               .add_extension(x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()),
-                              critical=False)
-               .add_extension(x509.KeyUsage(
-                   digital_signature=False, content_commitment=False, key_encipherment=False,
-                   data_encipherment=False, key_agreement=False, key_cert_sign=True,
-                   crl_sign=True, encipher_only=False, decipher_only=False), critical=True)
-               .sign(ca_key, hashes.SHA256()))
+    ca_cert, ca_key = load_or_create_ca()          # persistent: trusted once, forever
 
     leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     leaf_cert = (x509.CertificateBuilder()
                  .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, ip)]))
-                 .issuer_name(ca_name)
+                 .issuer_name(ca_cert.subject)
                  .public_key(leaf_key.public_key())
                  .serial_number(x509.random_serial_number())
                  .not_valid_before(now - datetime.timedelta(minutes=5))
-                 .not_valid_after(now + datetime.timedelta(hours=6))
+                 .not_valid_after(now + datetime.timedelta(days=7))
                  .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
                  .add_extension(x509.SubjectKeyIdentifier.from_public_key(
                      leaf_key.public_key()), critical=False)
@@ -248,56 +300,6 @@ def empty_profile():
         "PayloadUUID": str(uuid.uuid4()).upper(),
         "PayloadDisplayName": "BariSign - sanity check (empty profile)",
         "PayloadDescription": "Installs nothing at all. Delete it right away.",
-        "PayloadOrganization": "BariSign",
-    }
-
-
-def combined_profile(callback_url, ca_der):
-    """EXPERIMENT: certificate + UDID request in ONE profile.
-
-    The internet UDID services get away with a single profile because their server
-    certificate chains to a PUBLIC root, so nothing has to be installed first. We are
-    our own authority, so the CA has to be trusted before iOS will talk to the URL —
-    which normally means two installs.
-
-    A normal Configuration profile carries an ARRAY of payloads, so both can live in
-    one file: [root certificate, Profile Service request]. Whether iOS applies the
-    certificate early enough for the request (and whether it accepts a nested
-    `Profile Service` payload at all) is UNKNOWN - this is the test.
-
-    If it works: ONE profile, and only the trust switch is left. If it does not: the
-    two-profile order stays, which is verified working.
-    """
-    return {
-        "PayloadContent": [
-            {
-                "PayloadCertificateFileName": "BariSignCA.cer",
-                "PayloadContent": ca_der,
-                "PayloadDescription": "Temporary BariSign certificate authority.",
-                "PayloadDisplayName": "BariSign temporary CA",
-                "PayloadIdentifier": "io.barisign.ca",
-                "PayloadType": "com.apple.security.root",
-                "PayloadUUID": str(uuid.uuid4()).upper(),
-                "PayloadVersion": 1,
-            },
-            {
-                "URL": callback_url,
-                "DeviceAttributes": ["UDID", "PRODUCT", "VERSION"],
-                "PayloadDescription": "Asks once for this device's UDID, over HTTPS.",
-                "PayloadDisplayName": "BariSign - read this device's UDID",
-                "PayloadIdentifier": "io.barisign.udid",
-                "PayloadType": "Profile Service",
-                "PayloadUUID": str(uuid.uuid4()).upper(),
-                "PayloadVersion": 1,
-            },
-        ],
-        "PayloadDescription":
-            "Temporary. Adds a throwaway CA and asks once for this device's UDID. Delete it afterwards.",
-        "PayloadDisplayName": "BariSign - UDID (one profile)",
-        "PayloadIdentifier": "io.barisign.combined",
-        "PayloadType": "Configuration",
-        "PayloadUUID": str(uuid.uuid4()).upper(),
-        "PayloadVersion": 1,
         "PayloadOrganization": "BariSign",
     }
 
@@ -520,9 +522,6 @@ def main():
     use_https = "--https" in sys.argv[1:]
     use_airdrop = "--airdrop" in sys.argv[1:]
     use_lifetime = "--lifetime" in sys.argv[1:]
-    use_combined = "--combined" in sys.argv[1:]
-    if use_combined:
-        use_https = True
     if "--diag-profiles" in sys.argv[1:]:
         write_diag_profiles()
         return 0
@@ -600,6 +599,7 @@ def main():
             print("Could not start HTTPS: %r" % (exc,))
             return 2
         state["ca_der"] = certs["ca_der"]
+        state["ca_fingerprint"] = ca_fingerprint(load_or_create_ca()[0])
         state["ca_xml"] = as_xml(ca_profile(certs["ca_der"]))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
@@ -627,9 +627,16 @@ def main():
     print(" PRODUCT and VERSION. No certificate, no VPN, no proxy, no Wi-Fi.")
     print()
     if use_https:
-        print(" MODE: HTTPS. TWO profiles, in this order: the temporary CA first,")
-        print(" then the UDID request. iOS cannot trust a certificate before it is")
-        print(" installed, which is why this cannot be a single file.")
+        print(" MODE: HTTPS.")
+        print(" CA fingerprint : %s" % state.get("ca_fingerprint", "?"))
+        print(" This CA is now PERSISTENT: it is created once and reused on every run,")
+        print(" so it only has to be installed and trusted ONE TIME. (Before, a new CA")
+        print(" was made on every run, which is why a trusted CA stopped matching and")
+        print(" iOS answered 'MDM certificate is invalid'.)")
+        print(" If the target still has an OLDER BariSign CA installed, delete it.")
+        print()
+        print(" Order matters: 1) install the CA, 2) switch its full trust ON,")
+        print(" 3) ONLY THEN install the UDID profile.")
         if not use_airdrop:
             print(" STEP 1 (CA) URL: %s" % ca_url)
         print()
@@ -650,22 +657,10 @@ def main():
     sys.stdout.flush()
 
     if use_airdrop:
-        if use_combined:
-            state["combined_xml"] = as_xml(combined_profile(base + "/udid",
-                                                           state["ca_der"]))
-            profile_path = write_beside_script("BariSign-ONE.mobileconfig",
-                                               state["combined_xml"])
-            print(" ONE profile: the certificate AND the UDID request in the same file.")
-            offer_share(profile_path)
-            print()
-            print(" After it installs: Settings -> General -> About -> Certificate Trust")
-            print(" Settings -> switch ON 'BariSign temporary CA'. If the UDID arrives")
-            print(" without that step, the single-profile idea works.")
-            print()
-        elif use_https:
+        if use_https:
             ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
         profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        if use_https and not use_combined:
+        if use_https:
             print(" Check first, on Device B in Safari (needs this script running):")
             print("   %s/tls-check" % base)
             print("   a padlock and 'TLS OK' means the CA is trusted. No padlock = the")

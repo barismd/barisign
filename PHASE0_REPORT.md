@@ -2460,3 +2460,47 @@ That is the honest trade-off:
 
 The SSH-tunnel test the user was about to run is **no longer necessary** for the product; it stays in the
 report only as a fallback if a network ever blocks the local CA route.
+
+---
+
+# 43. Root cause of "works once, then always fails": the CA was regenerated every run
+
+The user reported both flows failing again — *"MDM certificate is invalid"* for the two-profile flow, and
+*"the CA is shown but the UDID part says unknown data"* for the single-profile experiment. Both are
+explained, and one was a bug of ours.
+
+## 43.1 Our bug: a new CA on every run
+
+`make_certs()` generated a **fresh CA per run** with a **6-hour** validity. So:
+
+- run #1: CA₁ is served; the user installs and trusts CA₁; the leaf is signed by CA₁ → **works**;
+- run #2: a brand-new **CA₂** signs the leaf, but the device trusts only CA₁ → **"MDM certificate is
+  invalid"**, forever after.
+
+This also means the successful run was the *only* run that could ever have worked (`§42`). Fixed:
+
+- the CA is now **created once and reused**, stored beside the script as `barisign-ca.pem` /
+  `barisign-ca.key` (mode 0600, both covered by `.gitignore`), validity **2 years**;
+- the leaf is still regenerated per run (7 days), signed by that persistent CA;
+- the script prints the **CA fingerprint** it is using, so the user can confirm the device holds *that*
+  CA, and it says to delete any older BariSign CA.
+
+**Verified in the Codespace:** two consecutive `load_or_create_ca()` calls return the **same fingerprint**,
+and `openssl verify -CAfile barisign-ca.pem leaf.pem` → **OK**.
+
+**Consequence for the user experience:** the CA is installed and trusted **once per device**; every later
+UDID fetch is a **single profile**. That is the "no two profiles" wish, one time only.
+
+## 43.2 The single-profile experiment is settled: it does NOT work
+
+`--combined` (CA + `Profile Service` in one Configuration profile) built correctly, but on the device iOS
+displayed the CA and reported the **nested `Profile Service` payload as "unknown data"**. So a
+`Profile Service` payload cannot be nested inside a normal profile's payload array — Apple's form expects
+it as the profile's own top-level type. The `--combined` flag and code were **removed**, so a future reader
+cannot repeat the attempt.
+
+## 43.3 What is left
+
+Nothing about the UDID step is unknown any more. The verified sequence is: install the persistent CA →
+enable full trust → install the UDID profile → read the UDID. Remaining work is Stage 3 (developer portal)
+and Stage 4 (the signer).
