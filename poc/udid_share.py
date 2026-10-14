@@ -19,9 +19,9 @@
 #
 #  USAGE
 #  -----
-#      python3 -u udid_share.py                  first time: install the CA, trust it,
-#                                                then install the UDID profile
-#      python3 -u udid_share.py --udid-only      later runs: one profile, nothing else
+#      python3 -u udid_share.py --ca             step 1 of 2 (once per device):
+#                                                install and trust the CA
+#      python3 -u udid_share.py                  step 2 of 2: one profile, read the UDID
 #      python3 -u udid_share.py --view <file>    just open a preview of a file
 #
 #  The CA is created once and reused, so it only has to be installed and trusted
@@ -483,7 +483,7 @@ def main():
 
     if udid_only:
         print(" Mode: ONE PROFILE. The CA above is assumed installed and trusted; if it")
-        print(" is not, run once without --udid-only.")
+        print(" is not, run:   sh bin/barisign udid --ca")
         print()
         profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
         offer_share(profile_path)
