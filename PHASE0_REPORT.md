@@ -2397,3 +2397,66 @@ Caveats, stated honestly:
 2. If B is unreliable or the screening page blocks the profile, use **A** (deployed once by us; users do
    nothing).
 3. **C** stays the privacy-maximal option for users who want the UDID to never leave their network.
+
+---
+
+# 42. CONFIRMED ON DEVICE: the local CA route works — §41.1's invariant is RETRACTED
+
+Device result, `--https --airdrop` on the user's own devices (no Cloudflare, no Worker, no DNS, no
+third-party endpoint of any kind):
+
+```
+Server closed after 41 s.
+A device sent its details ...
+    model (PRODUCT): iPhone14,5      <- the iPhone 13, i.e. the TARGET
+    iOS  (VERSION) : 24A446
+    UDID           : hidden until you confirm
+```
+
+The target installed **our temporary CA** profile, **enabled full trust**, installed the UDID profile, and
+iOS then POSTed the UDID to our local HTTPS server. **The whole exchange stayed on the home Wi-Fi.**
+
+## 42.1 The earlier conclusion was wrong
+
+§41.1 claimed: *"a root the user installed is refused (measured)"* — and built an entire analysis on it
+(public CA needed → DNS or a third party). **That is wrong and is retracted.** The earlier
+*"MDM certificate is invalid"* was **the missing trust switch**: the CA profile had been installed, but
+`Settings → General → About → Certificate Trust Settings` had not been toggled ON (and the profile was
+installed before that). Once full trust is enabled, iOS **accepts a user-installed CA** for the Profile
+Service endpoint.
+
+Consequences:
+
+- **No public certificate, no DNS, no domain, no account, no third-party relay is needed at all.**
+- The UDID **never leaves the local network** — strictly the most private of all the options considered.
+- The SSH-tunnel route (Pinggy/Serveo) and the Cloudflare Worker are **no longer required**. They remain
+  documented as fallbacks, not as the plan.
+
+## 42.2 The one real cost, and why it shrinks over time
+
+The CA must be installed and trusted **before** the UDID profile can be fetched — so the very first time
+is **two profile installs plus one trust toggle**. After that the CA is already trusted on that device, so
+**every later UDID fetch is a single profile**, and the CA can be re-issued per run without any user
+action.
+
+That is the honest trade-off:
+
+| | Local CA (works, chosen) | Cloudflare Worker (fallback) |
+|---|---|---|
+| Third party sees the UDID | **no — never leaves the Wi-Fi** | yes, briefly |
+| Profiles on the first run | **2 + trust toggle** | 1 |
+| Profiles after that | **1** | 1 |
+| Accounts, DNS, domain | **none** | BariSign's |
+
+## 42.3 Everything now verified on hardware
+
+| Stage | Status |
+|---|---|
+| 1. UDID, computer-free, app-free on the target, no third party | ✅ **works** (this section) |
+| 2. Free Apple ID sign-in (anisette + SRP + 2FA) | ✅ works |
+| 5. AirDrop install of a signed IPA | ✅ works |
+| 3. Register UDID + App ID + certificate + profile | 🚧 to build |
+| 4. **Mach-O + CMS signer** | 🚧 to build — the last substantial piece |
+
+The SSH-tunnel test the user was about to run is **no longer necessary** for the product; it stays in the
+report only as a fallback if a network ever blocks the local CA route.
