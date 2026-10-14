@@ -2080,3 +2080,83 @@ sign for a known UDID with the user's own free Apple ID, and AirDrop the result.
 
 Also recorded: this is the point to consider a stronger model for further work, since the same blocker has
 now been attempted several times.
+
+---
+
+# 37. RESEARCH RESULT: a pure-Python implementation of the whole stack already exists
+
+The user asked for every UDID path to be researched before porting anything. This is the finding that
+matters, and it **overturns §22.6**:
+
+| Needed piece | Rust (idevice) | **Pure Python (pymobiledevice3, GPL-3.0)** |
+|---|---|---|
+| remote pairing client | `remote_pairing/` | `remote/remote_pairing.py` |
+| **remote pairing HOST** (the paireable-host side) | `PairableHost` | present — `tests/test_remote_pairing_host.py` exercises it |
+| TLS-PSK | `tls_psk.rs` | handled with `ssl` (CPython 3.13 gained `set_psk_client_callback`) |
+| **CDTunnel + userspace TCP stack** | `tunnel_tcp_stack` (jktcp) | **`remote/userspace_tunnel.py` — imports only the standard library** (`asyncio, socket, struct, ssl, tempfile, …`) |
+| RSD / RemoteXPC | `rsd` | `remote/remote_service_discovery.py` |
+| device services (lockdown info, installation_proxy, AFC) | yes | yes |
+
+So the sentence in §22.6 that killed the route — *"a software TCP stack in pure Python is the largest
+single risk and has to be written from scratch"* — is **wrong**: it has been done, in Python, using only
+the standard library. **§22.6's "NO" verdict is retracted** for the tunnel/TCP-stack part.
+
+## 37.1 The other findings from this research round
+
+1. **Open-source apps already do on-device self-pairing on iOS 27** by playing the *pairable host* for
+   their own device:
+   - **`StikDebug/StikPair`** — "creates a pairing file **on-device**, using iOS 27+ wireless pairing.
+     Powered by idevice." Flow: tap *Pair* → Settings › Privacy & Security › Developer Mode → tap
+     *Pair with StikPair* → enter the PIN → export.
+   - **`Husk` (Leviidev/Husk)** — same, and it documents the mechanics: `libhusk_rppairing.a` wraps
+     idevice's `PairableHost`; the port is advertised as a `_remotepairing-pairable-host._tcp` Bonjour
+     service **through mDNSResponder** ("only the Local Network permission is needed, not the multicast
+     entitlement"); the app stays alive while the user is in Settings via an **iOS 26 continued-processing
+     task** (`.pairing.session`), or silent audio.
+   - **`jkcoxson/idevice_pair`** — even a *computer* pairs with an iOS 27 device over Wi-Fi with the same
+     device-initiated flow.
+2. **Pairing is device-initiated on iOS 27**: the *target* opens Settings and taps the advertised host.
+   That is exactly why the target needs **no app at all** — only Settings and a PIN.
+3. **The UDID is not in the pairing record.** SideInstaller's notes are explicit: the classic `Pair`
+   response does not carry it, and they must fetch it over the tunnel
+   (`lockdownd_connect_rsd` + `lockdownd_get_value(nil)` → `UDID`). So the tunnel is unavoidable.
+4. **`cryptography` version is a real constraint for reusing pymobiledevice3 as-is**: current
+   pymobiledevice3 requires `cryptography>=43`, a-Shell ships **3.4.8**, and its dependency list includes
+   C-extension packages (`Pillow`) that cannot be installed on-device. A trimmed, self-written subset is
+   the realistic route — and the tunnel code itself needs **no third-party imports at all**.
+
+## 37.2 What this changes, and the two remaining risks
+
+**The best architecture is now the two-device one, with the SIGNER as the pairable host:**
+
+```
+iPad (a-Shell, foreground)                      iPhone (no app at all)
+ advertises _remotepairing-pairable-host._tcp    Settings › Privacy & Security › Developer Mode
+ shows a PIN                                     tap "Pair with <host>" → type the PIN
+ accepts the connection ◄────────────────────────┘
+ pairs (RPPairing host) → tunnel → RSD → reads the iPhone's UDID
+ registers it, signs, AirDrops the IPA ─────────► installs it
+```
+
+This satisfies every constraint: no computer, no public certificate, no CA, and **nothing installed on
+the target**. The awkward part — the app must stay alive while the user is in Settings — disappears,
+because the user is in Settings **on the other device** and the iPad's a-Shell stays in the foreground.
+
+**Two risks remain, both cheap to test before writing the port:**
+
+1. **Bonjour advertisement from a-Shell.** Husks's comment is a warning: advertising *through
+   mDNSResponder* is what avoids needing the multicast entitlement. A Python implementation would have to
+   send mDNS by hand, and iOS may require the `com.apple.developer.networking.multicast` entitlement that
+   a-Shell does not have. **Unverified — and decisive.** The test is small: can a-Shell advertise a
+   service that the iPhone's *Developer Mode* screen actually shows?
+2. **Effort.** Porting pairing host + tunnel + RSD + the lockdown client is a substantial body of code
+   (the reference implementations exist, but ours would be written from the protocols to stay
+   licence-clean, since pymobiledevice3 is GPL-3.0 and our repository is MIT-plus-SideInstaller).
+
+## 37.3 Recommendation
+
+Do **not** start the port yet. First run the one decisive experiment: **a-Shell must be able to advertise
+`_remotepairing-pairable-host._tcp` and be visible in the iPhone's Settings › Privacy & Security ›
+Developer Mode.** If it is visible, the route is real and the port is worth it. If iOS blocks the
+advertisement without a multicast entitlement, this route dies too and the honest answer is
+"an app on the target, or one computer".
