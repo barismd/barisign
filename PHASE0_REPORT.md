@@ -2029,3 +2029,9 @@ Also still untested and cheaper than all of this: the **plain HTTP** route (`--a
 CA at all), which avoids certificates entirely. The earlier HTTP failure is not comparable — that profile
 carried the lifetime keys and predated several fixes. If iOS accepts an `http://` callback, this whole
 certificate problem disappears. **Unverified until run.**
+
+**Process note:** a commit with a broken indentation was pushed and fixed immediately; the *pushed*
+file compiles (verified through the GitHub contents API, which is not CDN-cached), but
+`raw.githubusercontent.com` served the stale copy for a while. The reliable download URL for now is
+`https://github.com/barismd/barisign/blob/main/poc/udid_share.py?raw=true`, and any download should be
+followed by `python3 -c "compile(open('udid_share.py').read(),'x','exec'); print('file OK')"`.
