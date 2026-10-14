@@ -591,3 +591,85 @@ curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/app
 python3 poc_login.py --selftest
 ```
 Then, only if all six PASS: `python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID`
+
+---
+
+# 18. Round 3 — second device run (iPad15,7) and fixes
+
+Second run: checks **1–4 PASS**; check **5** failed with every anisette server; check **6** failed with
+`apple-roots.pem holds no pinned Apple root; found 0 cert(s)`. Two separate bugs, both fixed.
+
+## 18.1 Bug 1 (ours): `.gitignore` excluded the Apple root CA
+
+Our own `.gitignore` contains `*.pem`, which silently excluded `third_party/apple-roots/apple-roots.pem`
+from the commit while `AppleIncRootCertificate.cer` and the README went in. The user's `curl` for that
+path therefore saved the literal text **`404: Not Found`** into `apple-roots.pem`, so the file existed
+but held no certificate — exactly what check 6 reported.
+
+Fix: explicit negations in `.gitignore` for the public trust anchors
+(`!third_party/apple-roots/apple-roots.pem`, `!third_party/apple-roots/AppleIncRootCertificate.cer`,
+`!third_party/ca-bundle/cacert.pem`), and the files are now tracked. Lesson recorded: `.gitignore`
+rules for `*.pem` must be checked against the files we *do* want to ship.
+
+## 18.2 Bug 2 (device constraint): a-Shell's Python has an EMPTY trust store
+
+The anisette failures are not server problems. `ani.sidestore.io` returned
+`[X509: NO_CERTIFICATE_OR_CRL_FOUND] no certificate or crl found`, which means the **client** has no
+CA certificates loaded; the other servers returned `self signed certificate in certificate chain`.
+So `ssl.create_default_context()` inside a-Shell yields a context with no roots, and **every**
+`https://` request fails — not just Apple's.
+
+Reproduced and fixed in the Codespace:
+
+| Context | `ani.sidestore.io` | `gsa.apple.com` |
+|---|---|---|
+| empty trust store (mimics the iPad) | FAIL | FAIL |
+| empty store + shipped `cacert.pem` | **OK** | FAIL (expected) |
+| + `apple-roots.pem` for apple.com | — | **OK** |
+
+Fix: **`third_party/ca-bundle/cacert.pem`** (curl project's build of Mozilla's CA list, **public
+domain**, 121 certificates, SHA-256 `a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505`)
+is loaded with `signin.set_ca_bundle()` for **every** host. `poc_login.py` prefers a bundle already on
+the device (`certifi`) and falls back to the shipped file. **Verification is never disabled.** Apple's
+root is still loaded *additionally* for `*.apple.com` only.
+
+Self-test now prints a TLS diagnostic (default CA file/dir, which bundle was used, how many roots the
+default context has) so the next report is conclusive either way.
+
+## 18.3 Verification (Codespace, Linux)
+
+- All six checks **PASS** with `certifi`.
+- All six checks **PASS** with `certifi` forced unavailable, i.e. using the shipped `cacert.pem` +
+  `apple-roots.pem` — the exact path the device will take.
+- Empty-trust-store reproduction above.
+
+## 18.4 Updated on-device commands (four files)
+
+```
+mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py -o signin.py
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py -o poc_login.py
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/apple-roots/apple-roots.pem -o apple-roots.pem
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/ca-bundle/cacert.pem -o cacert.pem
+```
+```
+python3 poc_login.py --selftest
+```
+Then, only if all six PASS: `python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID`
+
+Sanity check before running (each should be non-zero, and the last should print a certificate):
+
+```
+wc -l signin.py poc_login.py apple-roots.pem cacert.pem
+```
+```
+grep -c BEGIN apple-roots.pem cacert.pem
+```

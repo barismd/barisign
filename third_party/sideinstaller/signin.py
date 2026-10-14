@@ -23,7 +23,9 @@
 #      handshake fails otherwise. Certificate verification is never disabled;
 #    * plist_request() now refuses non-apple.com hosts, so an Apple-bound proof
 #      can never be redirected;
-#    * upstream's unused RELEASE_API constant and download() helper were removed.
+#    * upstream's unused RELEASE_API constant and download() helper were removed;
+#    * set_ca_bundle() added: a-Shell's Python has an EMPTY trust store, so a CA
+#      bundle must be loaded for every host or all https:// fails.
 # =============================================================================
 
 
@@ -185,6 +187,7 @@ SSL_CTX = ssl.create_default_context()
 # APPLE_CA_FILE at Apple's public root (shipped in third_party/apple-roots/) and
 # it is added ONLY for apple.com hosts. Verification is never disabled.
 APPLE_CA_FILE = None
+CA_BUNDLE_FILE = None
 _APPLE_CTX = None
 
 
@@ -192,11 +195,26 @@ def is_apple_host(host):
     return bool(host) and (host == "apple.com" or host.endswith(".apple.com"))
 
 
+def set_ca_bundle(path):
+    """Add a CA bundle for EVERY host.
+
+    Required on iOS: the Python inside a-Shell builds an SSLContext with an empty
+    trust store, so https:// fails for every server with either
+    'no certificate or crl found' or 'self signed certificate in certificate
+    chain'. Loading a real bundle fixes it. Verification stays ON.
+    """
+    global CA_BUNDLE_FILE
+    CA_BUNDLE_FILE = path
+    SSL_CTX.load_verify_locations(path)
+
+
 def _ctx_for(host):
     global _APPLE_CTX
     if APPLE_CA_FILE and is_apple_host(host):
         if _APPLE_CTX is None:
             _APPLE_CTX = ssl.create_default_context()
+            if CA_BUNDLE_FILE:
+                _APPLE_CTX.load_verify_locations(CA_BUNDLE_FILE)
             _APPLE_CTX.load_verify_locations(APPLE_CA_FILE)
         return _APPLE_CTX
     return SSL_CTX

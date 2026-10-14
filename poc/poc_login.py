@@ -11,6 +11,7 @@
 #      curl -sL <REPO>/third_party/sideinstaller/signin.py   -o signin.py
 #      curl -sL <REPO>/poc/poc_login.py                      -o poc_login.py
 #      curl -sL <REPO>/third_party/apple-roots/apple-roots.pem -o apple-roots.pem
+#      curl -sL <REPO>/third_party/ca-bundle/cacert.pem      -o cacert.pem
 #      python3 poc_login.py --selftest
 #      python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID
 #
@@ -74,20 +75,60 @@ APPLE_ROOT_FINGERPRINTS = {
 }
 
 
-def _find_apple_roots():
+def _find_file(name):
     for base in (os.path.join(_HERE, "..", "third_party", "apple-roots"),
+                 os.path.join(_HERE, "..", "third_party", "ca-bundle"),
                  os.path.join(_HERE, "third_party", "apple-roots"),
-                 os.path.join(POC_HOME, "apple-roots"),
-                 _HERE):
-        candidate = os.path.join(base, "apple-roots.pem")
-        if os.path.isfile(candidate):
+                 os.path.join(_HERE, "third_party", "ca-bundle"),
+                 POC_HOME, _HERE):
+        candidate = os.path.join(base, name)
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
             return os.path.abspath(candidate)
     return None
 
 
-APPLE_ROOTS = _find_apple_roots()
+APPLE_ROOTS = _find_file("apple-roots.pem")
 if APPLE_ROOTS:
     signin.APPLE_CA_FILE = APPLE_ROOTS
+
+
+def _select_ca_bundle():
+    """Pick a CA bundle.
+
+    a-Shell's Python ships an EMPTY trust store: `ssl.create_default_context()`
+    has no roots, so every https:// request fails ('no certificate or crl found'
+    / 'self signed certificate in certificate chain'). We therefore load a real
+    bundle. We never disable verification.
+    """
+    try:
+        import certifi                                     # noqa: PLC0415
+        where = certifi.where()
+        if where and os.path.isfile(where):
+            return where, "certifi (already on the device)"
+    except Exception:                                      # noqa: BLE001
+        pass
+    shipped = _find_file("cacert.pem")
+    if shipped:
+        return shipped, "shipped bundle (third_party/ca-bundle/cacert.pem)"
+    return None, "none found"
+
+
+CA_BUNDLE, CA_BUNDLE_SOURCE = _select_ca_bundle()
+if CA_BUNDLE:
+    signin.set_ca_bundle(CA_BUNDLE)
+
+
+def _tls_diagnostics():
+    paths = ssl.get_default_verify_paths()
+    print("default CA file : %s" % (paths.cafile or "(none)"))
+    print("default CA dir  : %s" % (paths.capath or "(none)"))
+    print("CA bundle used  : %s" % (CA_BUNDLE or "(none)"))
+    print("CA bundle source: %s" % CA_BUNDLE_SOURCE)
+    try:
+        roots = ssl.create_default_context().get_ca_certs()
+        print("roots in default context: %d" % len(roots))
+    except Exception as exc:                               # noqa: BLE001
+        print("roots in default context: unknown (%r)" % (exc,))
 
 
 def _ensure_dir(path):
@@ -177,6 +218,7 @@ def _selftest():
     print("Exercises the server list, provisioning and header minting.")
     print("This is the step most likely to be slow or flaky.")
     print("State directory: %s" % POC_STATE)
+    _tls_diagnostics()
     try:
         anisette, _gs = connect_anisette("", _state_path())
         headers = anisette.headers()

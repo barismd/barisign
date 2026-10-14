@@ -2,6 +2,10 @@
 *.p12
 *.pem
 *.key
+# Public trust anchors and CA bundles are NOT secrets — allow the shipped ones.
+!third_party/apple-roots/apple-roots.pem
+!third_party/apple-roots/AppleIncRootCertificate.cer
+!third_party/ca-bundle/cacert.pem
 *.mobileprovision
 *.provisionprofile
 *.rppairing

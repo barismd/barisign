@@ -39,6 +39,13 @@ SideInstaller binaries or IPAs** (we don't host any IPAs at all).
 
 ## Certificates
 
+### Mozilla CA bundle — `third_party/ca-bundle/cacert.pem`
+
+- Source: `https://curl.se/ca/cacert.pem` (curl project's build of Mozilla's CA list)
+- Licence: public domain (stated in the file header)
+- SHA-256: `a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505`
+- Used for: all hosts, because a-Shell's Python ships an empty trust store.
+
 ### Apple Root CA — `third_party/apple-roots/`
 
 - Source: `https://www.apple.com/appleca/AppleIncRootCertificate.cer` (Apple PKI page)
