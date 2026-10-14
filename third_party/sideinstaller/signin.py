@@ -1195,6 +1195,20 @@ def connect_anisette(url_hint, state_path):
 # =============================================================================
 
 def aes_cbc_decrypt(key, iv, data):
+    """AES-256-CBC decrypt, matching upstream's `openssl enc -d` semantics.
+
+    CHANGED BY BARISIGN, twice over. Upstream shelled out to
+    `openssl enc -d -aes-256-cbc`, which (a) is unavailable in a-Shell and
+    (b) **removes PKCS#7 padding by default**. `cryptography` does neither, so it
+    is used here and the padding is stripped explicitly. Without the strip,
+    Apple's SPD plist keeps its trailing padding bytes and plistlib fails with
+    "not well-formed (invalid token)" at the very end of the document.
+    """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
-    return decryptor.update(data) + decryptor.finalize()
+    out = decryptor.update(data) + decryptor.finalize()
+    if out:
+        pad = out[-1]
+        if 1 <= pad <= 16 and out.endswith(bytes([pad]) * pad):
+            out = out[:-pad]
+    return out

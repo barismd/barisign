@@ -921,7 +921,39 @@ into.) This replaced one hang with another — our bug both times.
 **Verified in the Codespace:** the pipe path returns the line unchanged; the TTY path was exercised
 under a real PTY and returned the typed line without hanging.
 
-## 21.6 Next action
+## 21.6 Round 7 — SRP SUCCEEDED on the device; failure was our AES padding
+
+The user's run reached the very end of the handshake:
+
+```
+... asking the anisette server for fresh headers
+... contacting Apple: SRP init (no password leaves this device)
+... Apple replied; computing the SRP proof locally
+... sending the proof to Apple (still no password)
+... Apple accepted the proof; verifying Apple's own proof
+FAILED: Could not decrypt the sign-in response
+        (H(S): not well-formed (invalid token): line 1, column 2644; ...)
+```
+
+So, confirmed on a real device: the anisette headers, the SRP `init`, our computed `M1`, Apple's
+acceptance of it, and the `M2` server-proof check **all work**. Apple even pushed a **2FA code** to the
+user's devices at that point. The password prompt works too now (§21.5).
+
+**The bug was ours, in the same replacement as before.** Upstream's `aes_cbc_decrypt()` shelled out to
+`openssl enc -d -aes-256-cbc`, and `openssl enc -d` **strips PKCS#7 padding by default**. Our
+`cryptography` version returned the raw plaintext, so Apple's SPD plist arrived with its 8 trailing
+padding bytes and plistlib failed on them — reported as `not well-formed (invalid token)` at the end of
+the document. Identical failure for both key candidates, because both decrypt to a good document plus
+the same trailing padding.
+
+**Fix:** `aes_cbc_decrypt()` now strips PKCS#7 padding (validating it) to match `openssl enc -d`.
+
+**Reproduced and verified in the Codespace:** encrypting a small plist the way Apple does, then
+`SRPClient.decrypt_spd(blob)`, now returns the parsed dict; the pre-fix behaviour reproduces the
+device's exact `not well-formed (invalid token)` error. Self-test 3/6 was also strengthened to send
+realistic padded data, so this class of bug cannot come back silently.
+
+## 21.7 Next action
 
 ```
 python3 -u poc_login.py --diag

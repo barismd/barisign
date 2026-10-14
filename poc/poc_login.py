@@ -241,15 +241,19 @@ def _selftest():
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         key = bytes(range(16))
         iv = bytes(range(16, 32))
-        plain = b"barisign-selftest".ljust(32, b"\x00")
+        plain = b"barisign-selftest"          # 17 bytes -> needs 15 bytes of padding
+        pad = 16 - (len(plain) % 16)
+        padded = plain + bytes([pad]) * pad   # what Apple sends us
         encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
-        ciphertext = encryptor.update(plain) + encryptor.finalize()
-        if aes_cbc_decrypt(key, iv, ciphertext) == plain:
-            print("AES-CBC round-trip through signin.aes_cbc_decrypt: OK")
+        ciphertext = encryptor.update(padded) + encryptor.finalize()
+        got = aes_cbc_decrypt(key, iv, ciphertext)
+        if got == plain:
+            print("AES-CBC round-trip: padding stripped correctly")
             print("SELFTEST 3/6: PASS")
         else:
             failures.append("AES-CBC mismatch")
-            print("SELFTEST 3/6: FAIL -> decrypted text differs")
+            print("SELFTEST 3/6: FAIL -> got %d bytes, expected %d"
+                  % (len(got), len(plain)))
     except Exception as exc:                                  # noqa: BLE001
         failures.append("AES-CBC: %r" % (exc,))
         print("SELFTEST 3/6: FAIL -> %r" % (exc,))
