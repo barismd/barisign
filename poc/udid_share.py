@@ -528,6 +528,15 @@ def make_mdm_identity(ca_cert, ca_key, password):
 
 
 def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
+    """ABANDONED (2026-10-14). Kept only as documentation of a dead end.
+
+    The MDM route got as far as iOS validating every field, and then refused the client
+    identity with "the password is not correct" even when the PKCS#12 was byte-for-byte
+    the same structure as `openssl pkcs12 -export -legacy` produces (verified with
+    `openssl pkcs12 -info`) and opened correctly with the password by OpenSSL. Whatever
+    Apple's importer additionally requires, we could not satisfy it from a script, so the
+    branch is closed. Do not re-enable without a new idea.
+    """
     """EXPERIMENT: ONE profile that also delivers the UDID.
 
     Why this can work where a nested `Profile Service` could not: an MDM profile is an
@@ -827,9 +836,15 @@ def main():
     use_airdrop = "--airdrop" in sys.argv[1:]
     use_lifetime = "--lifetime" in sys.argv[1:]
     use_udid_only = "--udid-only" in sys.argv[1:]
-    use_mdm = "--mdm" in sys.argv[1:]
-    if use_mdm:
-        use_https = True
+    if "--mdm" in sys.argv[1:]:
+        print("--mdm is DISABLED: the MDM route was abandoned on 2026-10-14 after iOS")
+        print("refused a PKCS#12 that is byte-structurally identical to one made by")
+        print("`openssl pkcs12 -export -legacy` (see PHASE0_REPORT.md section 49).")
+        print("Use the verified flow instead:")
+        print("   python3 -u udid_share.py --https --airdrop          # first time: CA + UDID")
+        print("   python3 -u udid_share.py --https --airdrop --udid-only   # after that: one profile")
+        return 2
+    use_mdm = False
     if use_udid_only:
         use_https = True
     if "--diag-profiles" in sys.argv[1:]:

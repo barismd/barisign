@@ -2692,3 +2692,43 @@ likely ones are the ones we cannot satisfy without a real enrolment setup:
 on-device MDM enrollment is not a shortcut around the trust problem, and the **verified two-profile flow**
 (install the CA once, trust it, then one profile per fetch) stays the answer. The MDM experiment has cost
 little and taught us where the wall is; it should not be pushed much further without a specific reason.
+
+---
+
+# 49. MDM branch closed (2026-10-14) — the verified two-profile flow is the answer
+
+Final device result: iOS refused the MDM profile's client identity with **"the password is not correct"**
+even after every plausible cause was fixed:
+
+- `AccessRights` supplied (least privilege, bit 16);
+- `IdentityCertificateUUID` wired to a real PKCS#12 payload;
+- the PKCS#12 rebuilt by hand as **PBES1 / 3DES** (iOS refuses the PBES2/AES archives that `cryptography`
+  produces);
+- **`version` added to `EncryptedData`**, and the **certificates moved into their own encrypted safe**, so
+  the file's structure became **byte-for-byte the same shape as one produced by
+  `openssl pkcs12 -export -legacy -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES`** — confirmed with
+  `openssl pkcs12 -info` on both files;
+- **`localKeyID` + `friendlyName`** attributes added so the key and certificate pair into an identity;
+- a correct **SHA-1 MAC**.
+
+OpenSSL opens our archive with `1234`, the wrong password is rejected, and the structure matches its own
+legacy output. iOS still says the password is wrong. Whatever Apple's importer additionally demands
+(possibly a signed MDM profile, a valid APNs topic, or an entitlement we cannot reach from a script), it is
+**not reachable from here**, and the branch is closed. `--mdm` now refuses to run and points at this
+section.
+
+**Kept in the repository** is the hand-built legacy PKCS#12 writer (`_pkcs12_kdf`, `_pbes1_encrypt`,
+`build_legacy_p12`). It is verified against OpenSSL and may be useful later; it is currently unused.
+
+## 49.1 Back to the verified flow
+
+```
+# first time on a device: install the CA, switch its trust ON, then the UDID profile
+python3 -u udid_share.py --https --airdrop
+
+# every time after that: ONE profile
+python3 -u udid_share.py --https --airdrop --udid-only
+```
+
+This is device-verified end to end: the UDID arrives, nothing leaves the local network, and after the
+one-time CA trust every fetch is a single profile.
