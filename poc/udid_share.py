@@ -359,7 +359,7 @@ def make_mdm_identity(ca_cert, ca_key, password):
         b"BariSign", key, cert, [ca_cert], serialization.NoEncryption())
 
 
-def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity_password=""):
+def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
     """EXPERIMENT: ONE profile that also delivers the UDID.
 
     Why this can work where a nested `Profile Service` could not: an MDM profile is an
@@ -387,7 +387,6 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity
             {
                 "PayloadCertificateFileName": "BariSignIdentity.p12",
                 "PayloadContent": identity_p12,
-                "Password": identity_password,
                 "PayloadDescription": "Client identity for the MDM connection. Delete with the profile.",
                 "PayloadDisplayName": "BariSign MDM identity",
                 "PayloadIdentifier": "io.barisign.identity",
@@ -428,7 +427,7 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity
         "PayloadVersion": 1,
         "PayloadIdentifier": "io.barisign.mdm.profile",
         "PayloadUUID": str(uuid.uuid4()).upper(),
-        "PayloadDisplayName": "BariSign - UDID (MDM v2)",
+        "PayloadDisplayName": "BariSign - UDID (MDM v3)",
         "PayloadDescription":
             "Temporary. Adds a throwaway CA, reports this device's identifiers once, and adds one removable icon. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
@@ -744,10 +743,12 @@ def main():
         if not use_udid_only:
             state["ca_xml"] = as_xml(ca_profile(certs["ca_der"], certs["ca_fingerprint"]))
         _ca_cert, _ca_key = load_or_create_ca()
-        _password = secrets.token_urlsafe(16)
-        _p12 = make_mdm_identity(_ca_cert, _ca_key, _password)
+        # The identity is packaged UNENCRYPTED on purpose (iOS refuses PBES2/AES
+        # archives), so no Password key is sent either - a password against an
+        # unencrypted archive is exactly the "password is not correct" error.
+        _p12 = make_mdm_identity(_ca_cert, _ca_key, "")
         state["mdm_xml"] = as_xml(mdm_profile(base + "/udid", certs["ca_der"],
-                                              certs["ca_fingerprint"], _p12, _password))
+                                              certs["ca_fingerprint"], _p12))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
             ca_url = None
@@ -823,9 +824,9 @@ def main():
     if use_airdrop:
         if use_mdm:
             mdm_path = write_beside_script("BariSign-ONE.mobileconfig", state["mdm_xml"])
-            print(" ONE-PROFILE MODE (MDM v2): CA + client identity + MDM check-in +")
+            print(" ONE-PROFILE MODE (MDM v3): CA + client identity + MDM check-in +")
             print(" marker, all in this single file. Look for \"(MDM v2)\" in the profile")
-            print(" name on the device - if it does not say v2, it is an old file.")
+            print(" name on the device - if it does not say v3, it is an old file.")
             import plistlib as _pl
             print(" payloads in this file: %s"
                   % [x["PayloadType"] for x in _pl.loads(state["mdm_xml"])["PayloadContent"]])
