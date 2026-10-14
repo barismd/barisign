@@ -4,22 +4,30 @@ Your Device B answered: **"Profil yüklenemedi, bilinmeyen bir hata oluştu"** �
 So we first find **which layer** iOS is refusing, with three throwaway profiles, and only then run the
 real thing.
 
-**On sharing out of a-Shell:** `open <file>` *is* implemented as the iOS share sheet
-(`UIActivityViewController`) in `ios_system/shell_cmds_ios/open.m`, but it **fails silently** in two
-cases, so treat it as a convenience and **use the Files app as the reliable route**:
+**Sharing out of a-Shell:** a-Shell's own commands contain **no `share`**, and the only in-app share
+sheet comes from `open <file>` — which can fail silently (`ios_system/shell_cmds_ios/open.m`: if the path
+is not found it degrades to `openurl`; and it presents on the deprecated `keyWindow`, which is nil in a
+scene-based app — see `PHASE0_REPORT.md` §28). The reliable, still-in-terminal route is a **URL scheme**
+that opens the Files app straight at the folder:
 
-1. If the path is not found, `open` silently falls back to treating the argument as a **URL** (the
-   `openurl` command) and nothing visible happens.
-2. If `UIApplication.keyWindow` is nil — a deprecated API, and a-Shell is scene-based — it prints
-   *"Cannot find a window"* to stderr and then presents on a nil controller: nothing appears.
+```
+openurl shareddocuments://<absolute folder path printed by the script>
+```
 
-So: **Files app → On My iPhone/iPad → a-Shell → barisign → long-press the file → Share → AirDrop.**
-If you want to try `open`, always give it the **absolute** path it prints, and check for that stderr
-message. `view <file>` (Quick Look) is a good way to confirm the file is readable.
+Then long-press the file → Share → AirDrop. `python3 -u poc_login.py --diag-profiles` and
+`--airdrop` print that exact command for you.
 
 ---
 
 ## Step 0 — find out what iOS is refusing (2 minutes)
+
+Your Device B answered **"Profil yüklenemedi, bilinmeyen bir hata oluştu"**. Two things were wrong with
+the last test round, and both are fixed here:
+
+- The **empty profile was a bad control**: iOS said *"this profile is empty"* and never tried to install
+  it, so it told us nothing. The control is now a **Web Clip** — a payload iOS definitely supports, which
+  adds one removable icon to the Home Screen.
+- The `open` command is **not** a reliable way to share, so the folder is opened in Files instead.
 
 On Device A, in a-Shell:
 
@@ -35,22 +43,28 @@ curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/udid_share.
 python3 -u udid_share.py --diag-profiles
 ```
 
-That writes three files and stops. Share and install them on Device B **in this order**, and tell me
-which ones fail:
+Then, with the single command it prints (this is the working one — it opens **Files** at the folder,
+using a URL scheme instead of the broken file-path branch):
 
-| File (share from Files, or try `open` with the full path) | What it is | If it fails |
+```
+openurl shareddocuments:///private/var/mobile/Containers/Data/Application/<your-uuid>/Documents/barisign
+```
+
+Long-press each file → **Share → AirDrop** → Device B, **in this order**:
+
+| File | What it is | What the result tells us |
 |---|---|---|
-| `barsign-test1-empty.mobileconfig` | a profile that installs **nothing** | unsigned profiles cannot be installed on Device B at all (or AirDrop delivery is the problem) → we try sending it another way |
-| `barsign-test2-profservice.mobileconfig` | `Profile Service`, **only** the keys Apple documents | **iOS 27 no longer accepts the `Profile Service` payload** → this whole no-app route is dead, and we fall back to the Settings pairing route |
-| `barsign-test3-profservice-lifetime.mobileconfig` | the same **plus** `DurationUntilRemoval` + `PayloadExpirationDate` | those two extra keys are what iOS refuses — which is very likely, since the first version of the profile carried them |
+| `barsign-test1-webclip.mobileconfig` | a **Web Clip** (one removable Home Screen icon) | **the control.** If this installs, unsigned profiles work and any later failure is about the payload type. If it does **not** install, the problem is profile installation or the AirDrop delivery, not our payload |
+| `barsign-test2-profservice.mobileconfig` | `Profile Service`, **only** Apple's documented keys | **iOS 27 rejects the `Profile Service` payload** → this whole no-app route is dead |
+| `barsign-test3-profservice-lifetime.mobileconfig` | the same plus the two lifetime keys | informational (they are off by default now) |
 
-The files contain **no usable callback address** (they point at `192.0.2.1`, which is unroutable). They
-exist only to test installation. Install each one, note the result, then **remove it** (Settings →
-General → VPN & Device Management → Remove Profile).
+Install each one, note the exact result, then remove it: for the Web Clip, long-press the icon →
+Remove; for the others, Settings → General → VPN & Device Management → Remove Profile.
 
-**Likely outcome and what I already changed:** the two lifetime keys are now **OFF by default**. An
-initial profile that iOS rejects is worse than a leftover one; pass `--lifetime` if you want them back.
-If test 3 is the only failure, the real run below should now work.
+**If the Web Clip installs but `Profile Service` does not**, that is the answer we are looking for and it
+means Apple has retired the payload: the receiver will need an app after all, and we move to the plan in
+`PHASE0_REPORT.md` §22.3. If **even the Web Clip** fails, tell me — then the problem is the delivery
+method (AirDrop) and we retry the same file through the QR/HTTP route.
 
 ---
 

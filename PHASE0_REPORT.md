@@ -1755,3 +1755,53 @@ view barsign-test1-empty.mobileconfig        # Quick Look; proves it is readable
 
 If the absolute path works and the relative one does not, it was cause 1. If neither works and stderr
 says "Cannot find a window", it was cause 2.
+
+---
+
+# 29. Round: the empty profile was a bad control, and the working way to share from a-Shell
+
+## 29.1 Device result: two of three profiles would not install
+
+- `barsign-test1-empty` → iOS answered **"this profile is empty"** and never attempted an install. **Our
+  test design was wrong**: an empty `Configuration` profile is rejected as empty, so it proved nothing.
+- `barsign-test2` / `barsign-test3` (`Profile Service`) → would **not** install. The user notes the
+  **Install button was still offered** even though iOS showed the profile as **"Not Signed"**, so the
+  signature is probably not the cause.
+
+The control is now a **Web Clip** (`com.apple.webClip.managed`) — a payload iOS certainly supports, which
+adds one removable Home Screen icon. That makes the next round decisive: Web Clip installs ⇒ unsigned
+profiles are fine and the failure is the `Profile Service` payload; Web Clip fails ⇒ the problem is
+profile installation or AirDrop delivery itself.
+
+## 29.2 Is `Profile Service` still supported? (research status)
+
+Inconclusive, and honestly so. Apple documents it **only** in the archived *Over-the-Air Profile Delivery
+and Configuration* guide (2018 and earlier); the current Device Management reference is MDM-oriented and
+no "removed in iOS X" statement was found for this payload. Third-party UDID services still operate in
+2026, which is weak evidence it survives — but the device just refused two of these profiles, which is
+strong evidence it does not. The Web Clip control is what will settle it.
+
+## 29.3 Sharing from a-Shell: what actually works
+
+Checked a-Shell's own command registry (`a-Shell/ExtraCommands.swift`, `@_cdecl` names) and
+`ios_system/shell_cmds_ios/`:
+
+- there is **no `share` command** anywhere in a-Shell;
+- the **only** in-app share sheet is `open <file>`, which we already know fails silently (§28);
+- `view` delegates to `preview_main`, not a share-capable controller.
+
+What does work, with no Files navigation by hand: a **URL scheme** that opens the Files app at a folder:
+
+```
+openurl shareddocuments://<absolute folder>
+```
+
+This is the `openurl` branch — a real URL, so it does not touch the broken file-path/keyWindow code — and
+a-Shell's own issue #383 documents exactly this trick
+(`open shareddocuments:///private/var/mobile/Containers/Data/Application/<uuid>/Documents`). The script now
+prints the precise command, built from its own real container path, for both `--diag-profiles` and
+`--airdrop`. From there the Files share sheet (which is native and reliable) does the AirDrop.
+
+The long-term answer is Shortcuts: a-Shell ships **`Put File` / `Get File` intents**, so the Shortcut can
+pull the file out of a-Shell and use its own share/AirDrop action — no reliance on a-Shell's broken
+`open`. That is recorded as a requirement for `SHORTCUT_BUILD_GUIDE.md`.

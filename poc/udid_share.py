@@ -207,6 +207,35 @@ def make_certs(ip):
     }
 
 
+def webclip_profile():
+    """A profile with a payload iOS definitely supports.
+
+    The empty profile was a bad test: iOS answered "this profile is empty" and
+    never tried to install it. A Web Clip adds one removable icon to the home
+    screen, so if THIS installs, unsigned AirDropped profiles work in general and
+    anything that fails afterwards is about the Profile Service payload.
+    """
+    return {
+        "PayloadContent": [{
+            "PayloadType": "com.apple.webClip.managed",
+            "PayloadVersion": 1,
+            "PayloadIdentifier": "io.barisign.sanity.webclip",
+            "PayloadUUID": str(uuid.uuid4()).upper(),
+            "PayloadDisplayName": "BariSign test clip",
+            "Label": "BariSign test",
+            "URL": "https://example.com/",
+            "IsRemovable": True,
+        }],
+        "PayloadType": "Configuration",
+        "PayloadVersion": 1,
+        "PayloadIdentifier": "io.barisign.sanity",
+        "PayloadUUID": str(uuid.uuid4()).upper(),
+        "PayloadDisplayName": "BariSign - can this device install a profile?",
+        "PayloadDescription": "Adds one removable icon to the Home Screen and nothing else.",
+        "PayloadOrganization": "BariSign",
+    }
+
+
 def empty_profile():
     """A Configuration profile with no payloads: the sanity check. If even this
     will not install on the target, the problem is profile installation itself,
@@ -337,25 +366,31 @@ def write_diag_profiles():
     """
     placeholder = "http://192.0.2.1/udid"      # TEST-NET-1: never routable
     tests = [
-        ("barsign-test1-empty.mobileconfig", empty_profile(),
-         "Installs NOTHING. Tests only whether an unsigned profile installs at all."),
+        ("barsign-test1-webclip.mobileconfig", webclip_profile(),
+         "Adds one removable icon to the Home Screen. If THIS installs, unsigned "
+         "AirDropped profiles work and any later failure is about the payload type."),
         ("barsign-test2-profservice.mobileconfig", udid_profile(placeholder),
          "Profile Service with ONLY the documented keys. If this one fails, iOS 27 no "
          "longer accepts the payload type and this whole route is dead."),
         ("barsign-test3-profservice-lifetime.mobileconfig",
          udid_profile(placeholder, lifetime=True),
-         "Profile Service plus DurationUntilRemoval and PayloadExpirationDate. If only "
-         "THIS one fails, those two keys are what iOS refuses."),
+         "The same plus DurationUntilRemoval / PayloadExpirationDate. Informational "
+         "only now: those keys are OFF by default."),
     ]
     here = os.path.dirname(os.path.abspath(__file__))
     print("Three test profiles written to %s" % here)
+    print()
+    print("Open that folder in the Files app with this one command, then long-press")
+    print("each file and Share -> AirDrop:")
+    print("   openurl shareddocuments://%s" % here)
+    print("Share/install them in this order. The FIRST one is the control: it must")
+    print("install, or nothing after it means anything.")
     print("Install them on Device B in this order and tell me exactly which fail:")
     print()
     for name, profile, why in tests:
         write_beside_script(name, as_xml(profile))
         print(" %s" % name)
         print("     %s" % why)
-        print("     share it with:  open %s" % name)
         print()
     print("These contain no usable callback address; they are for installation only.")
 
@@ -377,15 +412,19 @@ def offer_share(path):
     print("   %s" % absolute)
     print(" In the Files app: On My iPhone/iPad -> a-Shell -> barisign -> %s"
           % os.path.basename(path))
-    print(" Trying the share sheet (open with an ABSOLUTE path):")
+    print(" BEST ROUTE, one command, opens the Files app AT this folder:")
+    print("   openurl shareddocuments://%s" % os.path.dirname(absolute))
+    print("   then long-press the file there and choose Share -> AirDrop.")
+    print()
+    print(" Also trying the in-app share sheet (open with an ABSOLUTE path).")
+    print(" Note: a-Shell's own commands list has no 'share'; the only in-app")
+    print(" share sheet is this 'open', which can fail silently (see PHASE0_REPORT"
+          " section 28):")
     print("   open %s" % absolute)
     try:
         os.system("open %s" % absolute)
     except Exception as exc:                                   # noqa: BLE001
         print(" Could not run the share sheet: %r" % (exc,))
-    print("   If no share sheet appeared: use the Files app route above, or run")
-    print("     view %s     (Quick Look preview - proves the file is readable)"
-          % os.path.basename(path))
 
 
 def show_qr(url):
