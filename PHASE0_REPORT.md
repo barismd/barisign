@@ -2333,3 +2333,67 @@ work left.
 Written: `GUIDE.md` — the complete current flow, with each stage marked working or being built, the exact
 steps to test, and the caveats (Safari-only, the iOS 26.4+ one-hour Security Delay on iPhone, free-account
 limits).
+
+---
+
+# 41. DNS-free on-device paths — deep search, and the invariant behind them
+
+The user asked for every DNS-free, on-device way to satisfy iOS's HTTPS requirement, and a method that
+will definitely work.
+
+## 41.1 The invariant (this is the whole answer)
+
+iOS requires the `Profile Service` callback to be **HTTPS with a certificate chaining to a *built-in*
+trusted root**. A root the user installed is refused (*"MDM certificate is invalid"*, measured). Therefore
+a trusted endpoint can only come from one of two sources:
+
+1. **a public CA**, which requires proving control of a name — over **DNS** (DNS-01) or over an
+   **internet-facing port 80** (HTTP-01). Neither is available on-device without either a DNS provider or
+   port forwarding.
+2. **a third party that already has one** — a Worker, a tunnel provider, or any hosted relay.
+
+**There is no third source.** No app-side trick, entitlement, payload or URL scheme changes this: the
+certificate has to chain to something iOS already trusts. Everything else is a variant of the two.
+
+## 41.2 The one genuinely DNS-free, on-device option: an SSH reverse tunnel
+
+`a-Shell` ships `ssh` (its command set includes `ssh`, `ssh-keygen`, `ssh-agent`). Both current providers
+work with **no account and no installation**:
+
+| Provider | Command | Free tier | Notes |
+|---|---|---|---|
+| **Pinggy** | `ssh -p 443 -R0:localhost:PORT free.pinggy.io -T` | 60-minute tunnels, random subdomain, **no signup** | prints a public **https://…pinggy.link** URL; can even print the QR itself (`qr@free.pinggy.io`) |
+| **Serveo** | `ssh -R 80:localhost:PORT serveo.net` | 3 active tunnels, no registration | "secure https://…serveo.net" |
+
+**Why this is the interesting one:** the tunnel provider terminates TLS with **its own publicly trusted
+certificate**, so **our local server can stay plain HTTP** — no certificate, no CA, no DNS, nothing to
+install on either device. The target just opens the public HTTPS URL.
+
+Caveats, stated honestly:
+
+- **The UDID passes through the tunnel provider** in clear inside their TLS. Same privacy class as a
+  Worker, arguably less accountable than Cloudflare.
+- Pinggy's free tier caps a tunnel at **60 minutes**, gives a random subdomain each time, and shows a
+  **one-time browser screening page** — that page will greet Safari when the target fetches the profile
+  (API-style clients pass through). Anonymous tunnels are also inherently less reliable.
+- Serveo/localhost.run have a history of intermittent downtime.
+- **Nothing here is verified by us yet** — it must be tested on the devices.
+
+## 41.3 Comparison of the three real options
+
+| | Worker (A) | **SSH tunnel (B)** | DuckDNS + our own cert (C) |
+|---|---|---|---|
+| DNS needed | no | **no** | yes (DuckDNS, free) |
+| Account needed | BariSign's, one-time (or none, if we host one shared) | **none** | user creates DuckDNS once |
+| Runs on device | no | **yes (a-Shell)** | yes |
+| UDID exposure | transits our endpoint | transits the tunnel provider | **never leaves the LAN** |
+| New code | done | small (a tunnel wrapper + local HTTP server) | large (pure-Python ACME DNS-01) |
+| Reliability | high | medium | high, once DNS works |
+
+## 41.4 Recommended order
+
+1. **Test B first**, because it is one command and needs no account: if a public trusted HTTPS URL from
+   a-Shell can serve the profile and receive the POST, we have a DNS-free, on-device, zero-setup path.
+2. If B is unreliable or the screening page blocks the profile, use **A** (deployed once by us; users do
+   nothing).
+3. **C** stays the privacy-maximal option for users who want the UDID to never leave their network.
