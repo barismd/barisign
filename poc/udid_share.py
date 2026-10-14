@@ -316,6 +316,65 @@ def empty_profile():
     }
 
 
+def mdm_profile(checkin_url, ca_der, name_suffix=""):
+    """EXPERIMENT: ONE profile that also delivers the UDID.
+
+    Why this can work where a nested `Profile Service` could not: an MDM profile is an
+    ordinary Configuration profile - an ARRAY of payloads, so the root certificate can
+    live beside it - and iOS trusts a root installed by the same profile for the MDM
+    connection, which is exactly how enterprise MDM uses a private CA. The device then
+    checks in over HTTPS, and its check-in plist carries UDID, serial, product and OS
+    version. A Web Clip is included so the profile is visibly not empty.
+
+    UNVERIFIED: iOS may insist on a signed MDM profile or a valid push topic.
+    """
+    return {
+        "PayloadContent": [
+            {
+                "PayloadCertificateFileName": "BariSignCA.cer",
+                "PayloadContent": ca_der,
+                "PayloadDescription": "Temporary BariSign certificate authority.",
+                "PayloadDisplayName": "BariSign CA %s" % name_suffix,
+                "PayloadIdentifier": "io.barisign.ca",
+                "PayloadType": "com.apple.security.root",
+                "PayloadUUID": str(uuid.uuid4()).upper(),
+                "PayloadVersion": 1,
+            },
+            {
+                "PayloadType": "com.apple.mdm",
+                "PayloadVersion": 1,
+                "PayloadIdentifier": "io.barisign.mdm",
+                "PayloadUUID": str(uuid.uuid4()).upper(),
+                "PayloadDisplayName": "BariSign (MDM)",
+                "PayloadDescription": "Reports this device's identifiers once, over HTTPS.",
+                "ServerURL": checkin_url,
+                "CheckInURL": checkin_url,
+                "Topic": "com.apple.mgmt.External." + str(uuid.uuid4()),
+                "SignMessage": False,
+                "CheckOutWhenRemoved": False,
+            },
+            {
+                "PayloadType": "com.apple.webClip.managed",
+                "PayloadVersion": 1,
+                "PayloadIdentifier": "io.barisign.webclip",
+                "PayloadUUID": str(uuid.uuid4()).upper(),
+                "PayloadDisplayName": "BariSign marker",
+                "Label": "BariSign",
+                "URL": "https://example.com/",
+                "IsRemovable": True,
+            },
+        ],
+        "PayloadType": "Configuration",
+        "PayloadVersion": 1,
+        "PayloadIdentifier": "io.barisign.mdm.profile",
+        "PayloadUUID": str(uuid.uuid4()).upper(),
+        "PayloadDisplayName": "BariSign - UDID (one profile)",
+        "PayloadDescription":
+            "Temporary. Adds a throwaway CA, reports this device's identifiers once, and adds one removable icon. Delete it afterwards.",
+        "PayloadOrganization": "BariSign",
+    }
+
+
 def ca_profile(ca_der, name_suffix=""):
     return {
         "PayloadContent": [{
@@ -409,8 +468,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         state["claimed"] = True
         state["result"] = {
             "udid": udid,
-            "product": extract(body, "PRODUCT") or "(not sent)",
-            "version": extract(body, "VERSION") or "(not sent)",
+            "product": (extract(body, "PRODUCT") or extract(body, "ProductName")
+                        or "(not sent)"),
+            "version": (extract(body, "VERSION") or extract(body, "OSVersion")
+                        or extract(body, "BuildVersion") or "(not sent)"),
+            "serial": (extract(body, "SERIAL") or extract(body, "SerialNumber")
+                       or "(not sent)"),
         }
         self._send(as_xml(done_profile()), "application/x-apple-aspen-config")
         posted.set()
@@ -535,6 +598,9 @@ def main():
     use_airdrop = "--airdrop" in sys.argv[1:]
     use_lifetime = "--lifetime" in sys.argv[1:]
     use_udid_only = "--udid-only" in sys.argv[1:]
+    use_mdm = "--mdm" in sys.argv[1:]
+    if use_mdm:
+        use_https = True
     if use_udid_only:
         use_https = True
     if "--diag-profiles" in sys.argv[1:]:
@@ -617,6 +683,8 @@ def main():
         state["ca_fingerprint"] = certs["ca_fingerprint"]
         if not use_udid_only:
             state["ca_xml"] = as_xml(ca_profile(certs["ca_der"], certs["ca_fingerprint"]))
+        state["mdm_xml"] = as_xml(mdm_profile(base + "/udid", certs["ca_der"],
+                                              certs["ca_fingerprint"]))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
             ca_url = None
@@ -690,10 +758,17 @@ def main():
     sys.stdout.flush()
 
     if use_airdrop:
-        if use_https and not use_udid_only:
+        if use_mdm:
+            mdm_path = write_beside_script("BariSign-ONE.mobileconfig", state["mdm_xml"])
+            print(" ONE-PROFILE MODE (MDM experiment): the certificate, the check-in and")
+            print(" a visible marker are all in this single file. If it installs, iOS")
+            print(" checks in on its own - no trust switch, no second profile.")
+            offer_share(mdm_path)
+            print()
+        if use_https and not use_udid_only and not use_mdm:
             ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
         profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        if use_https and not use_udid_only:
+        if use_https and not use_udid_only and not use_mdm:
             print(" Check first, on Device B in Safari (needs this script running):")
             print("   %s/tls-check" % base)
             print("   a padlock and 'TLS OK' means the CA is trusted. No padlock = the")

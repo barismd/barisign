@@ -2598,3 +2598,42 @@ actually work.
 
 The user's goals — one profile, no trust step, no third party — cannot all hold at the same time. That is
 Apple's design, and it is now confirmed by both documentation and device tests.
+
+---
+
+# 46. The one-profile attempt that could actually work: an MDM profile
+
+The nested `Profile Service` idea is dead (iOS: *"unknown data"*). But there is a second, structurally
+different way to get the CA and the identifier request into **one** profile, and it is how enterprise MDM
+has always worked with a private certificate authority:
+
+> An **MDM profile** (`com.apple.mdm`) is an ordinary Configuration profile — an **array** of payloads — so
+> a **root certificate can sit beside it**, and iOS trusts a root installed by the *same* profile for the
+> MDM connection. The device then **checks in over HTTPS**, and its check-in plist carries `UDID`,
+> `SerialNumber`, `ProductName` and `OSVersion`.
+
+Implemented as `--mdm`:
+
+```
+python3 -u udid_share.py --mdm --airdrop     # ONE file: BariSign-ONE.mobileconfig
+```
+
+Verified in the Codespace: the profile builds as `Configuration` with payloads
+`['com.apple.security.root', 'com.apple.mdm', 'com.apple.webClip.managed']`, the `CheckInURL` points at our
+local HTTPS server, and the Web Clip exists so the profile is **visibly not empty** (the "empty profile"
+notice was only ever cosmetic, but this removes it).
+
+Our server now also reads the MDM key names (`SerialNumber`, `ProductName`, `OSVersion`, `BuildVersion`),
+so the result line is complete whichever route fires.
+
+**UNVERIFIED, and honestly uncertain:** iOS may insist on a signed MDM profile or a valid push topic
+before it will enrol. If it installs and checks in — no trust switch, no second profile. If it refuses,
+the two-profile flow (CA once, then one profile per fetch) remains the verified answer.
+
+## 46.1 What each attempt has now told us
+
+| Single-profile attempt | Result |
+|---|---|
+| `Profile Service` nested inside a Configuration array | ❌ iOS: *"unknown data"* |
+| CA + `Profile Service` in one file (any arrangement) | ❌ trust switch cannot happen before the request |
+| **CA + `com.apple.mdm` (+ Web Clip) in one file** | **? untested on device** |
