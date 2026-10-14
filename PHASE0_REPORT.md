@@ -1542,3 +1542,60 @@ One caution worth writing into the guide: comparing **BSSIDs between the two dev
 (mesh networks hand out different access points), so use the SSID plus reachability, not BSSID equality.
 
 These four steps are recorded as requirements for `SHORTCUT_BUILD_GUIDE.md` in Phase 1.
+
+---
+
+# 26. `--https`: so only the signing device can read the UDID
+
+## 26.1 What is and is not possible
+
+The target runs **none of our code**, so we cannot give it an app-level key or an app-level cipher.
+iOS will only encrypt this exchange with **TLS**, which leaves exactly two options:
+
+| | Who can read the UDID in transit | Extra steps on the target |
+|---|---|---|
+| plain HTTP (default) | anyone who can observe the Wi-Fi | none |
+| **HTTPS (`--https`)** | **only this device** | install a temporary CA **and** switch on full trust for it |
+
+**Mutual authentication is not possible.** An iOS web request presents no client certificate, so the
+target cannot prove which device it is. The `PRODUCT` + `VERSION` confirmation step is therefore not
+redundant even under HTTPS — it is the only thing that ties the POST to the device in front of the user.
+
+## 26.2 How `--https` works
+
+1. A throwaway **CA** and a **leaf** for this LAN address are generated in memory
+   (`cryptography`, RSA-2048). The leaf carries `SubjectAltName = IP:<lan-ip>`, and both carry
+   `SubjectKeyIdentifier` / `AuthorityKeyIdentifier`, `KeyUsage` and `serverAuth` EKU — without those,
+   OpenSSL refuses the handshake (`Missing Authority Key Identifier`, found while testing).
+2. The **CA is served over plain HTTP** (it is public information, and it must be reachable *before*
+   trust exists — a chicken-and-egg), then the **profile and the POST go over HTTPS**.
+3. The target installs the CA and switches on **Settings → General → About → Certificate Trust
+   Settings**. A self-signed leaf alone is refused by iOS, which is why this is a CA + leaf.
+4. The private key is written only to a `0700` temporary directory under `~/Documents/barisign`, and
+   that directory is **deleted the moment the run ends**. Nothing is committed and nothing is kept.
+
+*Verified in the Codespace:* the CA profile is a `com.apple.security.root` payload; the profile serves
+over HTTPS with the generated leaf; a POST over HTTPS is captured; and a client that does **not** trust
+the CA is **refused** — so this is real verification, not verification switched off.
+
+## 26.3 Will the profile really delete itself after 10 minutes?
+
+**Unverified, and you should plan for it not to.** Two keys are in the profile now:
+
+- `PayloadExpirationDate` — Apple documents this as marking the profile expired and *offering an update
+  button*; the Configuration Profile Reference says it only applies to over-the-air delivery.
+  **It does not delete anything.**
+- `DurationUntilRemoval = 600` — from Apple's archived Over-the-Air Profile Delivery guide; this is the
+  key that is supposed to make the device **remove the profile itself** after N seconds.
+
+Whether iOS 27 honours `DurationUntilRemoval` for a manually installed profile is **unverified**. It is
+harmless if ignored, but the manual deletion instruction is the one to rely on. The test settles it:
+**after the run, wait ~11 minutes and look at Settings → General → VPN & Device Management.** If the
+BariSign entry is gone, the key works; if it is still there, delete it by hand.
+
+## 26.4 Recommended test order
+
+1. **First, plain**: `python3 -u udid_share.py` — this answers the only question that matters
+   (does iOS 27 still send the UDID at all). Keep this run simple; do not mix it with the CA steps.
+2. **Then, if it worked, with HTTPS**: `python3 -u udid_share.py --https` — same test, but the CA must
+   be installed and trusted on the target first, so allow more taps.

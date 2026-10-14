@@ -31,11 +31,15 @@
 import datetime
 import http.server
 import ipaddress
+import os
 import plistlib
 import re
 import secrets
+import shutil
 import socket
+import ssl
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -112,6 +116,112 @@ def as_xml(profile):
 
 
 # ---------------------------------------------------------------------------
+# Optional HTTPS: so only THIS device can read the UDID
+#
+# There is no way to give the target an app-level key: it runs no code of ours,
+# and iOS will only encrypt this exchange with TLS. So "encrypted between the two
+# devices" means one of two things, and only the second is possible:
+#
+#   * plain HTTP  - anyone on the same Wi-Fi can read the UDID in transit
+#   * HTTPS       - the target authenticates US and the POST is encrypted
+#
+# Mutual authentication is NOT possible: iOS presents no client certificate to a
+# web request, so the target cannot prove which device it is. That is what the
+# model + iOS version confirmation step is for.
+#
+# A self-signed leaf is refused by iOS, so this generates a throwaway CA and a
+# leaf for this LAN address. The target must install the CA and switch on full
+# trust for it, which is the price of "only the signer sees the UDID".
+# ---------------------------------------------------------------------------
+
+def make_certs(ip):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "BariSign temporary CA")])
+    ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    ca_cert = (x509.CertificateBuilder()
+               .subject_name(ca_name)
+               .issuer_name(ca_name)
+               .public_key(ca_key.public_key())
+               .serial_number(x509.random_serial_number())
+               .not_valid_before(now - datetime.timedelta(minutes=5))
+               .not_valid_after(now + datetime.timedelta(hours=6))
+               .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+               .add_extension(x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()),
+                              critical=False)
+               .add_extension(x509.KeyUsage(
+                   digital_signature=False, content_commitment=False, key_encipherment=False,
+                   data_encipherment=False, key_agreement=False, key_cert_sign=True,
+                   crl_sign=True, encipher_only=False, decipher_only=False), critical=True)
+               .sign(ca_key, hashes.SHA256()))
+
+    leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    leaf_cert = (x509.CertificateBuilder()
+                 .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, ip)]))
+                 .issuer_name(ca_name)
+                 .public_key(leaf_key.public_key())
+                 .serial_number(x509.random_serial_number())
+                 .not_valid_before(now - datetime.timedelta(minutes=5))
+                 .not_valid_after(now + datetime.timedelta(hours=6))
+                 .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+                 .add_extension(x509.SubjectKeyIdentifier.from_public_key(
+                     leaf_key.public_key()), critical=False)
+                 .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(
+                     ca_key.public_key()), critical=False)
+                 .add_extension(x509.KeyUsage(
+                     digital_signature=True, content_commitment=False, key_encipherment=True,
+                     data_encipherment=False, key_agreement=False, key_cert_sign=False,
+                     crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
+                 .add_extension(x509.ExtendedKeyUsage([x509.ExtendedKeyUsageOID.SERVER_AUTH]),
+                                critical=False)
+                 .add_extension(x509.SubjectAlternativeName(
+                     [x509.IPAddress(ipaddress.ip_address(ip))]), critical=False)
+                 .sign(ca_key, hashes.SHA256()))
+
+    def pem(cert):
+        return cert.public_bytes(serialization.Encoding.PEM)
+
+    leaf_key_pem = leaf_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption())
+    return {
+        "ca_pem": pem(ca_cert),
+        "ca_der": ca_cert.public_bytes(serialization.Encoding.DER),
+        "leaf_chain_pem": pem(leaf_cert) + pem(ca_cert),   # leaf first, then our CA
+        "leaf_key_pem": leaf_key_pem,
+    }
+
+
+def ca_profile(ca_der):
+    return {
+        "PayloadContent": [{
+            "PayloadCertificateFileName": "BariSignCA.cer",
+            "PayloadContent": ca_der,
+            "PayloadDescription": "Temporary BariSign certificate authority.",
+            "PayloadDisplayName": "BariSign temporary CA",
+            "PayloadIdentifier": "io.barisign.ca",
+            "PayloadType": "com.apple.security.root",
+            "PayloadUUID": str(uuid.uuid4()).upper(),
+            "PayloadVersion": 1,
+        }],
+        "PayloadDescription":
+            "Temporary, throwaway CA so the BariSign scripts can use HTTPS. Delete "
+            "it afterwards, and also turn it off in Certificate Trust Settings.",
+        "PayloadDisplayName": "BariSign temporary CA",
+        "PayloadIdentifier": "io.barisign.ca.profile",
+        "PayloadType": "Configuration",
+        "PayloadUUID": str(uuid.uuid4()).upper(),
+        "PayloadVersion": 1,
+        "PayloadOrganization": "BariSign",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Networking
 # ---------------------------------------------------------------------------
 
@@ -150,7 +260,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path).path
-        if path == PREFIX + "/udid.mobileconfig":
+        if path == PREFIX + "/ca.mobileconfig" and state.get("ca_xml"):
+            self._send(state["ca_xml"], "application/x-apple-aspen-config")
+        elif path == PREFIX + "/udid.mobileconfig":
             self._send(state["profile_xml"], "application/x-apple-aspen-config")
         else:
             self._send("not found", "text/plain", status=404)
@@ -211,6 +323,7 @@ def ask_confirm(prompt):
 
 
 def main():
+    use_https = "--https" in sys.argv[1:]
     try:
         ip = local_address()
     except Exception as exc:                                # noqa: BLE001
@@ -240,9 +353,44 @@ def main():
         return 2
 
     port = server.server_address[1]
-    base = "http://%s:%d%s" % (ip, port, PREFIX)
+    scheme = "https" if use_https else "http"
+    base = "%s://%s:%d%s" % (scheme, ip, port, PREFIX)
     profile_url = base + "/udid.mobileconfig"
     state["profile_xml"] = as_xml(udid_profile(base + "/udid"))
+
+    ca_url = None
+    plain_server = None
+    tmpdir = None
+    if use_https:
+        try:
+            certs = make_certs(ip)
+        except Exception as exc:                                # noqa: BLE001
+            print("Could not create the temporary certificate: %r" % (exc,))
+            print("cryptography is required for --https. Try without --https.")
+            return 2
+        tmpdir = tempfile.mkdtemp(prefix="barisign-", dir=os.path.dirname(os.path.abspath(__file__)))
+        crt_path = os.path.join(tmpdir, "leaf.pem")
+        key_path = os.path.join(tmpdir, "leaf.key")
+        os.chmod(tmpdir, 0o700)
+        with open(crt_path, "wb") as fh:
+            fh.write(certs["leaf_chain_pem"])
+        with open(key_path, "wb") as fh:
+            os.chmod(key_path, 0o600)
+            fh.write(certs["leaf_key_pem"])
+        try:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(crt_path, key_path)
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        except Exception as exc:                                # noqa: BLE001
+            print("Could not start HTTPS: %r" % (exc,))
+            return 2
+        # the CA itself cannot be fetched over HTTPS (chicken and egg), so it is
+        # served briefly over plain HTTP, and it is public information.
+        state["ca_xml"] = as_xml(ca_profile(certs["ca_der"]))
+        plain_server = http.server.ThreadingHTTPServer((ip, 0), Handler)
+        plain_port = plain_server.server_address[1]
+        ca_url = "http://%s:%d%s/ca.mobileconfig" % (ip, plain_port, PREFIX)
+        threading.Thread(target=plain_server.serve_forever, daemon=True).start()
 
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
@@ -258,6 +406,16 @@ def main():
     print(" Notice: one payload, type 'Profile Service', asking only for UDID,")
     print(" PRODUCT and VERSION. No certificate, no VPN, no proxy, no Wi-Fi.")
     print()
+    if use_https:
+        print(" MODE: HTTPS. The target must first install and TRUST the temporary")
+        print(" CA below, otherwise iOS will refuse the encrypted address.")
+        print(" STEP 1 - the CA (over plain HTTP, because trust does not exist yet):")
+        print("   %s" % ca_url)
+        show_qr(ca_url)
+        print("   Then: Settings -> General -> About -> Certificate Trust Settings")
+        print("         -> switch ON full trust for 'BariSign temporary CA'.")
+        print()
+        print(" STEP 2 - the UDID profile (over HTTPS):")
     print(" Listening only on %s, for %d seconds, with a one-time path." % (ip, WINDOW_SECONDS))
     if private:
         print(" That address is private (a home/hotspot network): %s" % ip)
@@ -272,14 +430,16 @@ def main():
     print()
     print(" Device B: scan this, then follow the prompts.")
     print()
-    if not show_qr(profile_url):
-        print(" (no QR library - type this address on Device B instead:")
-        print("  %s )" % profile_url)
-        print("  (or run: python3 -m pip install segno)")
-        print()
-    print(" Address: %s" % profile_url)
-    print()
     sys.stdout.flush()
+
+    if not use_https:
+        show_qr(profile_url)
+        print(" Address: %s" % profile_url)
+        print()
+    else:
+        print("   %s" % profile_url)
+        show_qr(profile_url)
+        print()
 
     started = time.time()
     got = posted.wait(WINDOW_SECONDS)
@@ -291,6 +451,9 @@ def main():
     print()
     print(" Server closed after %.0f s." % (time.time() - started))
     print()
+
+    if tmpdir:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     if not got:
         print("RESULT: no UDID arrived within %d seconds." % WINDOW_SECONDS)
