@@ -387,6 +387,9 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
             {
                 "PayloadCertificateFileName": "BariSignIdentity.p12",
                 "PayloadContent": identity_p12,
+                # An empty Password key stops iOS from prompting the user. The archive
+                # itself stays unencrypted because iOS refuses PBES2/AES archives.
+                "Password": "",
                 "PayloadDescription": "Client identity for the MDM connection. Delete with the profile.",
                 "PayloadDisplayName": "BariSign MDM identity",
                 "PayloadIdentifier": "io.barisign.identity",
