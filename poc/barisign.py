@@ -217,15 +217,22 @@ def cmd_forget(_argv):
 
 
 def cmd_udid(argv):
-    """Stage 1. `--udid-only` skips the CA once it is trusted."""
-    udid_only = "--udid-only" in argv
-    _hr("stage 1 - read the UDID")
-    udid_share.sys.argv = ["udid_share.py"] + (["--udid-only"] if udid_only else [])
-    code = udid_share.main()
+    """Stage 1. `--ca` shares only the one-time certificate authority."""
+    if "--ca" in argv:
+        _hr("stage 1 of 2 - the certificate authority (one time per device)")
+        code = udid_share.main_with(["--ca"])
+        if code == 0:
+            update_state(ca_shared=True)
+        return code
+
+    _hr("stage 2 of 2 - read the UDID")
+    code = udid_share.main_with([])
     if code == 0 and getattr(udid_share, "LAST_UDID", None):
-        update_state(udid=udid_share.LAST_UDID)
+        update_state(udid=udid_share.LAST_UDID, ca_trusted=True)
         _hr("saved")
         print("  UDID %s is now remembered; the portal will use it." % udid_share.LAST_UDID)
+        print("  The certificate authority is trusted on that device now, so future")
+        print("  runs are one profile only.")
         return 0
     return code or 1
 
@@ -334,6 +341,11 @@ def cmd_guided(_argv):
     if state.get("udid") and _yes("Reuse the saved UDID %s?" % state["udid"], True):
         print("  reusing the UDID")
     else:
+        if not state.get("ca_shared"):
+            print()
+            print(" First the certificate authority, once per device. When its trust")
+            print(" switch is ON, run this command again and the run continues here.")
+            return cmd_udid(["--ca"])
         code = cmd_udid([])
         if code != 0:
             return code

@@ -327,24 +327,14 @@ def offer_share(path):
     """`view` is a-Shell's one working share path: a preview window whose top-right
     button shares the file. (`open` is broken - it presents on a deprecated
     keyWindow and silently does nothing.)"""
-    absolute = os.path.abspath(path)
-    print(" Opening a preview of %s - use the top-right button to share it."
-          % os.path.basename(path))
+    name = os.path.basename(path)
+    print(" Share this file: %s" % name)
+    print("   If no preview opened, run:   view %s" % name)
+    print("   (top-right button in the preview = share/AirDrop)")
     try:
-        os.system("view %s" % absolute)
+        os.system("view %s" % os.path.abspath(path))
     except Exception as exc:                                   # noqa: BLE001
-        print(" Could not run 'view' (%r). Run it yourself:  view %s"
-              % (exc, os.path.basename(path)))
-
-
-def wait_for_return():
-    sys.stdout.write(" Press Return when the other device is ready for the next file... ")
-    sys.stdout.flush()
-    try:
-        input("")
-    except (EOFError, KeyboardInterrupt):
-        pass
-    print()
+        print("   (could not run 'view': %r)" % (exc,))
 
 
 def ask_confirm(prompt):
@@ -360,6 +350,35 @@ def ask_confirm(prompt):
 # Main
 # ---------------------------------------------------------------------------
 
+def share_ca_only():
+    """Install-and-trust step, on its own: no server, no timeout, no Enter."""
+    try:
+        ip = local_address()
+    except Exception as exc:                                   # noqa: BLE001
+        print("Could not work out this device's Wi-Fi address: %r" % (exc,))
+        return 2
+    certificates = make_server_certificate(ip)
+    path = write_beside_script("BariSign-CA.mobileconfig",
+                               as_xml(ca_profile(certificates["ca_der"],
+                                                 certificates["ca_name"])))
+    print("=" * 70)
+    print(" BariSign - step 1 of 2: the certificate authority")
+    print("=" * 70)
+    print()
+    print(" 1. share the file below to the other device and install it")
+    print(" 2. on that device open: Settings > General > About > Certificate")
+    print("    Trust Settings, and switch ON the row named")
+    print("       \"BariSign CA %s\"" % certificates["ca_name"])
+    print(" 3. then run this again without --ca to read the UDID:")
+    print("       sh bin/barisign udid")
+    print()
+    print(" (This is a one-time step per device. Nothing is served yet, so there is")
+    print("  no timeout and nothing to press.)")
+    print()
+    offer_share(path)
+    return 0
+
+
 def open_preview_for(name):
     target = name if os.path.isabs(name) else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), name)
@@ -370,18 +389,33 @@ def open_preview_for(name):
     return 0
 
 
-def main():
-    udid_only = "--udid-only" in sys.argv[1:]
+def main_with(argv):
+    """Run the flow with explicit arguments (so callers need not touch sys.argv)."""
+    global _ARGV
+    _ARGV = list(argv)
+    return main()
 
-    if "--view" in sys.argv[1:]:
-        args = sys.argv[1:]
+
+_ARGV = None
+
+
+def main():
+    argv = _ARGV if _ARGV is not None else sys.argv[1:]
+    if "--ca" in argv:
+        return share_ca_only()
+
+    # The CA is a one-time step, so the everyday run is the single-profile one.
+    udid_only = True
+
+    if "--view" in argv:
+        args = argv
         index = args.index("--view")
         if len(args) <= index + 1:
             print("usage: python3 -u udid_share.py --view <file>")
             return 2
         return open_preview_for(args[index + 1])
 
-    if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
+    if "-h" in argv or "--help" in argv:
         print(__doc__)
         return 0
 
@@ -468,9 +502,10 @@ def main():
                                       as_xml(ca_profile(certificates["ca_der"],
                                                         certificates["ca_name"])))
         offer_share(ca_path)
-        wait_for_return()
-        profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        offer_share(profile_path)
+        print()
+        print(" Did the CA's trust switch get turned ON? Then run this again without")
+        print(" --ca to read the UDID; the CA is not served again.")
+        return 0
 
     print()
     sys.stdout.flush()
