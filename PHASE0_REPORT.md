@@ -789,7 +789,14 @@ Taken from SideStore's own FAQ (<https://docs.sidestore.io/docs/faq>):
   a computer is **unverified** on iOS 27;
 - the licence reality (non-commercial parts).
 
-## 20.5 Next action
+## 20.5 Correction from device testing: an AirDropped IPA installs itself
+
+Confirmed on-device: after accepting an AirDropped `.ipa`, iOS **installs it directly** — there is no
+separate "Install" confirmation to tap. The README's two-device flow was corrected accordingly
+(accepting the AirDrop is the only interaction). Opening the same file from the Files app may still
+need a tap on the file.
+
+## 20.6 Next action
 
 Re-run the sign-in PoC with a 2FA account; the code should now prompt for the verification code:
 

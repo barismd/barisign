@@ -56,7 +56,8 @@ that will use it. Nothing is uploaded anywhere.
    │ 3. It asks which variant │             │                          │
    │ 4. a-Shell downloads,    │             │                          │
    │    signs the app         │             │                          │
-   │ 5. AirDrop  ─────────────┼────────────►│ 6. Tap "Install"         │
+   │ 5. AirDrop  ─────────────┼────────────►│ 6. Accept the AirDrop    │
+   │                          │             │    → it installs itself  │
    │                          │             │ 7. SideStore appears 🎉  │
    └──────────────────────────┘             └──────────────────────────┘
 ```
@@ -69,11 +70,12 @@ that will use it. Nothing is uploaded anywhere.
 3. Pick one of the four variants.
 4. BariSign downloads the official build, signs it with your Apple ID, and shows you the version.
 5. Choose **AirDrop** and send it to Device B.
-6. On **Device B**: accept the file and tap **Install**.
+6. On **Device B**: accept the AirDrop — **it installs by itself; there is no extra "Install" tap**.
 7. SideStore is on Device B. Open it once, done.
 
-**One device only?** That works too: the same device can sign the app and install it from the Files
-app or by AirDropping it to itself. The two-device split is just the easy way to do it.
+**One device only?** That works too: the same device can sign the app and install it by AirDropping it
+to itself (again, it installs by itself). Opening it from the Files app may need a tap on the file.
+The two-device split is just the easy way to do it.
 
 ---
 
