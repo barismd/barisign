@@ -404,37 +404,76 @@ def _pbes1_encrypt(plaintext, password, salt, iterations):
     return encryptor.update(padded) + encryptor.finalize()
 
 
+def _pbe_algorithm(salt, iterations):
+    return _seq(_oid("1.2.840.113549.1.12.1.3"), _seq(_octets(salt), _int(iterations)))
+
+
 def build_legacy_p12(key_der, cert_der, ca_ders, password):
-    """Return a PKCS#12 (DER) that iOS accepts, encrypted with `password`."""
+    """A PKCS#12 (DER) laid out EXACTLY like OpenSSL's own legacy output.
+
+    Structure copied from a reference file produced by
+    `openssl pkcs12 -export -legacy -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES`,
+    which Apple accepts:
+
+        PFX
+          version 3
+          authSafe  ContentInfo(data)  -> OCTET STRING(AuthenticatedSafe)
+            AuthenticatedSafe = SEQUENCE OF:
+              1. ContentInfo(encryptedData)  -> EncryptedContentInfo(pbeWithSHA1And3,
+                                              3DES) -> SafeContents{ CertBag(s) }
+              2. ContentInfo(data)           -> OCTET STRING(SafeContents{ ShroudedKeyBag })
+          macData   HMAC-SHA1 over the AuthenticatedSafe bytes
+
+    Apple is stricter than OpenSSL: it wants the certificates encrypted inside their own
+    safe (a plaintext CertBag beside an encrypted key is what produced
+    "password is not correct"), and it wants localKeyID + friendlyName attributes so the
+    key and its certificate can be paired into an identity.
+    """
     iterations = 2048
-    salt_key = secrets.token_bytes(16)
-    enc_key = _pbes1_encrypt(key_der, password, salt_key, iterations)
-    params = _seq(_octets(salt_key), _int(iterations))
-    alg = _seq(_oid("1.2.840.113549.1.12.1.3"), params)   # pbeWithSHA1And3-KeyTripleDES-CBC
-    shrouded = _seq(alg, _octets(enc_key))
+    key_id = hashlib.sha1(key_der).digest()[:20]
 
-    def cert_bag(der):
+    def attrs(name):
+        return _set_of(
+            _seq(_oid("1.2.840.113549.1.9.20"),
+                 _set_of(_tlv(0x1E, name.encode("utf-16-be")))),        # friendlyName BMPString
+            _seq(_oid("1.2.840.113549.1.9.21"), _set_of(_octets(key_id))),  # localKeyID
+        )
+
+    def cert_bag(der, name):
         cert_bag_value = _seq(_oid("1.2.840.113549.1.9.22.1"), _ctx(0, _octets(der)))
-        return _seq(_oid("1.2.840.113549.1.12.10.1.3"), _ctx(0, cert_bag_value))
+        return _seq(_oid("1.2.840.113549.1.12.10.1.3"), _ctx(0, cert_bag_value), attrs(name))
 
-    bags = [_seq(_oid("1.2.840.113549.1.12.10.1.2"), _ctx(0, shrouded))]  # pkcs8ShroudedKeyBag
-    bags.append(cert_bag(cert_der))
-    for ca in ca_ders:
-        bags.append(cert_bag(ca))
-    safe_contents = _seq(*bags)
-    container = _seq(_oid("1.2.840.113549.1.7.1"), _ctx(0, _octets(safe_contents)))
-    authenticated_safe = _seq(container)
-    auth_safe = _seq(_oid("1.2.840.113549.1.7.1"), _ctx(0, _octets(authenticated_safe)))
+    # 1. the certificates, inside one PBES1-encrypted safe
+    cert_safe = _seq(cert_bag(cert_der, "BariSign"),
+                     *[cert_bag(ca, "BariSign CA %d" % i) for i, ca in enumerate(ca_ders)])
+    cert_salt = secrets.token_bytes(16)
+    cert_ciphertext = _pbes1_encrypt(cert_safe, password, cert_salt, iterations)
+    encrypted_content_info = _seq(_oid("1.2.840.113549.1.7.1"),
+                                  _pbe_algorithm(cert_salt, iterations),
+                                  _tlv(0x80, cert_ciphertext))       # [0] IMPLICIT OCTET STRING
+    # EncryptedData = SEQUENCE { version 0, encryptedContentInfo, ... }
+    encrypted_data = _seq(_int(0), encrypted_content_info)
+    certs_content_info = _seq(_oid("1.2.840.113549.1.7.6"),
+                              _ctx(0, encrypted_data))              # encryptedData
 
-    # MacData over the AuthenticatedSafe bytes, HMAC-SHA1 with the PKCS#12 KDF
-    # (purpose 3). Without it OpenSSL warns "MAC is absent" and Apple's parser may
-    # refuse the file outright.
+    # 2. the key, shrouded, inside a plaintext safe
+    key_salt = secrets.token_bytes(16)
+    shrouded = _seq(_pbe_algorithm(key_salt, iterations),
+                    _octets(_pbes1_encrypt(key_der, password, key_salt, iterations)))
+    key_bag = _seq(_oid("1.2.840.113549.1.12.10.1.2"), _ctx(0, shrouded), attrs("BariSign"))
+    key_content_info = _seq(_oid("1.2.840.113549.1.7.1"),
+                            _ctx(0, _octets(_seq(key_bag))))         # data
+
+    authenticated_safe = _seq(certs_content_info, key_content_info)
+    auth_safe = _seq(_oid("1.2.840.113549.1.7.1"),
+                     _ctx(0, _octets(authenticated_safe)))
+
     pwd = password.encode("utf-16-be") + b"\x00\x00"
     mac_salt = secrets.token_bytes(16)
     mac_key = _pkcs12_kdf(pwd, mac_salt, iterations, 3, 20)
     mac = hmac.new(mac_key, authenticated_safe, hashlib.sha1).digest()
-    digest_info = _seq(_seq(_oid("1.3.14.3.2.26"), _tlv(0x05, b"")), _octets(mac))
-    mac_data = _seq(digest_info, _octets(mac_salt), _int(iterations))
+    mac_data = _seq(_seq(_seq(_oid("1.3.14.3.2.26"), _tlv(0x05, b"")), _octets(mac)),
+                    _octets(mac_salt), _int(iterations))
 
     return _seq(_int(3), auth_safe, mac_data)
 
@@ -558,7 +597,7 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None):
         "PayloadVersion": 1,
         "PayloadIdentifier": "io.barisign.mdm.profile",
         "PayloadUUID": str(uuid.uuid4()).upper(),
-        "PayloadDisplayName": "BariSign - UDID (MDM v4)",
+        "PayloadDisplayName": "BariSign - UDID (MDM v5)",
         "PayloadDescription":
             "Temporary. Adds a throwaway CA, reports this device's identifiers once, and adds one removable icon. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
@@ -955,7 +994,7 @@ def main():
     if use_airdrop:
         if use_mdm:
             mdm_path = write_beside_script("BariSign-ONE.mobileconfig", state["mdm_xml"])
-            print(" ONE-PROFILE MODE (MDM v4): CA + client identity + MDM check-in +")
+            print(" ONE-PROFILE MODE (MDM v5): CA + client identity + MDM check-in +")
             print(" marker, all in this single file. Look for \"(MDM v2)\" in the profile")
             print(" name on the device - if it does not say v3, it is an old file.")
             import plistlib as _pl
