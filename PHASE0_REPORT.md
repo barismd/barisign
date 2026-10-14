@@ -1390,8 +1390,6 @@ closest thing to "no app", and `poc/udid_share.py` implements it.
   trusted certificate, which we already know is the hard part.
 
 ## 23.6 Next action (waiting for go)
-
-```
 cd ~/Documents/barisign
 ```
 ```
@@ -1404,3 +1402,95 @@ python3 -m pip install segno
 python3 -u udid_share.py
 ```
 Then scan with Device B's Camera. Report: did the profile install, and did the UDID arrive?
+
+---
+
+# 24. udid_share.py hardened, and the four answers
+
+## 24.1 What was changed in `poc/udid_share.py`
+
+| Requirement | How |
+|---|---|
+| one-time secret path | every URL carries `secrets.token_urlsafe(12)`, regenerated each run; the path dies with the process |
+| bind one interface only | binds **this device's Wi-Fi/hotspot address**, never `0.0.0.0`; refuses to start if only loopback is found |
+| serve only what is needed | exactly two routes: the profile (GET) and the POST endpoint. Root and everything else are **404** (the QR now points straight at the profile, so there is no index page at all) |
+| 5-minute timeout | `WINDOW_SECONDS = 300`, then it gives up and says so |
+| close after first valid POST | the server is shut down as soon as the first valid POST is handled |
+| never log the UDID | no access log, nothing written to disk, body capped at 256 KB, and the UDID is **not printed** until the confirmation step passes |
+| confirmation | shows `PRODUCT` (model) and `VERSION` (iOS) and asks *"Is that the device in front of you? [y/N]"*; on anything but yes the UDID is discarded |
+| reject a second POST | once claimed, further POSTs get **409** and cannot overwrite the first |
+| show the whole profile | the full profile XML is printed before the server starts |
+
+*Verified in simulation:* wrong path 404, root 404, token profile 200 (`Profile Service`), 1st POST 200,
+2nd POST 409, and the captured fields are correct. **Still untested on hardware.**
+
+## 24.2 The profile: what is in it, whether it stays, how it is removed
+
+The XML the script prints is the **entire** profile: one payload of type `Profile Service`, with
+`DeviceAttributes` = `["UDID", "PRODUCT", "VERSION"]`. No certificate, no VPN, no proxy, no Wi-Fi, no
+payload of any other kind. It is **unsigned**, so iOS labels it "Not Signed".
+
+**It stays on Device B.** The profile is installed like any configuration profile and nothing removes it
+automatically — the POST does not uninstall it, and the script cannot remove it remotely. iOS then
+fetches the *returned* profile as well (an empty `Configuration` named "BariSign - done (delete me)"),
+so Device B should expect to see one or two "BariSign" entries. Removal on Device B:
+**Settings → General → VPN & Device Management → tap the entry → Remove Profile → passcode.** Deleting it
+removes nothing else; it configured nothing.
+
+## 24.3 Plain HTTP: the real risk, and whether HTTPS is worth it
+
+**The risk, stated plainly:** the POST (and the profile download) travels in cleartext over the Wi-Fi.
+Anyone who can observe that network — an open/hotel Wi-Fi, or anyone who knows the Wi-Fi password on a
+shared network — can read the UDID, the model and the iOS version, and could in principle answer *as* the
+server on the target's next attempt. The mitigations here are: a one-time random path, a ≤5-minute
+window, one-interface binding, and the model/version confirmation before the UDID is accepted. What the
+risk is **not**: the UDID is not a credential. It is an identifier that developers paste into portals
+every day; leaking it is a privacy issue, not an account compromise. No Apple ID, password, token or
+pairing record is involved in this exchange.
+
+**Is HTTPS with a locally generated certificate possible?** Technically yes: iOS accepts a chain rooted
+in a CA that the user installs **and** switches on under Settings → General → About → Certificate Trust
+Settings (a self-signed leaf alone is refused — that is a Phase 0 finding). **But for this payload it is
+disproportionate:** it would mean asking the user to install *and trust a root CA* — two more scary
+steps, and a much bigger security ask than the UDID itself — to protect a semi-public identifier. My
+recommendation is to keep HTTP, keep the window short, and keep it on your own Wi-Fi.
+
+One caveat either way, and it is **unverified**: whether iOS 27 still accepts a profile delivered over
+`http://` at all. The classic implementations used `http://`, and ATS does not govern profile delivery,
+but if iOS 27 refuses it we would be forced into the CA dance regardless of preference.
+
+## 24.4 Exact test steps
+
+**On Device A (iPad, a-Shell)**
+1. Settings → Display & Brightness → Auto-Lock → **Never** (put it back afterwards).
+2. In a-Shell:
+   `cd ~/Documents/barisign`
+   `curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/udid_share.py -o udid_share.py`
+   `python3 -m pip install segno`
+   `python3 -u udid_share.py`
+3. Leave a-Shell **in the foreground** and the screen awake. Read the printed profile XML once.
+
+**On Device B (iPhone)** — about **7 taps plus the passcode**:
+1. Camera → point at the QR → tap the banner (1)
+2. Safari: "…trying to download a configuration profile" → **Allow** (2)
+3. Settings → the "Profile Downloaded" banner (or General → VPN & Device Management → the profile) (3)
+4. **Install** (4) → **Install** again on the confirm sheet (5)
+5. Device passcode (6)
+6. **Allow**, to send the device information (7)
+
+**What success looks like:** A prints `Server closed after N s.`, then the model and iOS version, then
+`Is that the device in front of you? [y/N]`. Answer `y` and it prints the UDID once. Device B then shows
+the "BariSign" profile(s) under VPN & Device Management.
+
+**What each failure looks like:**
+- A: `RESULT: no UDID arrived within 300 seconds` — and you tell me which of the two it was: the profile
+  never installed, or it installed and nothing was sent (the second means **iOS 27 dropped the Profile
+  Service UDID and this route is dead**).
+- B: Safari refuses or errors on the `http://` address → tell me the exact wording (that would mean the
+  HTTPS requirement).
+- A: no QR appears → `segno` did not install; the URL is printed instead, type it on Device B.
+- A: `Server closed` far too early → the screen locked or a-Shell went to the background.
+- A: you answer `n` → the UDID is discarded (proves the confirmation gate works).
+
+**Report back:** the whole a-Shell screen, what Device B showed at each tap, whether the "Allow sending
+device information" prompt appeared, and whether the profile landed in VPN & Device Management.
