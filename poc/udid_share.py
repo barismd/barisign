@@ -252,6 +252,56 @@ def empty_profile():
     }
 
 
+def combined_profile(callback_url, ca_der):
+    """EXPERIMENT: certificate + UDID request in ONE profile.
+
+    The internet UDID services get away with a single profile because their server
+    certificate chains to a PUBLIC root, so nothing has to be installed first. We are
+    our own authority, so the CA has to be trusted before iOS will talk to the URL —
+    which normally means two installs.
+
+    A normal Configuration profile carries an ARRAY of payloads, so both can live in
+    one file: [root certificate, Profile Service request]. Whether iOS applies the
+    certificate early enough for the request (and whether it accepts a nested
+    `Profile Service` payload at all) is UNKNOWN - this is the test.
+
+    If it works: ONE profile, and only the trust switch is left. If it does not: the
+    two-profile order stays, which is verified working.
+    """
+    return {
+        "PayloadContent": [
+            {
+                "PayloadCertificateFileName": "BariSignCA.cer",
+                "PayloadContent": ca_der,
+                "PayloadDescription": "Temporary BariSign certificate authority.",
+                "PayloadDisplayName": "BariSign temporary CA",
+                "PayloadIdentifier": "io.barisign.ca",
+                "PayloadType": "com.apple.security.root",
+                "PayloadUUID": str(uuid.uuid4()).upper(),
+                "PayloadVersion": 1,
+            },
+            {
+                "URL": callback_url,
+                "DeviceAttributes": ["UDID", "PRODUCT", "VERSION"],
+                "PayloadDescription": "Asks once for this device's UDID, over HTTPS.",
+                "PayloadDisplayName": "BariSign - read this device's UDID",
+                "PayloadIdentifier": "io.barisign.udid",
+                "PayloadType": "Profile Service",
+                "PayloadUUID": str(uuid.uuid4()).upper(),
+                "PayloadVersion": 1,
+            },
+        ],
+        "PayloadDescription":
+            "Temporary. Adds a throwaway CA and asks once for this device's UDID. Delete it afterwards.",
+        "PayloadDisplayName": "BariSign - UDID (one profile)",
+        "PayloadIdentifier": "io.barisign.combined",
+        "PayloadType": "Configuration",
+        "PayloadUUID": str(uuid.uuid4()).upper(),
+        "PayloadVersion": 1,
+        "PayloadOrganization": "BariSign",
+    }
+
+
 def ca_profile(ca_der):
     return {
         "PayloadContent": [{
@@ -470,6 +520,9 @@ def main():
     use_https = "--https" in sys.argv[1:]
     use_airdrop = "--airdrop" in sys.argv[1:]
     use_lifetime = "--lifetime" in sys.argv[1:]
+    use_combined = "--combined" in sys.argv[1:]
+    if use_combined:
+        use_https = True
     if "--diag-profiles" in sys.argv[1:]:
         write_diag_profiles()
         return 0
@@ -546,6 +599,7 @@ def main():
         except Exception as exc:                                # noqa: BLE001
             print("Could not start HTTPS: %r" % (exc,))
             return 2
+        state["ca_der"] = certs["ca_der"]
         state["ca_xml"] = as_xml(ca_profile(certs["ca_der"]))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
@@ -596,10 +650,22 @@ def main():
     sys.stdout.flush()
 
     if use_airdrop:
-        if use_https:
+        if use_combined:
+            state["combined_xml"] = as_xml(combined_profile(base + "/udid",
+                                                           state["ca_der"]))
+            profile_path = write_beside_script("BariSign-ONE.mobileconfig",
+                                               state["combined_xml"])
+            print(" ONE profile: the certificate AND the UDID request in the same file.")
+            offer_share(profile_path)
+            print()
+            print(" After it installs: Settings -> General -> About -> Certificate Trust")
+            print(" Settings -> switch ON 'BariSign temporary CA'. If the UDID arrives")
+            print(" without that step, the single-profile idea works.")
+            print()
+        elif use_https:
             ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
         profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        if use_https:
+        if use_https and not use_combined:
             print(" Check first, on Device B in Safari (needs this script running):")
             print("   %s/tls-check" % base)
             print("   a padlock and 'TLS OK' means the CA is trusted. No padlock = the")

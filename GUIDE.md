@@ -30,6 +30,38 @@ private. Full detail in `cloudflare-worker/README.md`; the short version:
    namespace `BARISIGN` → **Deploy**.
 6. Your endpoint is `https://barisign.<your-subdomain>.workers.dev`.
 
+### Two ways to get the UDID — and which one is which
+
+**Why the internet services need only ONE profile:** their server certificate chains to a **public CA**
+(Let's Encrypt and friends), so your phone already trusts it and nothing has to be installed first. Their
+profile contains only the `Profile Service` payload — **no CA**. We are our own authority, so our CA has to
+be installed and trusted before iOS will talk to our URL, which is why ours has historically meant **two
+profiles**.
+
+**`--combined` (experiment, one profile).** Both things in a single Configuration profile — the root
+certificate and the UDID request, as two payloads in the same file. Verified to build correctly
+(`['com.apple.security.root', 'Profile Service']`), **but untested on a device**: unknown whether iOS
+accepts a nested `Profile Service` payload and applies the certificate early enough for the request.
+
+```
+python3 -u udid_share.py --combined --airdrop       # ONE file: BariSign-ONE.mobileconfig
+```
+
+**`--https` (verified working on device).** Two profiles, in order:
+
+```
+python3 -u udid_share.py --https --airdrop          # CA first, then the UDID profile
+```
+
+1. install **BariSign-CA.mobileconfig**
+2. **Settings → General → About → Certificate Trust Settings → switch ON full trust** for
+   *BariSign temporary CA*
+3. press Return in a-Shell, then install **BariSign-UDID.mobileconfig**
+
+> The trust switch comes **after** the CA profile and **before** the UDID profile. That ordering is what
+> makes it work — installing the UDID profile first gives *"MDM certificate is invalid"*.
+> You can check trust with the `…/tls-check` URL the script prints: a padlock and `TLS OK` means it is on.
+
 **Test it (use the iPad first — iPhones may hit the one-hour Security Delay):**
 
 ```
