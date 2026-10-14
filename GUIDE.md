@@ -57,47 +57,47 @@ The individual scripts are still there (`poc/udid_share.py`, `poc/poc_login.py`,
 
 ---
 
-## Step 1 — Get the UDID (private, no third party)
+## Step 1 — Get the UDID (private, no third party) — **two short commands**
 
 A free Apple ID signs apps for a specific device, so the device's **UDID** must be known. iOS reports it
 from a `Profile Service` profile, but only over HTTPS with a certificate iOS trusts. The script serves
 exactly that from your own iPad over your own Wi-Fi.
 
+The certificate authority is a **one-time** step, so it is a command of its own. There is **nothing to
+press and no timeout** — each command finishes by itself.
+
+### 1a — the certificate authority (once per device)
+
 ```
 cd ~/Documents/barisign
+sh bin/barisign udid --ca
+```
+
+It writes `BariSign-CA.mobileconfig` and tries to open a preview; share it to the other device with the
+preview's **top-right button → AirDrop** and install it. *(If no preview opens, run
+`view BariSign-CA.mobileconfig` yourself.)*
+
+Then, **on that device**: **Settings → General → About → Certificate Trust Settings → switch ON full
+trust** for the row named **"BariSign CA XX:XX"** (the script prints the exact name).
+
+### 1b — the UDID
+
+```
 sh bin/barisign udid
 ```
 
-It writes two files and opens a preview of each. **Do these in order — the order is the whole trick:**
+Same again with `BariSign-UDID.mobileconfig`: share it, install it. iOS will say the profile is
+**empty** — expected; the UDID has already been sent at that point. a-Shell then shows the model, you
+answer `y`, and the **UDID is printed and remembered** for the portal stage.
 
-1. Share **`BariSign-CA.mobileconfig`** to the other device (top-right button in the preview → AirDrop)
-   and install it.
-2. On that device: **Settings → General → About → Certificate Trust Settings → switch ON full trust** for
-   the row named **"BariSign CA XX:XX"** (the script prints the exact name).
-3. Check it: open the `…/tls-check` address in **Safari** on that device. A padlock and `TLS OK` means the
-   trust is right.
-4. Press **Return** in a-Shell, share **`BariSign-UDID.mobileconfig`**, and install it.
-5. iOS will say the profile is **empty** — expected. The UDID has already been sent.
-6. Back in a-Shell: the model is shown; answer `y` and the **UDID** is printed. Copy it.
+You can confirm the trust at any point with the `…/tls-check` address the script prints: open it in
+**Safari** on the other device and look for a padlock and `TLS OK`.
 
-The whole exchange stays on your Wi-Fi — no server, no DNS, no account, no certificate to manage.
-
-### From the second time onwards — one profile
-
-The CA only has to be installed and trusted **once per device**:
-
-```
-sh bin/barisign udid --udid-only
-```
-
-That shares **only** `BariSign-UDID.mobileconfig`. If it fails, run the plain command once to reinstall
-the CA.
+**From then on**, step 1b alone is enough — the CA is never needed again on that device.
 
 ### Cleaning up
 
 On the target: **Settings → General → VPN & Device Management** → remove every *BariSign* entry.
-
----
 
 ## Step 2 — Sign in to Apple
 
