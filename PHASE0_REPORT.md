@@ -1930,3 +1930,48 @@ with an ordinary `https://example.com/udid` callback. No CA, no trust step.
   §30's conclusion stands.
 
 This is a two-minute test and it separates the two explanations properly. **Unverified until it is run.**
+
+---
+
+# 33. The payload is ALIVE: iOS performs the request during install (§30 is retracted)
+
+Device result for `barsign-test4-profservice-https.mobileconfig` (callback `https://example.com/udid`):
+
+> **"MDM server returned 405"** — the profile could not be installed, and that is the on-screen reason.
+
+That single line changes the conclusion:
+
+- **The `Profile Service` payload is NOT retired.** iOS 27 parsed it, installed far enough to **perform the
+  HTTP request to the callback URL**, and reported the **server's own status code**. §30's "dead" verdict
+  was wrong and is **retracted**; §31's HTTPS-only theory was also incomplete.
+- The real gate is **the server's response.** `example.com` answers a POST with `405 Method Not Allowed`,
+  and iOS treats that as a failed install. Our server answers `200` with a profile, which is exactly what
+  Apple's archived guide says the server must do (*Phase 2: the device POSTs its attributes; Phase 3: the
+  server returns the final profile*).
+- **This also means the single-profile path is back on the table:** if the callback may be `http://`, then
+  **no certificate and no CA install are needed at all** — one profile, which is what the user asked for.
+  Whether iOS accepts an `http://` callback is still the open question, and now it is cheap to answer,
+  because a failure will print the server's status instead of a vague "unknown error".
+
+## 33.1 Single profile ⇒ HTTP
+
+The CA and the request **cannot** share one file (different top-level structures, §32.1), and a single
+file also cannot trust its own certificate before the request happens. So:
+
+- **HTTP callback → ONE profile, no CA.** The path to test now.
+- HTTPS callback → two installs (CA first), unavoidable.
+
+## 33.2 Code changes requested by the user
+
+- **`view` replaces `openurl shareddocuments://…` everywhere.** `view` opens the preview immediately and
+  its window has the share button, so the Files-app detour is gone.
+- **Exactly one `view` per file.** `offer_share()` now only runs `view <absolute>`; it no longer prints
+  `openurl` lines or a second copy of the command.
+- **New `--view <name>`**: opens the preview for a single named file, for sending the diagnostic profiles
+  one at a time without printing a command per file.
+- `--diag-profiles` now prints the folder and the single `--view` usage line instead of per-file share
+  commands.
+
+**Next test:** plain `python3 -u udid_share.py --airdrop` (HTTP callback, our server, single profile, no
+CA). Keep the script running while the target taps Install/Allow, because the request happens during
+install — and read back the exact error text if it fails.

@@ -386,12 +386,11 @@ def write_diag_profiles():
     here = os.path.dirname(os.path.abspath(__file__))
     print("Four test profiles written to %s" % here)
     print()
-    print("Open that folder in the Files app with this one command, then long-press")
-    print("each file and Share -> AirDrop:")
-    print("   openurl shareddocuments://%s" % here)
-    print("Share/install them in this order. The FIRST one is the control: it must")
-    print("install, or nothing after it means anything.")
-    print("Install them on Device B in this order and tell me exactly which fail:")
+    print("Folder: %s" % here)
+    print("Send ONE file at a time; this opens its preview so you can share it:")
+    print("   python3 -u udid_share.py --view <name>")
+    print()
+    print("Install them on Device B in this order and report the exact error text:")
     print()
     for name, profile, why in tests:
         write_beside_script(name, as_xml(profile))
@@ -414,25 +413,14 @@ def offer_share(path):
     So we try it, and always print the reliable route as well: the Files app.
     """
     absolute = os.path.abspath(path)
-    print(" File for Device B:")
-    print("   %s" % absolute)
-    print(" In the Files app: On My iPhone/iPad -> a-Shell -> barisign -> %s"
-          % os.path.basename(path))
-    print(" BEST IN-APP ROUTE:  view  (Quick Look has a SHARE button, top-right)")
-    print("   view %s" % absolute)
-    print("   -> in the preview, tap the share (square-and-arrow) button -> AirDrop.")
-    print("    (a-Shell's own commands have no 'share'; 'view' uses")
-    print("     UIDocumentInteractionController, which carries a share button, unlike")
-    print("     the broken 'open' - see PHASE0_REPORT section 28/31.)")
-    print()
-    print(" ALTERNATIVE: open the Files app AT this folder, one command:")
-    print("   openurl shareddocuments://%s" % os.path.dirname(absolute))
-    print("   then long-press the file -> Share -> AirDrop.")
-    print()
+    print(" Opening the preview for %s" % os.path.basename(path))
+    print(" (a-Shell has no 'share' command; in the preview window use the")
+    print("  top-right button to share/AirDrop it.)")
     try:
         os.system("view %s" % absolute)
     except Exception as exc:                                   # noqa: BLE001
-        print(" Could not run the preview: %r" % (exc,))
+        print(" Could not run 'view': %r" % (exc,))
+        print(" Run it yourself:  view %s" % absolute)
 
 
 def show_qr(url):
@@ -469,6 +457,19 @@ def main():
     use_lifetime = "--lifetime" in sys.argv[1:]
     if "--diag-profiles" in sys.argv[1:]:
         write_diag_profiles()
+        return 0
+    if "--view" in sys.argv[1:]:
+        args = sys.argv[1:]
+        name = args[args.index("--view") + 1] if len(args) > args.index("--view") + 1 else ""
+        if not name:
+            print("usage: python3 -u udid_share.py --view <file>")
+            return 2
+        target = name if os.path.isabs(name) else os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), name)
+        if not os.path.isfile(target):
+            print("No such file: %s" % target)
+            return 2
+        offer_share(target)
         return 0
     try:
         ip = local_address()
