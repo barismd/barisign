@@ -66,7 +66,7 @@ posted = threading.Event()
 # The profile
 # ---------------------------------------------------------------------------
 
-def udid_profile(callback_url):
+def udid_profile(callback_url, lifetime=False):
     """ONLY a Profile Service payload. No certificates, no VPN, no proxy, no
     Wi-Fi, nothing else. It asks for three attributes and nothing more.
 
@@ -78,11 +78,12 @@ def udid_profile(callback_url):
         is no longer valid and the system presents an update button"; it does
         NOT delete anything, and Apple's reference says it "is only used if the
         profile is delivered via over-the-air profile delivery".
-    Neither is verified on iOS 27, and unknown keys are ignored harmlessly, so
-    the delete-it-yourself instruction still stands. iOS is never asked to
-    distrust or remove anything the user did not install here.
+    Neither is verified on iOS 27 and BOTH ARE OFF BY DEFAULT: an initial profile
+    that iOS rejects is worse than a leftover one, and we have one report of
+    "profile could not be installed, an unknown error occurred" while these keys
+    were present. Pass --lifetime to add them back.
     """
-    return {
+    profile = {
         "PayloadContent": {
             "URL": callback_url,
             "DeviceAttributes": ["UDID", "PRODUCT", "VERSION"],
@@ -96,10 +97,13 @@ def udid_profile(callback_url):
             "Temporary and unsigned. Sends this device's UDID, model and iOS version to "
             "the BariSign script on your own Wi-Fi. Nothing else. Delete it afterwards.",
         "PayloadOrganization": "BariSign",
-        "PayloadExpirationDate": datetime.datetime.now(datetime.timezone.utc)
-                                + datetime.timedelta(seconds=PROFILE_LIFETIME_SECONDS),
-        "DurationUntilRemoval": PROFILE_LIFETIME_SECONDS,
     }
+    if lifetime:
+        profile["PayloadExpirationDate"] = (
+            datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(seconds=PROFILE_LIFETIME_SECONDS))
+        profile["DurationUntilRemoval"] = PROFILE_LIFETIME_SECONDS
+    return profile
 
 
 def done_profile():
@@ -200,6 +204,22 @@ def make_certs(ip):
         "ca_der": ca_cert.public_bytes(serialization.Encoding.DER),
         "leaf_chain_pem": pem(leaf_cert) + pem(ca_cert),   # leaf first, then our CA
         "leaf_key_pem": leaf_key_pem,
+    }
+
+
+def empty_profile():
+    """A Configuration profile with no payloads: the sanity check. If even this
+    will not install on the target, the problem is profile installation itself,
+    not anything we send."""
+    return {
+        "PayloadContent": [],
+        "PayloadType": "Configuration",
+        "PayloadVersion": 1,
+        "PayloadIdentifier": "io.barisign.sanity",
+        "PayloadUUID": str(uuid.uuid4()).upper(),
+        "PayloadDisplayName": "BariSign - sanity check (empty profile)",
+        "PayloadDescription": "Installs nothing at all. Delete it right away.",
+        "PayloadOrganization": "BariSign",
     }
 
 
@@ -308,6 +328,50 @@ def write_beside_script(name, data):
     return path
 
 
+def write_diag_profiles():
+    """Three files that isolate WHY a profile was refused.
+
+    Device B reported "profile could not be installed, an unknown error occurred"
+    on 2026-10-14 with the first version of this profile. Installing these in
+    order says which layer is at fault.
+    """
+    placeholder = "http://192.0.2.1/udid"      # TEST-NET-1: never routable
+    tests = [
+        ("barsign-test1-empty.mobileconfig", empty_profile(),
+         "Installs NOTHING. Tests only whether an unsigned profile installs at all."),
+        ("barsign-test2-profservice.mobileconfig", udid_profile(placeholder),
+         "Profile Service with ONLY the documented keys. If this one fails, iOS 27 no "
+         "longer accepts the payload type and this whole route is dead."),
+        ("barsign-test3-profservice-lifetime.mobileconfig",
+         udid_profile(placeholder, lifetime=True),
+         "Profile Service plus DurationUntilRemoval and PayloadExpirationDate. If only "
+         "THIS one fails, those two keys are what iOS refuses."),
+    ]
+    here = os.path.dirname(os.path.abspath(__file__))
+    print("Three test profiles written to %s" % here)
+    print("Install them on Device B in this order and tell me exactly which fail:")
+    print()
+    for name, profile, why in tests:
+        write_beside_script(name, as_xml(profile))
+        print(" %s" % name)
+        print("     %s" % why)
+        print("     share it with:  open %s" % name)
+        print()
+    print("These contain no usable callback address; they are for installation only.")
+
+
+def offer_share(path):
+    """a-Shell ships an `open` command that presents the iOS share sheet for a
+    file, so there is no need to leave the app and go to Files. os.system reaches
+    a-Shell's own commands."""
+    print(" Opening the share sheet for: %s" % os.path.basename(path))
+    print(" (if nothing appears, type:  open %s )" % os.path.basename(path))
+    try:
+        os.system("open %s" % path)
+    except Exception as exc:                                   # noqa: BLE001
+        print(" Could not open the share sheet automatically: %r" % (exc,))
+
+
 def show_qr(url):
     try:
         import segno                                        # noqa: PLC0415
@@ -339,6 +403,10 @@ def ask_confirm(prompt):
 def main():
     use_https = "--https" in sys.argv[1:]
     use_airdrop = "--airdrop" in sys.argv[1:]
+    use_lifetime = "--lifetime" in sys.argv[1:]
+    if "--diag-profiles" in sys.argv[1:]:
+        write_diag_profiles()
+        return 0
     try:
         ip = local_address()
     except Exception as exc:                                # noqa: BLE001
@@ -371,7 +439,7 @@ def main():
     scheme = "https" if use_https else "http"
     base = "%s://%s:%d%s" % (scheme, ip, port, PREFIX)
     profile_url = base + "/udid.mobileconfig"
-    state["profile_xml"] = as_xml(udid_profile(base + "/udid"))
+    state["profile_xml"] = as_xml(udid_profile(base + "/udid", lifetime=use_lifetime))
 
     ca_url = None
     plain_server = None
@@ -431,9 +499,8 @@ def main():
         if use_airdrop:
             ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
             profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-            print(" STEP 1 - AirDrop this file to Device B and install it:")
-            print("   %s" % ca_path)
-            print("         (Files app: On My iPad/iPhone -> a-Shell -> barisign)")
+            print(" STEP 1 - share the temporary CA with Device B and install it:")
+            offer_share(ca_path)
         else:
             print(" STEP 1 - the CA (over plain HTTP, because trust does not exist yet):")
             print("   %s" % ca_url)
@@ -461,10 +528,8 @@ def main():
     if use_airdrop:
         if not use_https:
             profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        print(" STEP 2 - AirDrop this file to Device B and install it:")
-        print("   %s" % profile_path)
-        print("         (Files app: On My iPad/iPhone -> a-Shell -> barisign)")
-        print()
+        print(" STEP 2 - share the profile with Device B and install it:")
+        offer_share(profile_path)
         print(" No QR and no URL needed: the callback address is inside the profile.")
         print(" This listener still has to stay running and reachable from Device B.")
         print()
