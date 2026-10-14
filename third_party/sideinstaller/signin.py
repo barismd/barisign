@@ -116,6 +116,11 @@ SRP_g = 2
 
 _TTY = sys.stdout.isatty()
 
+# CHANGED BY BARISIGN. A no-op hook the front end can replace so the sign-in
+# exchange is never silent. a-Shell gives no output at all between the password
+# prompt and Apple's answer, which is indistinguishable from a hang.
+PROGRESS = lambda message: None      # noqa: E731
+
 
 def _c(code, text):
     return "\033[%sm%s\033[0m" % (code, text) if _TTY else text
@@ -943,6 +948,7 @@ class AppleAccount:
             return None
 
     def _login_once(self, password):
+        PROGRESS("asking the anisette server for fresh headers")
         # One anisette fetch for both legs of the handshake. X-Apple-I-MD is a
         # one-time password, but the pair belongs to a single SRP exchange —
         # isideload reuses it here and refreshing mid-handshake risks Apple
@@ -950,6 +956,7 @@ class AppleAccount:
         cpd = self.anisette.client_provided_data()
         srp = SRPClient()
 
+        PROGRESS("contacting Apple: SRP init (no password leaves this device)")
         first = self.gs.plist_request(self.gs.url("gsService"), {
             "Header": {"Version": "1.0.1"},
             "Request": {
@@ -961,11 +968,13 @@ class AppleAccount:
             },
         })
 
+        PROGRESS("Apple replied; computing the SRP proof locally")
         password_key = srp_password_key(
             password, bytes(first["s"]), int(first["i"]), first["sp"]
         )
         proof = srp.process(self.email, password_key, bytes(first["s"]), bytes(first["B"]))
 
+        PROGRESS("sending the proof to Apple (still no password)")
         second = self.gs.plist_request(
             self.gs.url("gsService"),
             {
@@ -981,6 +990,7 @@ class AppleAccount:
             extra_headers={"Connection": "close"},
         )
 
+        PROGRESS("Apple accepted the proof; verifying Apple's own proof")
         if not srp.verify(bytes(second["M2"])):
             raise Fail("Apple's server proof did not verify. Refusing to continue.")
 

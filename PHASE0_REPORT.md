@@ -673,3 +673,68 @@ wc -l signin.py poc_login.py apple-roots.pem cacert.pem
 ```
 grep -c BEGIN apple-roots.pem cacert.pem
 ```
+
+---
+
+# 19. Round 4 — third device run: selftest PASS, `--login` appeared to hang
+
+## 19.1 Result
+
+Selftest: **all six checks PASS** on the iPad.
+- TLS diagnostic confirmed the diagnosis: default CA file `…/a-Shell.app/cacert.pem`, bundle used
+  `…/certifi/cacert.pem`, **127 roots** — so the trust-store fix works.
+- Anisette succeeded via `ani.sidestore.zip` after two servers dropped (expected flakiness).
+- Check 6 verified the pinned Apple root and handshook successfully.
+
+`--login`: after the password was typed and Return pressed, **nothing happened**.
+
+## 19.2 Root cause of the apparent hang (ours)
+
+`getpass.getpass()` opens `/dev/tty` directly. Inside a-Shell that path **opens but is not the
+terminal you are typing into**, so the call blocks forever right after printing the prompt — the
+password is read into a local variable and no request is ever made. Two contributing factors:
+
+1. `getpass` was the wrong primitive for a-Shell.
+2. The sign-in path printed **nothing** between the prompt and Apple's reply, so a slow exchange and a
+   hang looked identical.
+
+## 19.3 Fixes
+
+- `_read_password()` replaces `getpass`: it reads from **stdin**, disables echo with `termios` when
+  stdin is a TTY, restores the terminal in a `finally`, and falls back to `input()` (with a warning
+  that characters will be visible) if anything is unsupported. Verified by piping input: returns the
+  line and never blocks.
+- The PoC now prints how many characters were received, and a note that Apple may ask for a 2FA code.
+- `signin.PROGRESS` hook added (5 call sites): "asking the anisette server for fresh headers" →
+  "contacting Apple: SRP init (no password leaves this device)" → "computing the SRP proof locally" →
+  "sending the proof to Apple (still no password)" → "Apple accepted the proof…". The CLI wires it to
+  a printer, so the exchange can never look dead again.
+- Run instructions now use `python3 -u` so output is unbuffered.
+
+## 19.4 What happened to the password that was typed
+
+- It was entered into `getpass` **locally**, was not echoed, and was **never written to any file**.
+- Because `getpass` blocked, the process never reached the network: **no request of any kind was
+  made**, and the SRP exchange had not started. The anisette server saw only the random identifier.
+- Caveat stated plainly: a-Shell is a terminal, so a terminal app can in principle see keystrokes. If
+  that is not acceptable, change the password.
+- The account used was the user's **main** Apple ID, not a throwaway. If the PoC is re-run with it,
+  Apple will require two-factor authentication, which the PoC supports (trusted-device code or SMS).
+  A throwaway account is still recommended.
+
+## 19.5 Next run
+
+Only two files changed; re-download them and re-run:
+
+```
+cd ~/Documents/barisign
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py -o signin.py
+```
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py -o poc_login.py
+```
+```
+python3 -u poc_login.py --login YOUR-APPLE-ID
+```

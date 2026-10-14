@@ -33,7 +33,6 @@
 #          --login path has NOT been run against Apple by BariSign. UNTESTED.
 # =============================================================================
 
-import getpass
 import os
 import re
 import socket
@@ -116,6 +115,9 @@ def _select_ca_bundle():
 CA_BUNDLE, CA_BUNDLE_SOURCE = _select_ca_bundle()
 if CA_BUNDLE:
     signin.set_ca_bundle(CA_BUNDLE)
+
+# Never let the sign-in exchange look like a hang.
+signin.PROGRESS = lambda message: print("    ... %s" % message, flush=True)
 
 
 def _tls_diagnostics():
@@ -285,17 +287,59 @@ def _selftest():
     return 0
 
 
+def _read_password(prompt):
+    """Read a password without hanging.
+
+    `getpass.getpass()` opens /dev/tty, and inside a-Shell that opens but is not
+    the terminal you are typing into, so it blocks forever after the prompt.
+    We read from stdin instead, turning echo off with termios when we can.
+    """
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    fd = None
+    try:
+        import termios                                   # noqa: PLC0415
+        fd = sys.stdin.fileno()
+        if sys.stdin.isatty():
+            old = termios.tcgetattr(fd)
+            new = list(old)
+            new[3] = new[3] & ~termios.ECHO
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, new)
+                line = sys.stdin.readline()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return line.rstrip("\r\n")
+    except Exception:                                    # noqa: BLE001
+        if fd is not None:
+            try:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+            except Exception:                            # noqa: BLE001
+                pass
+    # Fallback: characters will be visible on screen.
+    print("(echo cannot be turned off here — what you type will be visible)")
+    return input("")
+
+
 def _login(email, server):
     _hr("sign-in")
     print("This PoC only writes inside: %s" % POC_STATE)
     print("Apple ID : %s" % email)
     print("SRP-6a: the password becomes a proof; it is never sent and never saved.")
-    print("Use a THROWAWAY account that can still sign in.")
+    print("Type the password and press Return. Nothing will appear as you type.")
+    print()
+    print("NOTE: if this account has two-factor authentication, Apple will ask for")
+    print("a code — a prompt will appear here, or a notification on your other")
+    print("Apple devices. Prefer a THROWAWAY account for this test.")
     print()
     anisette, gs = connect_anisette(server or "", _state_path())
     account = AppleAccount(email, gs, anisette)
 
-    password = getpass.getpass("Password (not shown, not stored): ")
+    password = _read_password("Password (not shown, not stored): ")
+    print("Password received (%d characters). It is used locally only." % len(password))
     if not password:
         raise Fail("No password entered.")
 
