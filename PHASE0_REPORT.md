@@ -2504,3 +2504,50 @@ cannot repeat the attempt.
 Nothing about the UDID step is unknown any more. The verified sequence is: install the persistent CA →
 enable full trust → install the UDID profile → read the UDID. Remaining work is Stage 3 (developer portal)
 and Stage 4 (the signer).
+
+---
+
+# 44. Device-confirmed end to end — and the "empty profile" surprise
+
+With the CA trusted, the user's run succeeded and revealed something worth writing down:
+
+> *"profil boş dedi ama udid geldi, hem de yüklenmeden"* — iOS reported the profile as **empty**, and the
+> UDID **still arrived, without the profile being installed**.
+
+That is correct behaviour, not a fault. A `Profile Service` payload configures nothing, so iOS has no
+settings to list and calls the profile empty — **the enrolment POST happens anyway**, and nothing is left
+on the device. The earlier failures were never about this message.
+
+## 44.1 Answer to "is it because the certificates are time-limited?"
+
+No. The user's certificates are no more time-limited than udid.tech's (Let's Encrypt certificates are also
+short-lived). The failures were our per-run CA — an identity problem, not an expiry problem. The CA is now
+persistent (2 years) and the leaf is re-issued per run *from that same CA*, which is exactly how a real
+server behaves.
+
+## 44.2 Single profile: already available
+
+Since the CA only has to be trusted once per device, every later fetch is one profile. Added
+`--udid-only` for exactly that case: it writes and shares **only** `BariSign-UDID.mobileconfig`, skipping
+the CA step entirely, and prints that the "empty profile" message is expected.
+
+```
+# first time on a device (installs and trusts the CA)
+python3 -u udid_share.py --https --airdrop
+
+# every time after that - ONE profile
+python3 -u udid_share.py --https --airdrop --udid-only
+```
+
+Verified in the Codespace: the script compiles, `--udid-only` builds no CA profile and offers only the
+UDID profile, and the CA stays the same across runs.
+
+## 44.3 Where the project stands
+
+| Stage | Status |
+|---|---|
+| 1. UDID, computer-free, no third party, one profile after a one-time CA | ✅ **works on device** |
+| 2. Free Apple ID sign-in (anisette + SRP + 2FA) | ✅ works on device |
+| 5. AirDrop install of a signed IPA | ✅ works on device |
+| 3. Register UDID + App ID + certificate + profile | 🚧 to build |
+| 4. **Mach-O + CMS signer** | 🚧 to build — the last substantial piece |

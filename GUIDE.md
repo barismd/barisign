@@ -70,6 +70,24 @@ python3 -u udid_share.py --https --airdrop
   already has our CA in its trust store, and a chain carrying a self-signed root can be refused by strict
   validators — which is exactly what Apple's enrolment check is.
 
+### The message "this profile is empty" is EXPECTED — and the UDID still arrives
+
+Device-confirmed: with the CA trusted, installing the UDID profile shows *"this profile is empty"* and the
+UDID **is still sent**. That is correct behaviour, not a failure: a `Profile Service` payload installs no
+settings, so iOS has nothing to list — the enrolment POST happens regardless, and nothing is left
+configured on the device.
+
+### Single profile, from the second run onwards
+
+The CA is a **one-time** step per device. After it is trusted, every later UDID fetch is **one profile**:
+
+```
+python3 -u udid_share.py --https --airdrop --udid-only
+```
+
+That writes and shares **only** `BariSign-UDID.mobileconfig` (no CA step, no trust step). If it fails,
+run the same command **without** `--udid-only` once, to reinstall the CA.
+
 **Before you start, delete every old profile:** Settings → General → VPN & Device Management → remove
 every *BariSign* entry, then check Certificate Trust Settings has no BariSign row left.
 

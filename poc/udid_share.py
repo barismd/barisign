@@ -530,6 +530,9 @@ def main():
     use_https = "--https" in sys.argv[1:]
     use_airdrop = "--airdrop" in sys.argv[1:]
     use_lifetime = "--lifetime" in sys.argv[1:]
+    use_udid_only = "--udid-only" in sys.argv[1:]
+    if use_udid_only:
+        use_https = True
     if "--diag-profiles" in sys.argv[1:]:
         write_diag_profiles()
         return 0
@@ -608,7 +611,8 @@ def main():
             return 2
         state["ca_der"] = certs["ca_der"]
         state["ca_fingerprint"] = certs["ca_fingerprint"]
-        state["ca_xml"] = as_xml(ca_profile(certs["ca_der"], certs["ca_fingerprint"]))
+        if not use_udid_only:
+            state["ca_xml"] = as_xml(ca_profile(certs["ca_der"], certs["ca_fingerprint"]))
         if use_airdrop:
             # the CA travels by AirDrop too, so no plain-HTTP listener is needed
             ca_url = None
@@ -634,7 +638,14 @@ def main():
     print(" Notice: one payload, type 'Profile Service', asking only for UDID,")
     print(" PRODUCT and VERSION. No certificate, no VPN, no proxy, no Wi-Fi.")
     print()
-    if use_https:
+    if use_https and use_udid_only:
+        print(" MODE: HTTPS, ONE PROFILE.")
+        print(" Assuming \"BariSign CA %s\" is already installed and trusted on" % state.get("ca_fingerprint", "?"))
+        print(" Device B. A Profile Service profile installs no settings, so iOS will")
+        print(" call it 'empty' - that is expected, and the UDID request is still sent.")
+        print(" If it fails, run once without --udid-only to (re)install the CA.")
+        print()
+    elif use_https:
         print(" MODE: HTTPS.")
         print(" CA name on the device: \"BariSign CA %s\"" % state.get("ca_fingerprint", "?"))
         print(" Use that exact name when you switch trust ON - older runs left")
@@ -667,10 +678,10 @@ def main():
     sys.stdout.flush()
 
     if use_airdrop:
-        if use_https:
+        if use_https and not use_udid_only:
             ca_path = write_beside_script("BariSign-CA.mobileconfig", state["ca_xml"])
         profile_path = write_beside_script("BariSign-UDID.mobileconfig", state["profile_xml"])
-        if use_https:
+        if use_https and not use_udid_only:
             print(" Check first, on Device B in Safari (needs this script running):")
             print("   %s/tls-check" % base)
             print("   a padlock and 'TLS OK' means the CA is trusted. No padlock = the")
