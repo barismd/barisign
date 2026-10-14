@@ -13,9 +13,12 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 - Phase 0 complete → only **PoC-A/B/C** (`POC_GUIDE.md`) are authorised before Phase 1.
 - Never use GitHub `releases/latest` for SideStore (it returns `0.7.0-alpha`); list releases and
   reject `alpha`/`beta`/`rc` tags.
-- **Licence constraint:** code ported from `FrizzleM/SideInstaller` (`ish/sideinstaller.py`) keeps
-  its **non-commercial, source-only, attribution-required** licence, so the repo as a whole cannot
-  be MIT or commercial. See `THIRD_PARTY_NOTICES.md`. Step 1 PoC: `poc/poc_login.py`.
+- **Licence constraint:** code ported from `FrizzleM/SideInstaller` is **isolated** in
+  `third_party/sideinstaller/` under its own **non-commercial, source-only** licence (with the
+  licence text, attribution and a list of our changes), so the repo as a whole cannot be MIT or
+  commercial. Never copy that code into MIT files; prefer reimplementing from MIT sources
+  (`nab138/isideload`, `jkcoxson/idevice`). See `THIRD_PARTY_NOTICES.md`.
+- Step 1 PoC: `poc/poc_login.py` (MIT) + `third_party/sideinstaller/signin.py` (non-MIT).
 
 ## What we are building
 

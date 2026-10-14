@@ -367,11 +367,14 @@ Only two things need native tools, and **both are outside the sign-in path**:
    Replaceable with `cryptography`.
 2. `zsign` — the actual Mach-O/CMS signature. **Must be written in pure Python.**
 
-**Licence (constrains this repo):** SideInstaller is under a **custom licence — non-commercial,
-source-only redistribution, attribution required, changes must be noted**. The licence text is
-copied to `third_party/SideInstaller-LICENSE.md`. Consequence: **files ported from it cannot be
-relicensed MIT, and this repository cannot be used commercially.** Our own files can stay MIT;
-the ported ones must carry their notice. (Decision requested in §16.)
+**Licence (constrains this repo) — decided:** SideInstaller is under a **custom licence:
+non-commercial, source-form-only redistribution, attribution required, changes must be noted**
+(full text now at `third_party/sideinstaller/LICENSE.md`; the key conditions are quoted in
+`THIRD_PARTY_NOTICES.md`). Decision: **keep the port but isolate it.** Every file derived from
+SideInstaller lives in **`third_party/sideinstaller/`** with its licence, attribution and a list of
+our changes; everything else stays MIT. Because that folder is part of this repository, **the
+repository as a whole cannot be used commercially.** Where an MIT project (`isideload`, `idevice`)
+covers the same logic, we will reimplement from it and shrink that folder.
 
 ## 12.1 What we verified ourselves in the Codespace (Linux — not a device)
 
@@ -415,13 +418,21 @@ Riskiest first:
 
 # 14. Step 1 (authorised now): PoC-D — on-device Apple sign-in
 
-Deliverable: **`poc/poc_login.py`** (untested on a device; checks 1–4 and, with a trusted root,
-5–6 were verified on Linux as described in §12.1). It is the vendored login stack plus our own CLI,
-with exactly two documented changes (header of the file).
+Deliverable: **`poc/poc_login.py`** (MIT) plus the vendored module
+**`third_party/sideinstaller/signin.py`** (non-MIT; see §12). Untested on a device; checks 1–6 were
+verified on Linux as described in §12.1.
 
 **Run these in a-Shell, one line at a time.**
 
-1. Download it:
+1. Download both files into one folder (they must sit side by side):
+
+```
+mkdir -p ~/barisign && cd ~/barisign
+```
+
+```
+curl -sL https://raw.githubusercontent.com/barismd/barisign/main/third_party/sideinstaller/signin.py -o signin.py
+```
 
 ```
 curl -sL https://raw.githubusercontent.com/barismd/barisign/main/poc/poc_login.py -o poc_login.py
@@ -468,10 +479,21 @@ nothing is. Run it **with LocalDevVPN off and again with it on**, and send both 
 
 ---
 
-# 16. Decisions needed now
+# 16. Decisions taken (user, 2026-10-14)
 
-1. **Licence:** accept that ported SideInstaller files keep their **non-commercial** licence and
-   this repo therefore cannot be MIT throughout (our own files stay MIT)? Or rewrite the ported
-   parts from the protocol to stay fully MIT?
-2. **Proceed to the signer** (§13 item 1) as Phase 1, or do more login PoCs first?
-3. Anything you want changed about `poc/poc_login.py` before you run it?
+1. **Repo visibility:** make it public. *(Attempted via API — the token returns HTTP 403 "Resource
+   not accessible by integration", so the user must flip it: repo → Settings → General → Danger
+   Zone → Change repository visibility → Public. Raw URLs 404 until then.)*
+2. **Licence:** keep the port, but **isolate** — all SideInstaller-derived files live in
+   `third_party/sideinstaller/` with their licence, attribution and our change list; everything else
+   stays MIT; prefer MIT sources (`isideload`, `idevice`) for reimplementation; state plainly in the
+   README that the repo contains non-commercial-licensed parts. **Done** (`signin.py`,
+   `LICENSE.md`, `README.md`, `THIRD_PARTY_NOTICES.md`, README section "Licences").
+   The key licence conditions are quoted in `THIRD_PARTY_NOTICES.md`.
+3. **Next build step:** **wait for the PoC-D results** before starting anything else.
+
+## Next action
+
+1. Flip the repository to public (step 1 above).
+2. Run PoC-D in a-Shell (§14) and send the whole screen.
+3. Report the §15 port-scan output (VPN off and on).

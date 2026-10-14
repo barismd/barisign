@@ -66,9 +66,21 @@ The exact version you are about to get is shown to you before anything is downlo
 - `AGENTS.md` — the project's constraints and working rules.
 - Beginner step-by-step guide and the Shortcut build guide: **coming in Phase 1**.
 
-## Licences
+## Licences — important
 
-BariSign's own code is licensed under the MIT Licence (final `LICENSE` file added in Phase 1).
-It builds on third-party open-source projects; their licences and attribution will be listed in
-`THIRD_PARTY_NOTICES.md`. SideStore and LiveContainer are **AGPL-3.0**; their released apps are used
-as-is and are not modified or redistributed by this repository.
+**BariSign is not MIT throughout, and it cannot be used commercially.**
+
+- **BariSign's own code** is MIT (final `LICENSE` file added in Phase 1).
+- **`third_party/sideinstaller/` is not.** That folder contains code copied from
+  [SideInstaller by FrizzleM](https://github.com/FrizzleM/SideInstaller) and is governed by that
+  project's own licence (`third_party/sideinstaller/LICENSE.md`). In short, it permits
+  non-commercial use, modification, and **source-form-only** redistribution with attribution, and
+  forbids commercial use and redistribution of SideInstaller's official binaries. **Because these
+  files are part of this repository, the repository as a whole may not be used commercially.**
+- We keep that code fenced in `third_party/sideinstaller/` on purpose, and we prefer reimplementing
+  from MIT sources (`nab138/isideload`, `jkcoxson/idevice`) wherever they cover the same logic.
+
+Full details and attribution: `THIRD_PARTY_NOTICES.md`.
+
+SideStore and LiveContainer are **AGPL-3.0**; their released apps are consumed as-is and are neither
+modified nor redistributed by this repository.
