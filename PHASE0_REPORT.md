@@ -2160,3 +2160,87 @@ Do **not** start the port yet. First run the one decisive experiment: **a-Shell 
 Developer Mode.** If it is visible, the route is real and the port is worth it. If iOS blocks the
 advertisement without a multicast entitlement, this route dies too and the honest answer is
 "an app on the target, or one computer".
+
+---
+
+# 38. VERDICT: on a virgin device, no-PC + no-third-party-certificate is impossible
+
+The user's constraint: *Developer Mode will not be on at the start, and the flow must work on devices that
+have never been sideloaded, with no PC and no public/enterprise certificate.*
+
+## 38.1 Apple's own rule (verified, primary source)
+
+From **developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device**:
+
+> *"**Developer Mode only appears in Settings if you initiate pairing or if you previously connected the
+> device to Xcode.** In tvOS, there's no Developer Mode."*
+
+And from WWDC22 (*Get to know Developer Mode*):
+
+> *"first you need to connect your device to Xcode for the Developer Mode menu item to appear … **Installing
+> a development-signed application without Xcode, like through Apple Configurator, will also make the menu
+> item visible.**"*
+
+So on a device that has never been paired and never had a development-signed app, the **Developer Mode row
+does not exist in Settings at all**.
+
+## 38.2 Why that closes every route we have
+
+The iOS 27 device-initiated pairing — the only app-free way to obtain a UDID (§37) — lives **inside that
+Developer Mode page**: StikPair's and Husk's instructions are literally *"open Settings › Privacy &
+Security › Developer Mode, scroll down, tap Pair with …"*. If the page is hidden, the pairable-host list
+cannot be reached, so:
+
+- no Developer Mode page → no pairing → **no UDID**;
+- no UDID → no provisioning profile → **no signed app** → nothing that could make Developer Mode appear;
+- no signed app and no Xcode → **the page never appears**.
+
+It is a closed loop, and it is closed **by Apple's design**, not by a missing feature in our code.
+
+## 38.3 Every remaining path, and why each needs one of two things
+
+| Path | Needs |
+|---|---|
+| Pair with Xcode / Apple Configurator / devmodectl | **a computer** |
+| Pair with `idevice_pair`, iloader, AltServer, Sideloadly (USB) | **a computer** |
+| Pair over Wi-Fi (iOS 27 device-initiated, from Settings) | **Developer Mode visible** → computer or a dev-signed app |
+| Install SideInstaller / StikPair / Husk / StikDebug | a **development-signed app**, i.e. a shared/third-party certificate or its own bootstrap |
+| Sideloading services (shared/enterprise certs), ESign/Feather-style installers | **a third-party certificate** (excluded by the user) |
+| `itms-services` / OTA | Ad Hoc or Enterprise profile — free-account profiles are refused (device-verified, §5) |
+| Configuration profile (`Profile Service`) | refused by iOS 27 (device-verified, §30–35) |
+| TestFlight | does not provide identifiers, and does not reliably reveal Developer Mode |
+| a-Shell alone | cannot read the UDID, cannot pair, and cannot even reach the pairing UI without Developer Mode |
+
+**No alternate runtime fixes this**: iSH has no Local Network permission, Pythonista/Pyto are the same
+shape as a-Shell, Scriptable has no sockets, Shortcuts has no device-identifier API. The blocker is an
+Apple policy gate, not a runtime limitation.
+
+## 38.4 The honest answer, and the realistic minimum
+
+**On a virgin device, with no computer and no third-party certificate, SideStore cannot be installed on
+iOS 27.** Not by us, and — from every source read — not by anyone. The published "no PC" flows
+(SideInstaller, StikPair, Husk, SideStore itself) all assume one of: a computer once, a shared
+certificate, or a Developer Mode that is already available.
+
+The realistic minimum is therefore **exactly one** of these, once per device:
+
+1. **A computer, once, for ~30 seconds** — plug in, let Xcode/Apple Configurator/iloader touch the device
+   so the Developer Mode row appears (and optionally produce the pairing file). After that, **everything
+   stays computer-free forever**: pairing, signing, refreshing, variants, AirDrop.
+2. **One third-party/shared certificate install** (what SideInstaller's page hands out) — 5 minutes, no
+   computer, but it places a revocable third-party app on the device, which is precisely what the user
+   excluded.
+
+Option 1 is the only one compatible with the stated rules, and the cost is a single cable touch on day
+one. Everything BariSign has been built and verified for happens after it.
+
+## 38.5 The one cheap test that would overturn this
+
+Apple's wording leaves exactly one gap: *"if you initiate pairing"*. If iOS 27's new device-initiated
+pairing is reachable **without** Developer Mode being visible, a virgin device could bootstrap itself.
+The test costs ten seconds and needs no code:
+
+> On a **virgin** iPhone: Settings → Privacy & Security → look for **Developer Mode**.
+
+- **Present** → the iOS 27 route is alive on virgin devices, and §37's plan can proceed.
+- **Absent** → this verdict stands, and the minimum is a one-time computer touch.
