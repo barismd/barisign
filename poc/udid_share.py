@@ -406,8 +406,12 @@ def mdm_profile(checkin_url, ca_der, name_suffix="", identity_p12=None, identity
                 "ServerURL": checkin_url,
                 "CheckInURL": checkin_url,
                 "Topic": "com.apple.mgmt.External." + str(uuid.uuid4()),
+                # Least privilege that still allows the device to check in: bit 16 is
+                # "query device information". iOS rejected the payload without this.
+                "AccessRights": 16,
                 "SignMessage": False,
                 "CheckOutWhenRemoved": False,
+                "UseDevelopmentAPNS": True,
             },
             {
                 "PayloadType": "com.apple.webClip.managed",
