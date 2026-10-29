@@ -72,9 +72,15 @@ Either way it ends with the UDID saved; `sh bin/barisign status` shows it.
 sh bin/barisign login
 ```
 
-The password is masked: only the terminal's ECHO bit is switched off, canonical mode is left alone, and
-the setting is restored **and verified** immediately afterwards. If a terminal still misbehaves, run
-`BARISIGN_SHOW_PASSWORD=1 sh bin/barisign login` to type it visibly instead.
+**How the password is entered.** a-Shell does not survive a program changing its terminal settings: both
+masked readers we tried left echo off, after which nothing could be typed and Return did nothing. So
+BariSign never changes terminal modes:
+
+1. **The clipboard first.** Copy the password (password manager, Notes) and press Return when asked — no
+   keystrokes at all, and nothing is echoed anywhere.
+2. Otherwise a **normal line**, erased from the screen immediately after Return.
+3. `BARISIGN_MASK_PASSWORD=1 sh bin/barisign login` brings back the asterisk reader for anyone who wants
+   it, with the warning that it is the mode that can leave the terminal stuck (recover with `newWindow`).
 
 The order matters: it first proves an **anisette** server works and that **Apple's edge
 answers**, and only then asks for the password:

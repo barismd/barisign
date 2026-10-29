@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -211,7 +211,7 @@ def _sign_in(email, preferred=None):
         refused_identity = False
         for attempt in range(3):
             if password is None:
-                password = poc_login._read_password("Password (not shown, not stored): ")
+                password = poc_login._read_password("Password: ")
                 if not password:
                     raise Fail("No password entered.")
                 print("  password             : %s" % poc_login._password_diagnostics(password))
@@ -435,11 +435,7 @@ def extract_udid(text):
 
 def _clipboard_text():
     """What is on the iOS clipboard, if a-Shell exposes it (pbpaste)."""
-    try:
-        with os.popen("pbpaste 2>/dev/null") as handle:
-            return handle.read()
-    except Exception:                                         # noqa: BLE001
-        return ""
+    return poc_login._clipboard_text()
 
 
 def normalise_udid(text):

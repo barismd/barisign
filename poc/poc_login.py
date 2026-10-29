@@ -369,51 +369,91 @@ def _selftest():
     return 0
 
 
-def _read_password(prompt):
-    """Read a password with echo off, and put the terminal back in every path.
-
-    a-Shell used to end up with echo off after a masked read, so the previous
-    version stopped masking. That was the wrong trade. The rule now: change
-    exactly one bit (ECHO), keep canonical mode, let the line driver do the
-    editing, restore immediately — and *verify* the restore, saying so if it
-    failed. BARISIGN_SHOW_PASSWORD=1 skips masking for a terminal that still
-    misbehaves.
-    """
-    if os.environ.get("BARISIGN_SHOW_PASSWORD") or not sys.stdin.isatty():
-        try:
-            return sys.stdin.readline().rstrip("\r\n") if not sys.stdin.isatty() else input(prompt)
-        except EOFError:
-            return ""
-
+def _clipboard_text():
+    """Whatever a-Shell's pbpaste gives us, or "" when it has none."""
     try:
-        import termios
-        fd = sys.stdin.fileno()
-        saved = termios.tcgetattr(fd)
-    except Exception:                                          # noqa: BLE001
-        try:
-            return input(prompt)
-        except EOFError:
-            return ""
+        with os.popen("pbpaste 2>/dev/null") as handle:
+            return handle.read()
+    except Exception:                                         # noqa: BLE001
+        return ""
 
+
+def _masked_line(prompt):
+    """Asterisks, the a-Shell way — opt-in only (BARISIGN_MASK_PASSWORD=1).
+
+    It disables ECHO and echoes '*' itself. It also has a habit of leaving the
+    terminal with echo off, which is why it is not the default.
+    """
+    import termios
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    buf = []
     try:
         changed = list(saved)
-        changed[3] = changed[3] & ~termios.ECHO      # lflag: ECHO off, nothing else
+        changed[3] = changed[3] & ~termios.ECHO
+        changed[3] = changed[3] & ~termios.ICANON
         termios.tcsetattr(fd, termios.TCSANOW, changed)
         sys.stdout.write(prompt)
         sys.stdout.flush()
-        line = sys.stdin.readline()
+        while True:
+            ch = os.read(fd, 1)
+            if not ch:
+                break
+            if ch in (b"\n", b"\r"):
+                break
+            if ch in (b"\x7f", b"\x08"):
+                if buf:
+                    buf.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            buf.append(ch)
+            sys.stdout.write("*")
+            sys.stdout.flush()
         sys.stdout.write("\n")
         sys.stdout.flush()
-        return line.rstrip("\r\n")
+        return b"".join(buf).decode("utf-8", "replace")
     finally:
         try:
             termios.tcsetattr(fd, termios.TCSANOW, saved)
-            now = termios.tcgetattr(fd)
-            if not (now[3] & termios.ECHO):
-                print("WARNING: this terminal still has echo off after restoring it.")
-                print("         Open a new a-Shell window (type: newWindow) and rerun.")
-        except Exception:                                      # noqa: BLE001
+        except Exception:                                     # noqa: BLE001
             pass
+
+
+def _read_password(prompt):
+    """Get the password without ever changing the terminal's modes.
+
+    Two attempts at hiding typing made a-Shell unusable (echo stayed off, then
+    nothing could be typed and Return did nothing), so the order is now:
+
+      1. the clipboard, if it holds something — no keystrokes at all;
+      2. a normal visible line, erased from the screen straight after Return;
+      3. only if BARISIGN_MASK_PASSWORD=1: the asterisk reader, with a warning.
+    """
+    if os.environ.get("BARISIGN_MASK_PASSWORD"):
+        print("(masked mode: if the terminal stops accepting input afterwards,")
+        print(" type 'newWindow' or reopen a-Shell — this is the mode that breaks it)")
+        return _masked_line(prompt)
+
+    clip = _clipboard_text().strip()
+    if clip and "\n" not in clip:
+        print("The clipboard holds %d characters. Use it as the password?" % len(clip))
+        try:
+            answer = input("Use it? [Y/n] ").strip().lower()
+        except EOFError:
+            answer = "n"
+        if answer in ("", "y", "yes"):
+            return clip
+
+    try:
+        typed = input(prompt)
+    except EOFError:
+        return ""
+    # erase the line we just echoed: same width, then back to the start
+    width = len(prompt) + len(typed)
+    sys.stdout.write("\r" + " " * width + "\r(password entered, line cleared)\n")
+    sys.stdout.flush()
+    return typed
 
 
 def _password_diagnostics(password):
