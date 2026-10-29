@@ -61,6 +61,31 @@ the parts we could not confirm are marked **unverified**.
 Other projects confirm the same pairing UI: StikPair (iOS 27+, "Pair with StikPair", PIN in a Live
 Activity), Husk ("Pair with Husk", code in a notification), Madeira ("Pair with Madeira").
 
+## Two experiments before any pairing code
+
+1. **Install first, then look for the switch** (no new code). Apple's WWDC says Developer Mode is
+   needed to *install* a development-signed app; several tools report the opposite in practice: the
+   app installs, refuses to open, and tapping it makes the Developer Mode setting appear. Our earlier
+   test on the other iPhone proved nothing because that phone was not in the profile. Register its
+   UDID (`sh bin/barisign portal --udid <that UDID>`), sign again, and AirDrop the **.ipa** (not the
+   zip) from the signing phone straight to it. Watch whether the icon appears, and whether tapping it
+   reveals Settings → Privacy & Security → Developer Mode. If it does, no pairing is needed at all.
+2. **Does Bonjour work from a-Shell?** `poc/pair_probe.py` (untested) registers
+   `_remotepairing-pairable-host._tcp` through `DNSServiceRegister` via ctypes, advertises the same TXT
+   keys SideInstaller uses, and listens on 49152. Run it on a **second device** with a-Shell (the iPad)
+   on the same Wi-Fi; on the target phone open Settings → Privacy & Security → Developer Mode and tap
+   "Pair with BariSign". A connection in the probe window means the phone found and dialled us. The
+   probe performs no pairing and writes nothing.
+
+If (1) works, stop. If (2) connects, the remaining work is the RPPairing responder (SRP-6a accessory,
+TLV/Opaque, Ed25519, pairing record) — a large clean-room port from MIT `idevice`, and the phone still
+has to stay in Settings while the host keeps running, which is why a real app (with a Live Activity and
+a continued-processing task) is the right host, not a-Shell on the same phone.
+
+**Why not a-Shell on the same phone:** switching to Settings suspends it, the PIN has to be read before
+leaving, and there is no Live Activity or background task to keep the listener alive. SideInstaller,
+StikPair, Husk and Madeira all use an app extension for exactly this.
+
 ## What this means for BariSign
 
 - **The phone we sign on (iPhone 13) needs nothing new.** Developer Mode is already on, the UDID is in
