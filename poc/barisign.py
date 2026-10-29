@@ -44,10 +44,28 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
+
+# Done here, not in main(): the key, certificate and profile paths are derived
+# from it, and an early return in main() used to leave it pointing at the app
+# container root, which is not writable.
+os.makedirs(STATE_DIR, exist_ok=True)
+portal.STORAGE = STATE_DIR
+signin.STORAGE = STATE_DIR
+
+
+def _wire_progress():
+    """The vendored stack narrates every step; it all goes through one line."""
+    for name in ("info", "ok", "step", "warn"):
+        if hasattr(signin, name):
+            setattr(signin, name, lambda message="", *a, **k: _activity(message))
+    signin.PROGRESS = lambda message="": _activity(message)
+
+
+_wire_progress()
 
 
 # ---------------------------------------------------------------------------
@@ -88,31 +106,50 @@ def load_variants():
 # ---------------------------------------------------------------------------
 
 CLEAR = "\033[2J\033[H"
-BAR_WIDTH = 10
+LINE = 38
 
 
-def _stage(title):
-    """Clean screen, then the stage title. One screen per stage."""
+def _stage(title, note=""):
+    """Clean screen, then the stage header. The note keeps the context that the
+    clear would otherwise wipe (the Apple ID, for example)."""
     sys.stdout.write(CLEAR)
     sys.stdout.flush()
     print("BariSign %s" % VERSION)
     print()
     print("== %s ==" % title.upper())
+    if note:
+        print("  %s" % note)
     print()
 
 
-def _step(index, total, label, keep=False):
-    """One progress line, rewritten in place as the stage advances."""
-    filled = int(BAR_WIDTH * index / total)
-    line = "  [%s%s] %s" % ("#" * filled, "." * (BAR_WIDTH - filled), label[:20])
-    sys.stdout.write("\r" + line.ljust(38))
+def _line(text=""):
+    """The only moving line: rewrite it in place, never scroll."""
+    sys.stdout.write("\r" + text[:LINE].ljust(LINE))
     sys.stdout.flush()
-    if keep:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+
+
+def _line_clear():
+    sys.stdout.write("\r" + " " * LINE + "\r")
+    sys.stdout.flush()
+
+
+def _step(index, total, label):
+    filled = int(10 * index / total)
+    _line("  [%s%s] %s" % ("#" * filled, "." * (10 - filled), label[:18]))
+
+
+def _activity(message):
+    """Live text from the vendored stack: same line, replaced every time."""
+    _line("  " + message)
+
+
+def _pause_for_input():
+    """Prompts must start on a clean line."""
+    _line_clear()
 
 
 def _result(label, text):
+    _line_clear()
     print()
     print("%s  %s" % (label, text))
 
@@ -187,7 +224,7 @@ def _sign_in(email, preferred=None, use_clipboard=False):
     refused the identity: forget it and try the next server. The password is asked
     once, after Apple has answered, and never stored.
     """
-    _stage("Apple sign-in")
+    _stage("Apple sign-in", "Apple ID  %s" % email)
     state_path = os.path.join(STATE_DIR, "anisette.json")
     candidates = _anisette_order([preferred] if preferred else [])
     last_error = None
@@ -233,9 +270,11 @@ def _sign_in(email, preferred=None, use_clipboard=False):
                 password = poc_login._clipboard_text().strip()
                 if not password:
                     raise Fail("the clipboard is empty: copy the password first")
-                _step(3, 3, "sign in (password from the clipboard)", keep=True)
+                _step(3, 3, "sign in")
+                _pause_for_input()
             if password is None:
-                _step(3, 3, "sign in", keep=True)
+                _step(3, 3, "sign in")
+                _pause_for_input()
                 password = poc_login._read_password("  Password: ")
                 if not password:
                     raise Fail("no password")
@@ -264,7 +303,7 @@ def _sign_in(email, preferred=None, use_clipboard=False):
         if refused_identity:
             continue
         password = None
-        _step(3, 3, "signed in", keep=True)
+        _line_clear()
         return account
 
     if not saw_503:
@@ -320,7 +359,7 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
     _step(4, 5, "certificate")
     cert_path, reused = obtain_certificate(session, team, key_path, STATE_DIR)
 
-    _step(5, 5, "profile", keep=True)
+    _step(5, 5, "profile")
     profile = download_profile(session, team, app_id)
     profile_path = os.path.join(STATE_DIR, "profile.mobileprovision")
     with open(profile_path, "wb") as handle:
@@ -333,6 +372,7 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
         expires = parsed.get("ExpirationDate", "?")
     except Exception:                                         # noqa: BLE001
         pass
+    _line_clear()
     print("  team      %s (%s)" % (team.get("name", "?"), team["teamId"]))
     print("  app id    %s" % full_bundle_id)
     print("  cert      %s" % ("reused" if reused else "created"))
@@ -480,7 +520,8 @@ def cmd_udid(argv):
         print("  3  come back here")
         print()
         if "--no-open" not in argv:
-            _step(1, 3, "safari", keep=True)
+            _step(1, 3, "safari")
+            _pause_for_input()
             _press_return("  Return to open Safari: ")
             if _open_in_safari(UDID_URL) is not True:
                 print("  open it yourself: %s" % UDID_URL)
@@ -492,7 +533,8 @@ def cmd_udid(argv):
                 if _yes("  use it?", True):
                     udid = found
                     break
-            _step(2, 3, "read the UDID", keep=True)
+            _step(2, 3, "read the UDID")
+            _pause_for_input()
             typed = _ask("  UDID: ")
             udid = extract_udid(typed)
             if udid:
@@ -693,17 +735,7 @@ def main(argv):
         _usage()
         return 2
 
-    # The vendored stack narrates every step; BariSign prints one line per stage
-    # instead, so its chatter is muted here (warnings and errors still surface).
-    for name in ("info", "ok", "step"):
-        if hasattr(signin, name):
-            setattr(signin, name, lambda *args, **kwargs: None)
-    signin.PROGRESS = lambda message: None
 
-    # the portal needs the writable state directory for keys, certs and profiles
-    os.makedirs(STATE_DIR, exist_ok=True)
-    portal.STORAGE = STATE_DIR
-    signin.STORAGE = STATE_DIR
     return handler(argv[1:])
 
 

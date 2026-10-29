@@ -1,27 +1,24 @@
 #!/bin/sh
-# BariSign - update in place.
-# A git checkout pulls; an installed copy fetches the newest installer and runs it.
+# BariSign - update in place, quietly.
 cd "$(dirname "$0")/.." || exit 1
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
-    echo "Updating with git in $(pwd)"
-    git pull --ff-only || { echo "git pull failed - fix that first"; exit 1; }
-else
-    echo "Fetching the newest installer into $(pwd)"
-    rm -f install.sh.new
-    if curl -sSL -H 'Cache-Control: no-cache' \
-            "https://raw.githubusercontent.com/barismd/barisign/main/install.sh" -o install.sh.new \
-       && [ -s install.sh.new ]; then
-        BARISIGN_DIR="$(pwd)" sh install.sh.new || {
-            echo "The update did not finish; what was already installed still works."
-            rm -f install.sh.new
-            exit 1
-        }
-        mv install.sh.new install.sh
-    else
-        echo "Could not download the installer. Check the network."
-        rm -f install.sh.new
-        exit 1
-    fi
+    before=$(git rev-parse --short HEAD)
+    git pull --ff-only -q || { echo "! update failed"; exit 1; }
+    after=$(git rev-parse --short HEAD)
+    [ "$before" = "$after" ] && echo "already up to date ($after)" || echo "updated $before -> $after"
+    exit 0
 fi
-echo
-echo "Ready."
+tmp=install.sh.new
+rm -f "$tmp"
+curl -sSL -H 'Cache-Control: no-cache' \
+     "https://raw.githubusercontent.com/barismd/barisign/main/install.sh" -o "$tmp" || {
+    echo "! no network"; exit 1; }
+if BARISIGN_DIR="$PWD" sh "$tmp" >/dev/null 2>&1; then
+    mv "$tmp" install.sh
+    ver=$(python3 -c "import re;print(re.search(r'VERSION = \"([^\"]+)\"', open('poc/barisign.py').read()).group(1))")
+    echo "BariSign $ver  installed"
+else
+    rm -f "$tmp"
+    echo "! update failed; run 'sh install.sh' to see why"
+    exit 1
+fi
