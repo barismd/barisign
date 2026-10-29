@@ -8,6 +8,7 @@
 #      python3 -u poc/barisign.py udid       this device's UDID
 #      python3 -u poc/barisign.py login      Apple sign-in
 #      python3 -u poc/barisign.py portal     UDID + certificate + profile
+#      python3 -u poc/barisign.py sign       sign an IPA and zip the result
 #      python3 -u poc/barisign.py status     what is saved
 #      python3 -u poc/barisign.py check      diagnostics only
 #      python3 -u poc/barisign.py version    which copy is running
@@ -44,6 +45,13 @@ from signin import AppleAccount, Fail, connect_anisette        # noqa: E402
 from portal import (DeveloperSession, ensure_app_id, ensure_device,               # noqa: E402
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist, list_devices)
+try:
+    import signer                                              # noqa: E402
+except ImportError as exc:                                    # noqa: BLE001
+    print("Could not import the signer module: %s" % exc)
+    print("poc/signer.py is missing or incomplete.")
+    print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
+    sys.exit(2)
 
 VERSION = "0.5.6"
 STATE_DIR = poc_login.POC_STATE
@@ -723,6 +731,82 @@ def cmd_portal(argv):
     return 0
 
 
+_SIGN_STEPS = {"read": (1, 5, "ipa"), "open": (2, 5, "unpack"),
+               "prepare": (2, 5, "prepare"), "sign": (3, 5, "sign"),
+               "check": (4, 5, "verify"), "write": (4, 5, "package"),
+               "zip": (5, 5, "zip"), "done": (5, 5, "done")}
+
+
+def _default_ipa():
+    """The newest .ipa in the install folder, ignoring earlier signed output."""
+    folder = os.path.dirname(STATE_DIR)
+    best, best_time = "", 0
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return ""
+    for name in names:
+        if not name.lower().endswith(".ipa") or name.lower().endswith("-signed.ipa"):
+            continue
+        path = os.path.join(folder, name)
+        try:
+            stamp = os.path.getmtime(path)
+        except OSError:
+            continue
+        if stamp > best_time:
+            best, best_time = path, stamp
+    return best
+
+
+def cmd_sign(argv):
+    """Sign the downloaded IPA with the key, certificate and profile from portal."""
+    _stage("Sign")
+    saved = signer.find_saved_paths(STATE_DIR)
+    missing = [label for label, path in (("key", saved["key"]),
+                                         ("cert", saved["cert"]),
+                                         ("profile", saved["profile"])) if not path]
+    if missing:
+        print("  ! no %s: run 'sh bin/barisign portal' first" % ", ".join(missing))
+        return 2
+
+    ipa = argv_get(argv, "--ipa")
+    if not ipa:
+        ipa = _default_ipa()
+        if not ipa:
+            _step(1, 5, "ipa")
+            _pause_for_input()
+            ipa = _ask("  ipa path: ")
+        else:
+            print("  ipa   %s" % os.path.basename(ipa))
+            print()
+    ipa = os.path.abspath(ipa) if ipa else ""
+    if not ipa or not os.path.isfile(ipa):
+        print("  ! not found: %s" % (ipa or "(nothing)"))
+        return 2
+
+    def progress(label):
+        index, total, text = _SIGN_STEPS.get(label, (3, 5, label))
+        _step(index, total, text)
+
+    try:
+        result = signer.sign_ipa(ipa, saved["profile"], saved["key"], saved["cert"],
+                                 output_ipa=argv_get(argv, "--out") or None,
+                                 udid=saved.get("udid") or None,
+                                 progress=progress,
+                                 make_zip="--no-zip" not in argv)
+    except signer.SigningError as exc:
+        _line_clear()
+        print()
+        print("! %s" % exc)
+        return 1
+
+    _result("SIGN", "ok  %s" % os.path.basename(result["ipa"]))
+    if result["zip"]:
+        print("  zip   %s" % result["zip"])
+    print("  next  airDrop the zip, unzip it, airDrop the .ipa back")
+    return 0
+
+
 def cmd_guided(_argv):
     """check -> variant -> udid -> login -> portal."""
     state = load_state()
@@ -773,6 +857,7 @@ COMMANDS = {
     "udid": cmd_udid,
     "login": cmd_login,
     "portal": cmd_portal,
+    "sign": cmd_sign,
     "all": cmd_guided,
 }
 
@@ -784,6 +869,7 @@ def _usage():
     print("  sh bin/barisign udid      this device's UDID")
     print("  sh bin/barisign login     Apple sign-in")
     print("  sh bin/barisign portal    UDID + certificate + profile")
+    print("  sh bin/barisign sign      sign an IPA and zip the result")
     print("  sh bin/barisign status    what is saved")
     print("  sh bin/barisign check     diagnostics only")
     print("  sh bin/barisign version   which copy is running")
@@ -791,6 +877,7 @@ def _usage():
     print()
     print("  login:  --use-clipboard (no typing)   --server URL (pin anisette)")
     print("  portal: --udid UDID (register another device, e.g. an iPad)")
+    print("  sign:   --ipa FILE (the one to sign)   --out FILE   --no-zip")
     print("  udid:   --no-open (do not open Safari)")
 
 

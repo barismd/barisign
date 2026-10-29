@@ -74,6 +74,7 @@ download_all() {
     fetch poc/poc_login.py                    poc/poc_login.py                 || fail=1
     fetch poc/poc_portal.py                   poc/poc_portal.py                || fail=1
     fetch poc/barisign.py                     poc/barisign.py                  || fail=1
+    fetch poc/signer.py                       poc/signer.py                    || fail=1
     fetch third_party/sideinstaller/signin.py third_party/sideinstaller/signin.py || fail=1
     fetch third_party/sideinstaller/portal.py third_party/sideinstaller/portal.py || fail=1
     fetch third_party/apple-roots/apple-roots.pem third_party/apple-roots/apple-roots.pem || fail=1
@@ -88,7 +89,7 @@ download_all() {
 check_compiles() {
     echo
     echo "Checking that the scripts compile:"
-    for f in poc/poc_login.py poc/poc_portal.py poc/barisign.py \
+    for f in poc/poc_login.py poc/poc_portal.py poc/barisign.py poc/signer.py \
              third_party/sideinstaller/signin.py third_party/sideinstaller/portal.py; do
         if python3 -c "compile(open('$f').read(), 'x', 'exec')" 2>/dev/null; then
             echo "  $f  ok"
