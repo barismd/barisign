@@ -456,6 +456,9 @@ if __name__ == "__main__":
         print("FAILED: %s" % exc)
         print("(nothing was installed; 'barisign.py status' shows what is saved)")
         sys.exit(1)
+    except BrokenPipeError:
+        # `barisign.py ... | head` closes the pipe early; that is not an error.
+        os._exit(0)
     except KeyboardInterrupt:
         print()
         sys.exit(130)
