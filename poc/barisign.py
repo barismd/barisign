@@ -141,6 +141,7 @@ def _sign_in(email):
     state_path = os.path.join(STATE_DIR, "anisette.json")
     candidates = signin.anisette_candidates("")[:4]
     last_error = None
+    saw_503 = False
     for index, url in enumerate(candidates, 1):
         print("  anisette %d/%d : %s" % (index, len(candidates), url))
         try:
@@ -158,6 +159,7 @@ def _sign_in(email):
             print("    %s" % message)
             if "503" not in message and "Service Unavailable" not in message:
                 raise
+            saw_503 = True
             print("    Apple refused that identity (HTTP 503). Forgetting it and")
             print("    trying the next anisette server…")
             try:
@@ -168,11 +170,16 @@ def _sign_in(email):
                 os.remove(state_path)
             except OSError:
                 pass
-            password = password or ""
             continue
         password = None
         print("  signed in via %s" % url)
         return account
+
+    if not saw_503:
+        raise Fail("No anisette server could be used. Last error: %s\n"
+                   "    Without one Apple cannot be asked to sign you in; the anisette\n"
+                   "    servers are community-run, so trying again later usually works."
+                   % (last_error,))
 
     raise Fail("Apple answered HTTP 503 for every anisette server tried (%d).\n"
                "    That is Apple's edge refusing the request, not a wrong password.\n"
