@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -120,10 +120,14 @@ def _yes(prompt, default=False):
 
 
 def _sign_in(email):
-    """The one place that asks for the Apple ID and password."""
+    """Sign in, failing over to another anisette identity if Apple says 503.
+
+    A 503 from gsa.apple.com arrives *after* the password step but before Apple
+    reads the account: the edge has rejected the anisette identity (or the IP that
+    minted it). The only cure is a different server and a fresh identity, so try a
+    few before giving up. The password is read once and never stored.
+    """
     _hr("Apple sign-in")
-    anisette, gs = connect_anisette("", os.path.join(STATE_DIR, "anisette.json"))
-    account = AppleAccount(email, gs, anisette)
     password = poc_login._read_password("Password (not shown, not stored): ")
     if not password:
         raise Fail("No password entered.")
@@ -134,10 +138,47 @@ def _sign_in(email):
             entered = signin.ask(label)
         return "".join(ch for ch in entered if ch.isdigit())
 
-    account.login(password, ask_code)
-    password = None
-    print("  signed in.")
-    return account
+    state_path = os.path.join(STATE_DIR, "anisette.json")
+    candidates = signin.anisette_candidates("")[:4]
+    last_error = None
+    for index, url in enumerate(candidates, 1):
+        print("  anisette %d/%d : %s" % (index, len(candidates), url))
+        try:
+            anisette, gs = connect_anisette(url, state_path)
+        except Fail as exc:
+            print("    unusable: %s" % exc)
+            last_error = exc
+            continue
+        account = AppleAccount(email, gs, anisette)
+        try:
+            account.login(password, ask_code)
+        except Fail as exc:
+            last_error = exc
+            message = str(exc)
+            print("    %s" % message)
+            if "503" not in message and "Service Unavailable" not in message:
+                raise
+            print("    Apple refused that identity (HTTP 503). Forgetting it and")
+            print("    trying the next anisette server…")
+            try:
+                anisette.forget_provisioning()
+            except Exception:                                 # noqa: BLE001
+                pass
+            try:
+                os.remove(state_path)
+            except OSError:
+                pass
+            password = password or ""
+            continue
+        password = None
+        print("  signed in via %s" % url)
+        return account
+
+    raise Fail("Apple answered HTTP 503 for every anisette server tried (%d).\n"
+               "    That is Apple's edge refusing the request, not a wrong password.\n"
+               "    Wait 10-15 minutes without retrying, then run login again; if it\n"
+               "    keeps happening, the anisette servers are having a bad day."
+               % len(candidates))
 
 
 def _portal(account, email, udid, bundle_id, device_name, app_name):

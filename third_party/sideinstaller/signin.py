@@ -909,7 +909,12 @@ class GrandSlam:
         payload = plistlib.dumps(body, fmt=plistlib.FMT_XML)
         status, _, response = request("POST", url, headers=headers, body=payload)
         if status != 200:
-            raise Fail("Apple returned HTTP %d for %s." % (status, url))
+            # Show what Apple said. A 503 here is the edge refusing the request
+            # before it reads the account (bad/blocked anisette identity), not a
+            # wrong password, so the body is the only clue we get.
+            snippet = " ".join((response or b"").decode("utf-8", "replace").split())[:240]
+            raise Fail("Apple returned HTTP %d for %s.%s"
+                       % (status, url, (" Said: " + snippet) if snippet else ""))
         parsed = plistlib.loads(response)
         if "Response" not in parsed:
             raise Fail("Unexpected reply from Apple (no Response section).")

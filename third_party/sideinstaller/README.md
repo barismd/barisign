@@ -33,11 +33,13 @@ provisioning-profile download/parsing.
    `openssl enc -d`, and this function is on the sign-in path (it decrypts Apple's SPD reply).
    a-Shell has no `openssl`.
 2. The `openssl()` helper was **removed** (it is unused once the function above is replaced).
-3. **`portal.py`: every `openssl` call replaced with `cryptography`** — CSR building, PEM/DER
+3. **HTTP errors now quote Apple's reply**: `plist_request()` appends the first ~240
+   characters of the response body, because a 503 carries the only clue there is.
+4. **`portal.py`: every `openssl` call replaced with `cryptography`** — CSR building, PEM/DER
    conversion and the key-modulus comparison (a-Shell has no `openssl` binary).
-4. The files were **cut** to the parts listed above; our command-line front ends live in
+5. The files were **cut** to the parts listed above; our command-line front ends live in
    `../../poc/poc_login.py`, `../../poc/poc_portal.py` and `../../poc/barisign.py`, all MIT.
-5. `STORAGE` is overridden by the caller to `state/` inside the installed folder, because a-Shell can
+6. `STORAGE` is overridden by the caller to `state/` inside the installed folder, because a-Shell can
    only write under `~/Documents`.
 
 ## Do not copy from here into MIT files
