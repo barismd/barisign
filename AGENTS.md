@@ -27,7 +27,15 @@ on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
 - Test devices: **iPhone 13 (iOS 27)** = the device that gets the app; **iPad (A16)** = the second
   device used only for the AirDrop round trip.
-- Apple sign-in is verified on device. Next: the developer portal, then the signer.
+- On device (iPhone 13, iOS 27) and verified: UDID, Apple sign-in, and the **developer portal**
+  (team → device → App ID → certificate → profile; the profile lists this device). Next: the signer.
+- Sign-in requires **Mac-emulating anisette** and the server's own client_info (Apple's Oct 2026
+  -80045/-80046/503 rules). `mac-ani.jkcoxson.com` and `ani.jkcoxson.com` come first. Details:
+  `docs/ANISETTE.md`, `docs/RESULTS.md`.
+- The UI is deliberately terse: one `== STAGE ==` header per screen, one moving line `(2/5) label ....`,
+  `ESC[2J ESC[3J` on stage change, `ESC[2K` for the moving line. No long narration.
+- Terminal: never change modes more than the password prompt needs (ECHO only, restored and verified);
+  the 2FA code is read with our own visible echo so it works even when echo is off.
 - Never use GitHub `releases/latest` for SideStore (it returns `0.7.0-alpha`); list releases and
   reject `alpha`/`beta`/`rc` tags.
 - **Licence constraint:** code ported from `FrizzleM/SideInstaller` is **isolated** in
