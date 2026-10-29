@@ -45,7 +45,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist, list_devices)
 
-VERSION = "0.5.5"
+VERSION = "0.5.6"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -106,8 +106,18 @@ def load_variants():
 # small helpers
 # ---------------------------------------------------------------------------
 
-CLEAR = "\033[2J\033[H"
-LINE = 38
+# 2J clears the screen, 3J clears the scrollback too (xterm extension; terminals
+# that do not know it ignore it), H puts the cursor back at the top.
+CLEAR = "\033[2J\033[3J\033[H"
+
+
+def _columns():
+    try:
+        import shutil
+        return max(20, shutil.get_terminal_size((40, 20)).columns)
+    except Exception:                                         # noqa: BLE001
+        return 40
+
 
 
 class _Spinner:
@@ -138,7 +148,8 @@ class _Spinner:
             with self._lock:
                 text = self.text
             if text:
-                sys.stdout.write("\r" + ("  " + text + " " + "." * self.dots)[:LINE].ljust(LINE))
+                width = _columns() - 1
+                sys.stdout.write("\r\033[2K" + ("  " + text + " " + "." * self.dots)[:width])
                 sys.stdout.flush()
                 with self._lock:
                     self.dots = (self.dots + 1) % 4
@@ -148,7 +159,7 @@ class _Spinner:
         self._stop.set()
         with self._lock:
             self.text = ""
-        sys.stdout.write("\r" + " " * LINE + "\r")
+        sys.stdout.write("\r\033[2K")
         sys.stdout.flush()
 
 
