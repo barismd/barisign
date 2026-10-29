@@ -1,7 +1,7 @@
 # AGENTS.md — BariSign
 
 Project goal: a public GitHub repo that installs **SideStore** (and LiveContainer+SideStore)
-on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
+on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that same device.
 
 ## Confirmed decisions (user)
 
@@ -22,9 +22,10 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
 - **AirDrop is the primary install route.** Private-HTTPS `itms-services` is a documented fallback only;
-  loopback `itms-services` is rejected (see `docs/PHASE0_REPORT.md` §5).
+  loopback `itms-services` is rejected (see `docs/RESULTS.md`).
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
-- Test devices: **iPhone 13 (iOS 27)** = main target; **iPad (A16)** = AirDrop receiver.
+- Test devices: **iPhone 13 (iOS 27)** = the device that gets the app; **iPad (A16)** = the second
+  device used only for the AirDrop round trip.
 - Phase 0/1: the UDID stage is verified (`poc/udid_share.py`); Apple sign-in is verified
   (`poc/poc_login.py`). Next: the developer portal (stage 3) and the signer (stage 4).
 - Never use GitHub `releases/latest` for SideStore (it returns `0.7.0-alpha`); list releases and
@@ -58,10 +59,10 @@ The a-Shell interface (no Shortcuts):
 
 ## Hard constraints
 
-- Everything must be drivable from an iOS Shortcut and run **on-device, no computer**.
-  - Default compute candidate: **a-Shell mini** (pure Python, JS, WASM; no native binaries,
-    no C-extension pip packages).
-  - Evaluate alternatives (pure Shortcuts actions, other free on-device runtimes) and justify.
+- Everything must be drivable from a-Shell and run **on-device, no computer**.
+  - Compute layer: **a-Shell (full)** — stdlib-only Python plus the `cryptography` that ships with it;
+    no native binaries, no `openssl`, no `unzip`.
+  - Evaluate alternatives (other free on-device runtimes) and justify.
 - **Never send the Apple ID or password to any remote server we do not control.**
 - A **free Apple ID must be enough** (no paid developer account).
 - Development runs in a GitHub Codespace (Linux). We **cannot test on an iPhone** — the user
@@ -98,8 +99,9 @@ The a-Shell interface (no Shortcuts):
 
 - Budget ~5 USD total. Be token-frugal: grep/head/tail instead of dumping whole files.
 - If the same problem fails twice, **stop** and report so the user can switch to a stronger model.
-- Phases 0–3 are done (`docs/PHASE0_REPORT.md`); the current plan is `docs/PLAN_V2.md`.
-- Next: the signer (stage 4), then the pairing-file decision, then i18n + Turkish last.
+- Stages 1–2 are verified on device, 3 is written; the plan is `docs/PLAN_V2.md`, the verified facts
+  are in `docs/RESULTS.md`.
+- Next: the signer (stage 4) — the whole remaining project — then the forks, then i18n + Turkish last.
 
 ## Verified / unverified convention
 

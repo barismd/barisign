@@ -1,7 +1,7 @@
 # BariSign — plan v2 (single device, no Shortcuts)
 
-Supersedes the two-device / Shortcut plan in `PHASE0_REPORT.md`. Written 2026-10-29 after the user's
-decision to rebuild the flow around one device.
+Written 2026-10-29 after the user's decision to rebuild the flow around one device; it replaces the
+older two-device plan, which is gone.
 
 ## The shape of it
 
@@ -67,6 +67,6 @@ its non-commercial licence, so the repo as a whole stays **non-commercial**.
 
 ## Explicitly dropped
 
-- Shortcut management (`SHORTCUT_BUILD_GUIDE.md`): suspended at the user's request.
+- Shortcut management: suspended at the user's request (the a-Shell flow replaces it).
 - Cloudflare Worker / SSH tunnel / DuckDNS fallbacks: deleted earlier, still unnecessary.
-- `itms-services` loopback: rejected by iOS, documented in `PHASE0_REPORT.md` §5.
+- `itms-services` loopback: rejected by iOS, see `docs/RESULTS.md`.

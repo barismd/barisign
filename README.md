@@ -1,32 +1,32 @@
 # BariSign
 
-Install **SideStore** — or **LiveContainer + SideStore**, or **AltStore** — on an iPhone or iPad **with no
-computer**, driven entirely by an **iOS Shortcut**.
+Install **SideStore** — or **LiveContainer + SideStore**, or **AltStore Classic** — on an iPhone or iPad
+**with no computer**, using your own free Apple ID. Everything runs **on the device that will get the app**,
+in [a-Shell](https://holzschu.github.io/a-Shell_iOS/).
 
-> **Status: the hard parts are proven; the signer is not built yet, so you cannot install SideStore with
-> this today.** Below, each capability is marked **verified on device** or **to build**. Nothing here is
-> claimed that has not been tested on a real device.
+> **Status: honest.** The hard parts are proven on a real device (iPhone 13, iOS 27): reading the UDID,
+> signing in to Apple, and installing an AirDropped IPA. The **signer** — the piece that turns an official
+> IPA into one your device will launch — is **not built yet**, so you cannot install SideStore with this
+> today. Below, every capability is marked **verified on device**, **written** or **to build**.
 
 ---
 
-## What already works — verified on real devices (iPhone 13 + iPad, iOS 27)
-
-Everything happens **on the device the app will be installed on**. No second phone is needed to sign, and
-no computer is needed at any point.
+## What works
 
 | Stage | State | How |
 |---|---|---|
-| **Read the UDID** | ✅ **verified** (both routes) | one-tap profile from `median.co/udid`, then paste it; `udid --local` serves our own profile over the LAN |
-| **Sign in to Apple with a free Apple ID** (anisette + SRP-6a + 2FA) | ✅ **verified** (`LOGIN: PASS`) | on the device, in a-Shell (`poc/poc_login.py`) |
+| **Read the UDID** | ✅ **verified** | one-tap profile from `median.co/udid`, paste the value — or serve it yourself (`udid --local`) |
+| **Sign in to Apple** (anisette + SRP-6a + 2FA, free account) | ✅ **verified** (`LOGIN: PASS`) | `poc/poc_login.py` |
 | **Install a signed IPA** | ✅ **verified** | AirDrop: iOS installs it by itself, no extra tap |
-| Register the UDID, create the App ID, certificate and provisioning profile | ⚠️ **written, untested** | `poc/poc_portal.py` |
-| **Sign the IPA** (Mach-O + Apple CMS signature) and package it as a `.zip` | 🚧 **to build** | the last big piece |
-| Pairing file for SideStore / AltStore, on-device | 🔎 **researched, not built** | see `docs/PLAN_V2.md` |
+| Register the UDID, App ID, certificate and profile | ⚠️ **written, untested** | `poc/poc_portal.py` |
+| **Sign the IPA** (Mach-O + entitlements + Apple CMS) and package a `.zip` | 🚧 **to build** | the last big piece |
+| Pairing file inside SideStore / AltStore / LiveContainer | 🚧 **to build** | forked apps, see `docs/FORK_PLAN.md` |
 
-Until the signer exists, BariSign cannot produce something your device will launch. Everything above it
-is done.
+---
 
-**Getting it** — no git needed, just `curl`:
+## Get it — no git needed, just `curl`
+
+In a-Shell:
 
 ```
 mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
@@ -34,13 +34,15 @@ curl -sSL "https://github.com/barismd/barisign/blob/main/install.sh?raw=true" -o
 sh install.sh
 ```
 
-Run `sh install.sh` again (or `sh bin/update`) any time to update.
+Run `sh install.sh` again (or `sh bin/update`) any time to update. Your certificate authority in
+`poc/barisign-ca.*` is never touched.
 
-Then one command drives every stage, passing each stage's result to the next:
+Then one command drives everything and remembers each result:
 
 ```
-sh bin/barisign          # guided: check -> pick a variant -> UDID -> Apple -> portal
+sh bin/barisign          # guided: check -> variant -> UDID -> Apple -> portal
 sh bin/barisign status   # what is already known
+sh bin/barisign --help   # every stage on its own
 ```
 
 ---
@@ -49,34 +51,26 @@ sh bin/barisign status   # what is already known
 
 | | |
 |---|---|
-| **iOS version** | **iOS 27 or newer** (hard requirement) |
-| Apple account | a **free** Apple ID is enough — no paid Developer Program membership |
-| The device that gets the app | **a-Shell** (free, App Store) — this is where every step runs |
-| A second device | only for the **AirDrop round trip** (any iPhone/iPad/Mac). iOS cannot AirDrop to itself, so the finished `.zip` goes out and comes back |
-| Network | internet; the same Wi-Fi as the second device for the AirDrop step |
+| **iOS** | **27 or newer** (hard requirement) |
+| Apple account | a **free** Apple ID — no paid Developer Program membership |
+| The device that gets the app | **a-Shell** (free, App Store) — every step runs here |
+| A second device | only for the **AirDrop round trip** (any iPhone, iPad or Mac): iOS cannot AirDrop to itself, so the finished `.zip` goes out and comes back |
 | Computer | **none** |
-| LocalDevVPN | not needed by BariSign's own steps; SideStore uses it afterwards to refresh itself |
-
-SideStore and LiveContainer need iOS 27 to work without a computer at all — on iOS 17.4–26.x the first
-install requires a pairing file made by a computer.
+| Network | internet |
 
 ---
 
-## How the UDID step works — and why it is private
+## The UDID, in one paragraph
 
-A free Apple ID signs apps for **specific devices**, so the device's **UDID** has to be known. BariSign
-takes it from the profile **median.co** serves: you open `https://median.co/udid` **on the device that
-will get the app**, tap install, finish the install in Settings, and Safari shows the UDID with a copy
-button. Paste it into a-Shell and stage 1 is done.
+A free Apple ID signs apps for **specific devices**, so your **UDID** must be known. Take it with a
+one-tap profile, paste it into a-Shell, done:
 
-- **Nothing is sent to us.** There is no BariSign server. The profile only reports a hardware ID.
-- **The Apple ID is not involved at this stage** — it is never given to median.co or to anyone else.
-- The profile can be **removed right afterwards**: Settings → General → VPN & Device Management.
-- If median.co is unreachable, `sh bin/barisign udid --local` still works: it serves an equivalent
-  profile from the device itself over the LAN with a certificate authority of our own (that route needs
-  one trust switch in Settings, and is the one we verified first).
+```
+sh bin/barisign udid
+```
 
-Step-by-step instructions are in **`GUIDE.md`**.
+`docs/UDID_OPTIONS.md` lists **three** ways to get it — median.co, other third-party sites (not affiliated
+with us), or **your own HTTPS server** — with the caveats of each. We run no server and receive nothing.
 
 ---
 
@@ -97,12 +91,11 @@ and you are shown which version you are about to get. `variants.json` is the mac
 
 ## Your Apple ID and your data
 
-- **Your password is never transmitted.** Apple's sign-in is SRP-6a: the password becomes a one-time
-  proof on the device and Apple receives only that. It is never written to disk.
-- **The anisette server never sees your account.** It is asked only for device-identity headers, and it
-  receives a random identifier we generate — never your Apple ID, password or token.
-- **Your UDID never leaves your own network.**
-- **No analytics, no telemetry, no accounts on our side.**
+- **Your password is never transmitted.** Apple's sign-in is SRP-6a: the password becomes a one-time proof
+  on the device. It is never written to disk.
+- **The anisette server never sees your account.** It is asked only for device-identity headers, with a
+  random identifier we generate — never your Apple ID, password or token.
+- **No BariSign server exists.** Nothing is collected: no analytics, no telemetry, no accounts.
 - TLS verification is never disabled anywhere in this project.
 
 ---
@@ -111,17 +104,18 @@ and you are shown which version you are about to get. `variants.json` is the mac
 
 | File | What it is |
 |---|---|
-| **`GUIDE.md`** | the step-by-step guide for what works today |
-| `docs/PHASE0_REPORT.md` | all research, device results, dead ends and why, with dates |
-| `variants.json` | the variant registry and the runtime resolution rules |
+| **`GUIDE.md`** | step-by-step, in plain language |
+| `docs/UDID_OPTIONS.md` | the three ways to read a UDID, and how to serve one yourself |
+| `docs/PLAN_V2.md` | the current architecture and why |
+| `docs/FORK_PLAN.md` | the pairing module inside the forked apps: licences, CI, risks |
+| `docs/RESULTS.md` | what is verified on device, and the device quirks we had to work around |
+| `variants.json` | the variant registry and runtime resolution rules |
 | `bin/barisign` | the single entry point for every stage |
-| `poc/` | the scripts behind them: `udid_share.py`, `poc_login.py`, `poc_portal.py` |
 | `THIRD_PARTY_NOTICES.md` | licences and attribution |
-| `AGENTS.md` | the working rules for this project |
 
 ## Licences — please read
 
-**BariSign contains non-commercial-licensed parts** because it reuses SideInstaller's sign-in code.
-BariSign's own code is MIT; `third_party/sideinstaller/` is under that project's own non-commercial licence.
-**The repository as a whole therefore may not be used commercially.** Details in
-`THIRD_PARTY_NOTICES.md`.
+BariSign's own code is **MIT**. `third_party/sideinstaller/` is under that project's own
+**non-commercial** licence, so **the repository as a whole may not be used commercially**. The forks
+planned in `docs/FORK_PLAN.md` are **AGPL-3.0** (SideStore, AltStore and LiveContainer are all AGPL-3.0).
+Details in `THIRD_PARTY_NOTICES.md`.

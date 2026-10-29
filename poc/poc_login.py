@@ -479,7 +479,7 @@ def _restore_terminal(fd):
 def _read_password(prompt):
     """Hidden when possible, visible when not, and never wedged.
 
-    (1) a pipe means the Shortcut is driving -> read it; (2) masked cbreak read;
+    (1) a pipe means another program is driving -> read it; (2) masked cbreak read;
     (3) plain `input()` as a last resort.
     """
     if not sys.stdin.isatty():

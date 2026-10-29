@@ -19,9 +19,8 @@
 #
 #  USAGE
 #  -----
-#      python3 -u udid_share.py --ca             step 1 of 2 (once per device):
-#                                                install and trust the CA
-#      python3 -u udid_share.py                  step 2 of 2: one profile, read the UDID
+#      python3 -u udid_share.py --ca             step 1 (once per device): install and trust the CA
+#      python3 -u udid_share.py                  step 2: one profile, read the UDID
 #      python3 -u udid_share.py --view <file>    just open a preview of a file
 #
 #  The CA is created once and reused, so it only has to be installed and trusted

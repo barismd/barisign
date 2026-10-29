@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Canonical variant registry for BariSign. URLs are ALWAYS resolved at runtime; nothing here pins a version. Used by the Shortcut and by the (future) a-Shell scripts.",
+  "note": "Canonical variant registry for BariSign. URLs are ALWAYS resolved at runtime; nothing here pins a version. Used by the a-Shell scripts in bin/ and poc/.",
   "resolution": {
     "releases_endpoint": "https://api.github.com/repos/{repo}/releases?per_page=30",
     "stable": "newest release where prerelease == false AND the tag matches no alpha/beta/rc (case-insensitive). Do NOT use /releases/latest for SideStore: it currently returns 0.7.0-alpha.",
