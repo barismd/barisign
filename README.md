@@ -4,25 +4,20 @@ Install **SideStore** — or **LiveContainer + SideStore**, or **AltStore Classi
 **with no computer**, using your own free Apple ID. Everything runs **on the device that will get the app**,
 in [a-Shell](https://holzschu.github.io/a-Shell_iOS/).
 
-> **Status: honest.** The hard parts are proven on a real device (iPhone 13, iOS 27): reading the UDID,
-> signing in to Apple, and installing an AirDropped IPA. The **signer** — the piece that turns an official
-> IPA into one your device will launch — is **not built yet**, so you cannot install SideStore with this
-> today. Below, every capability is marked **verified on device**, **written** or **to build**.
+> **Status:** the UDID, the Apple sign-in and the AirDrop install are verified on a real device
+> (iPhone 13, iOS 27). The **signer** is not built, so nothing installs yet.
 
 ---
 
 ## What works
 
-| Stage | State | How |
-|---|---|---|
-| **Read the UDID** | ✅ **verified** | one-tap profile (median.co or any other service), paste the value |
-| **Sign in to Apple** (anisette + SRP-6a + 2FA, free account) | ✅ **verified** (`LOGIN: PASS`) | `poc/poc_login.py` |
-| **Install a signed IPA** | ✅ **verified** | AirDrop: iOS installs it by itself, no extra tap |
-| Register the UDID, App ID, certificate and profile | ⚠️ **written, untested** | `poc/poc_portal.py` |
-| **Sign the IPA** (Mach-O + entitlements + Apple CMS) and package a `.zip` | 🚧 **to build** | the last big piece |
-| Pairing file inside SideStore / AltStore / LiveContainer | 🚧 **to build** | forked apps, see `docs/FORK_PLAN.md` |
-
----
+| | |
+|---|---|
+| **UDID** | ✅ verified — one-tap profile, paste the value |
+| **Apple sign-in** (free ID, 2FA) | ✅ verified |
+| **Installing a signed IPA** | ✅ verified — AirDrop, iOS installs it itself |
+| **Device, certificate, profile** | ⚠️ written, untested against Apple |
+| **Signer** (makes an IPA installable) | 🚧 not built |
 
 ## Get it — no git needed, just `curl`
 
@@ -41,10 +36,7 @@ Then one command drives everything and remembers each result:
 ```
 sh bin/barisign          # guided: check -> variant -> UDID -> Apple -> portal
 sh bin/barisign status   # what is already known
-sh bin/barisign --help   # every stage on its own
-
-sh bin/login             # shortcut for barisign login
-sh bin/portal            # shortcut for barisign portal
+sh bin/barisign --help   # every command
 ```
 
 ---

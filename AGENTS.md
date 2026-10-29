@@ -27,8 +27,7 @@ on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
 - Test devices: **iPhone 13 (iOS 27)** = the device that gets the app; **iPad (A16)** = the second
   device used only for the AirDrop round trip.
-- Apple sign-in is verified (`poc/poc_login.py`); the UDID paste flow is written, not yet
-  device-tested. Next: the developer portal (stage 3) and the signer (stage 4).
+- Apple sign-in is verified on device. Next: the developer portal, then the signer.
 - Never use GitHub `releases/latest` for SideStore (it returns `0.7.0-alpha`); list releases and
   reject `alpha`/`beta`/`rc` tags.
 - **Licence constraint:** code ported from `FrizzleM/SideInstaller` is **isolated** in
@@ -102,7 +101,7 @@ The a-Shell interface (no Shortcuts):
 - If the same problem fails twice, **stop** and report so the user can switch to a stronger model.
 - Stages 1–2 are verified on device, 3 is written; the plan is `docs/PLAN_V2.md`, the verified facts
   are in `docs/RESULTS.md`.
-- Next: the signer (stage 4) — the whole remaining project — then the forks, then i18n + Turkish last.
+- Next: the signer — the whole remaining project — then the forks, then i18n + Turkish last.
 
 ## Verified / unverified convention
 

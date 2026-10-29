@@ -55,7 +55,7 @@ non-commercial SideInstaller derivation isolated. Nothing from one bucket is cop
 
 ## Order of work
 
-1. **Signer (stage 4)** — nothing can be installed, forked or not, until an IPA can be signed on-device.
+1. **Signer** — nothing can be installed, forked or not, until an IPA can be signed on-device.
 2. **Proof of the pairing call** — a throwaway app built in CI that only starts pairing and prints the
    result. This answers risk 1 before any UI is written.
 3. **Module + three patches**, one app at a time: SideStore → AltStore Classic → LiveContainer+SideStore.

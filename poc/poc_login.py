@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-#  BariSign — stage 2: on-device Apple ID sign-in (no computer)
+#  BariSign — Apple ID sign-in, on the device (no computer)
 #  MIT licence (this file). It imports the vendored sign-in stack from
 #  third_party/sideinstaller/signin.py, which is under a different licence.
 # =============================================================================
@@ -230,10 +230,10 @@ def _state_path():
 
 def _hr(label):
     print()
-    print("---- %s %s" % (label, "-" * max(0, 56 - len(label))))
+    print("== %s ==" % label.upper())
 
 
-def _selftest():
+def _selftest_verbose():
     failures = []
 
     _hr("1/6 runtime")
@@ -241,7 +241,7 @@ def _selftest():
     print("ssl    : %s" % ssl.OPENSSL_VERSION)
     print("platform: %s %s" % (sys.platform, os.uname().machine if hasattr(os, "uname") else "?"))
 
-    _hr("2/6 crypto toolkit (cryptography)")
+    _hr("2/6 crypto")
     try:
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -268,7 +268,7 @@ def _selftest():
         failures.append("crypto toolkit: %r" % (exc,))
         print("SELFTEST 2/6: FAIL -> %r" % (exc,))
 
-    _hr("3/6 AES-CBC (used to decrypt Apple's sign-in reply)")
+    _hr("3/6 aes")
     try:
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         key = bytes(range(16))
@@ -290,7 +290,7 @@ def _selftest():
         failures.append("AES-CBC: %r" % (exc,))
         print("SELFTEST 3/6: FAIL -> %r" % (exc,))
 
-    _hr("4/6 SRP group (RFC 5054 2048-bit, the one GrandSlam uses)")
+    _hr("4/6 srp")
     if SRP_N.bit_length() == 2048 and SRP_g == 2:
         print("SRP_N: 2048-bit, SRP_g = %d -> OK" % SRP_g)
         print("SELFTEST 4/6: PASS")
@@ -298,7 +298,7 @@ def _selftest():
         failures.append("SRP group wrong")
         print("SELFTEST 4/6: FAIL")
 
-    _hr("5/6 anisette server (no Apple ID involved)")
+    _hr("5/6 anisette")
     print("Exercises the server list, provisioning and header minting.")
     print("This is the step most likely to be slow or flaky.")
     print("State directory: %s" % POC_STATE)
@@ -314,7 +314,7 @@ def _selftest():
         print("SELFTEST 5/6: FAIL -> %r" % (exc,))
         traceback.print_exc()
 
-    _hr("6/6 Apple trust (gsa.apple.com)")
+    _hr("6/6 apple tls")
     print("a-Shell's Python does not ship Apple's root CA, so the handshake to")
     print("gsa.apple.com fails unless the shipped root is trusted. We verify that")
     print("file's SHA-256 against Apple's published fingerprint first.")
@@ -457,6 +457,16 @@ def _masked_line(prompt):
         return bytes(buf).decode("utf-8", "replace")
     finally:
         _restore_terminal(fd, saved)
+
+
+def _selftest(quiet=False):
+    """The six checks. `quiet` swallows the detail and returns the code only."""
+    if not quiet:
+        return _selftest_verbose()
+    import contextlib
+    import io
+    with contextlib.redirect_stdout(io.StringIO()):
+        return _selftest_verbose()
 
 
 def _read_password(prompt):

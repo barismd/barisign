@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-#  BariSign — Stage 3: developer portal (MIT)
+#  BariSign — developer portal (MIT)
 #  STATUS: UNTESTED against Apple. Written from SideInstaller's verified code,
 #          which is vendored (under its own licence) in third_party/sideinstaller/.
 #
@@ -188,16 +188,12 @@ def main(argv):
     except Exception as exc:                                  # noqa: BLE001
         print("  could not parse the profile: %r" % (exc,))
 
-    _hr("result")
-    print("PORTAL: ok — registered, signed up, and Apple returned a profile.")
-    print("Files kept in %s:" % state_dir)
-    print("  %s" % os.path.basename(key_path))
-    print("  %s" % os.path.basename(cert_path))
-    print("  %s" % os.path.basename(profile_path))
-    print("Took %.0f s." % (time.time() - started))
-    print()
-    print("NEXT: the signer (stage 4) will use this certificate + profile to sign")
-    print("the variant's IPA. Until it exists, nothing here installs anything.")
+    _hr("portal")
+    print("  team      %s (%s)" % (team.get("name", "?"), team["teamId"]))
+    print("  app id    %s" % bundle_id)
+    print("  cert      %s" % ("reused" if reused else "created"))
+    print("  files     key.pem, cert.pem, profile.mobileprovision")
+    print("  took      %.0f s" % (time.time() - started))
     return 0
 
 
