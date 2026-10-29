@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -119,23 +119,6 @@ def _yes(prompt, default=False):
     return answer in ("y", "yes")
 
 
-PREFLIGHT_IDENTITIES = (
-    ("Mac (akd)", "mac"),
-    ("Android (akd)", "android"),
-    ("iPhone (akd)", "iphone"),
-)
-
-IPHONE_CLIENT_INFO = "<iPhone14,5> <iOS;27.0;24A446> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
-
-
-def _client_info(kind):
-    if kind == "mac":
-        return signin.GSA_MAC_CLIENT_INFO
-    if kind == "android":
-        return signin.GSA_CLIENT_INFO
-    return IPHONE_CLIENT_INFO
-
-
 def _bag_probe(gs, client_info, user_agent):
     """GET Apple's URL bag with the real anisette headers for this identity.
 
@@ -159,23 +142,26 @@ def _bag_probe(gs, client_info, user_agent):
 
 
 def _preflight_apple(gs):
-    """Before any password: can we reach Apple, and as what?
+    """The exact first request the sign-in makes: Apple's URL bag, as a Mac.
 
-    Apple 503s the sign-in edge for client identities it dislikes, and the identity
-    it dislikes has changed twice in 2026. Instead of assuming, ask Apple with each
-    identity we know about and keep the first that answers 200. The bag is fetched
-    with that identity from then on.
+    The identity is not a free choice, and that is why this probe tries exactly one:
+
+      * the **URL bag** and the **2FA pages** only answer a Mac — asked as an Android
+        phone the bag returns ten gsd.apple.com URLs and 2FA answers a bare 403;
+      * the **sign-in POST** must claim Android, because public anisette servers mint
+        their machine ID with Apple's Android ADI library, and since 2026-10-12
+        GrandSlam refuses a sign-in whose client OS differs from it (-80045);
+      * the **developer portal** is a third endpoint (Xcode's clientId), and it is
+        still untested.
+
+    So a 200 here means the bag — which every other call depends on — is reachable.
+    Probing more identities would only add requests, not information.
     """
-    for label, kind in PREFLIGHT_IDENTITIES:
-        info = _client_info(kind)
-        status, note = _bag_probe(gs, info, signin.GSA_USER_AGENT)
-        if status == 200:
-            # The bag (and the 2FA pages) are fetched with mac_headers(), so whatever
-            # identity Apple accepted is the one they must use from now on.
-            signin.GSA_MAC_CLIENT_INFO = info
-            print("  Apple reachable      : yes (%s)" % label)
-            return True
-        print("  %-20s : HTTP %s %s" % (label, status, ("- " + note) if note else ""))
+    status, note = _bag_probe(gs, signin.GSA_MAC_CLIENT_INFO, signin.GSA_USER_AGENT)
+    if status == 200:
+        print("  Apple reachable      : yes (URL bag, as a Mac)")
+        return True
+    print("  Apple's URL bag      : HTTP %s%s" % (status, (" - " + note) if note else ""))
     return False
 
 
