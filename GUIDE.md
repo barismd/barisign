@@ -72,6 +72,22 @@ Either way it ends with the UDID saved; `sh bin/barisign status` shows it.
 sh bin/barisign login
 ```
 
+The order matters: it first proves an **anisette** server works and that **Apple's edge
+answers**, and only then asks for the password:
+
+```
+---- Apple sign-in ----
+  anisette 1/4        : https://ani.sidestore.io
+    headers minted (v3)
+  Apple reachable      : yes (Mac (akd))
+Password (not shown, not stored):
+  signed in via https://ani.sidestore.io
+```
+
+If Apple answers **503**, it tries the other client identities it knows (Mac, Android,
+iPhone) and then the next anisette server with a fresh identity — and it **never asks for
+the password** while Apple is refusing.
+
 - The password is used locally to build a one-time proof (SRP-6a). It is **not** sent anywhere and **not**
   saved.
 - Anisette headers (Apple's device-identity check) come from a public anisette server, which never receives
@@ -127,7 +143,9 @@ the finished app travels:
 | What you see | What it means |
 |---|---|
 | `PASS - safe to continue` | runtime, crypto, anisette and Apple's TLS all work |
+| login: `HTTP 503 … Service Temporarily Unavailable` on every identity | Apple's edge is refusing before it reads the account. Nothing about the password. Wait 10–15 minutes without retrying, turn off any VPN (LocalDevVPN/StosVPN) first, then run `sh bin/barisign login` again |
 | anisette: one server fails, the next works | normal; the working one is remembered |
+| login: `Apple reachable : yes (Android (akd))` | the Mac identity is refused right now; the accepted one is remembered |
 | `That does not look like a UDID` | 40 hex characters, or 24 with a dash after the first 8 |
 | profile says **empty** | expected: a `Profile Service` profile configures nothing |
 | `sh bin/update` cannot update | run `sh install.sh` in `~/Documents/barisign` again |
