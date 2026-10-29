@@ -150,9 +150,15 @@ def pick_team(session):
 
 # -- device -------------------------------------------------------------------
 
+def _same_udid(one, other):
+    """Apple echoes the UDID with its own casing; compare the hex only."""
+    strip = lambda value: "".join(ch for ch in (value or "").lower() if ch in "0123456789abcdef")
+    return strip(one) == strip(other)
+
+
 def ensure_device(session, team, udid, name):
     devices = session.call("listDevices", {"teamId": team["teamId"]}, key="devices")
-    if any(d.get("deviceNumber") == udid for d in devices):
+    if any(_same_udid(d.get("deviceNumber"), udid) for d in devices):
         return
     try:
         session.call("addDevice", {

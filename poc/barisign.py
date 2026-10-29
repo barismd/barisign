@@ -17,6 +17,7 @@
 import hashlib
 import json
 import os
+import threading
 import re
 import sys
 import time
@@ -44,7 +45,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -109,9 +110,55 @@ CLEAR = "\033[2J\033[H"
 LINE = 38
 
 
+class _Spinner:
+    """One line, rewritten in place: '(2/5) device ....' with the dots growing."""
+
+    def __init__(self):
+        self.text = ""
+        self.dots = 0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        # stop() retires the thread; a new stage needs a fresh one.
+        if self._thread is None or not self._thread.is_alive():
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def set(self, text):
+        with self._lock:
+            self.text = text
+            self.dots = 0
+        self.start()
+
+    def _run(self):
+        while not self._stop.is_set():
+            with self._lock:
+                text = self.text
+            if text:
+                sys.stdout.write("\r" + ("  " + text + " " + "." * self.dots)[:LINE].ljust(LINE))
+                sys.stdout.flush()
+                with self._lock:
+                    self.dots = (self.dots + 1) % 4
+            time.sleep(0.4)
+
+    def stop(self):
+        self._stop.set()
+        with self._lock:
+            self.text = ""
+        sys.stdout.write("\r" + " " * LINE + "\r")
+        sys.stdout.flush()
+
+
+_SPINNER = _Spinner()
+
+
 def _stage(title, note=""):
-    """Clean screen, then the stage header. The note keeps the context that the
-    clear would otherwise wipe (the Apple ID, for example)."""
+    """Clean screen, then the stage header. The note restores what the clear
+    would otherwise wipe (the Apple ID, for example)."""
+    _SPINNER.stop()
     sys.stdout.write(CLEAR)
     sys.stdout.flush()
     print("BariSign %s" % VERSION)
@@ -122,30 +169,21 @@ def _stage(title, note=""):
     print()
 
 
-def _line(text=""):
-    """The only moving line: rewrite it in place, never scroll."""
-    sys.stdout.write("\r" + text[:LINE].ljust(LINE))
-    sys.stdout.flush()
-
-
-def _line_clear():
-    sys.stdout.write("\r" + " " * LINE + "\r")
-    sys.stdout.flush()
-
-
 def _step(index, total, label):
-    filled = int(10 * index / total)
-    _line("  [%s%s] %s" % ("#" * filled, "." * (10 - filled), label[:18]))
+    _SPINNER.set("(%d/%d) %s" % (index, total, label))
 
 
 def _activity(message):
-    """Live text from the vendored stack: same line, replaced every time."""
-    _line("  " + message)
+    """Vendored narration would fight the spinner, so it is not shown."""
+    return
 
 
 def _pause_for_input():
-    """Prompts must start on a clean line."""
-    _line_clear()
+    _SPINNER.stop()
+
+
+def _line_clear():
+    _SPINNER.stop()
 
 
 def _result(label, text):
@@ -245,7 +283,7 @@ def _sign_in(email, preferred=None, use_clipboard=False):
         return "".join(ch for ch in entered if ch.isdigit())
 
     for index, url in enumerate(candidates, 1):
-        _step(1, 3, "anisette: %s" % url.split("//")[-1].split(".")[0])
+        _step(1, 3, "anisette")
         try:
             anisette, gs = connect_anisette(url, state_path)
         except Fail as exc:
@@ -257,7 +295,7 @@ def _sign_in(email, preferred=None, use_clipboard=False):
         if _preflight_apple(gs):
             _step(2, 3, "apple reachable")
         else:
-            _step(2, 3, "apple refused; next server")
+            _step(2, 3, "apple: retry")
             saw_503 = True
             last_error = Fail("HTTP 503 from Apple's edge")
             _forget_anisette(anisette, state_path)
@@ -372,12 +410,19 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
         expires = parsed.get("ExpirationDate", "?")
     except Exception:                                         # noqa: BLE001
         pass
+    def _hex(value):
+        return "".join(ch for ch in (value or "").lower() if ch in "0123456789abcdef")
+    ours = any(_hex(device) == _hex(udid) for device in devices)
     _line_clear()
     print("  team      %s (%s)" % (team.get("name", "?"), team["teamId"]))
     print("  app id    %s" % full_bundle_id)
     print("  cert      %s" % ("reused" if reused else "created"))
-    print("  profile   %d device(s), expires %s, ours %s"
-          % (len(devices), expires, "yes" if udid in devices else "no"))
+    print("  profile   %d device(s), expires %s, this device: %s"
+          % (len(devices), expires, "yes" if ours else "NO"))
+    if devices and not ours:
+        print("  ! the profile does not list this device: an app signed with it")
+        print("    will not launch. Re-run portal, or remove the profile at")
+        print("    developer.apple.com and run portal again.")
     print("  took      %.0f s" % (time.time() - started))
 
     return {"team_id": team["teamId"], "bundle_id": full_bundle_id,
