@@ -156,6 +156,11 @@ def _same_udid(one, other):
     return strip(one) == strip(other)
 
 
+def list_devices(session, team):
+    """Every device registered on this team (not the same as iCloud devices)."""
+    return session.call("listDevices", {"teamId": team["teamId"]}, key="devices") or []
+
+
 def ensure_device(session, team, udid, name):
     devices = session.call("listDevices", {"teamId": team["teamId"]}, key="devices")
     if any(_same_udid(d.get("deviceNumber"), udid) for d in devices):

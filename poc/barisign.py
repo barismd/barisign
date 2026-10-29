@@ -43,9 +43,9 @@ except ImportError as exc:                                    # noqa: BLE001
 from signin import AppleAccount, Fail, connect_anisette        # noqa: E402
 from portal import (DeveloperSession, ensure_app_id, ensure_device,               # noqa: E402
                     ensure_private_key, obtain_certificate, pick_team,
-                    download_profile, profile_plist)
+                    download_profile, profile_plist, list_devices)
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -384,6 +384,7 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
     team = pick_team(session)
     _step(2, 5, "device")
     ensure_device(session, team, udid, device_name)
+    registered = list_devices(session, team)
 
     if not bundle_id:
         raise Fail("No bundle identifier, so there is nothing to register.")
@@ -417,8 +418,12 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
     print("  team      %s (%s)" % (team.get("name", "?"), team["teamId"]))
     print("  app id    %s" % full_bundle_id)
     print("  cert      %s" % ("reused" if reused else "created"))
-    print("  profile   %d device(s), expires %s, this device: %s"
-          % (len(devices), expires, "yes" if ours else "NO"))
+    print("  devices   %d registered on this team, %d in the profile"
+          % (len(registered), len(devices)))
+    print("  profile   expires %s, this device: %s"
+          % (expires, "yes" if ours else "NO"))
+    if len(registered) > len(devices):
+        print("  ! the profile is older than the device list: run portal again")
     if devices and not ours:
         print("  ! the profile does not list this device: an app signed with it")
         print("    will not launch. Re-run portal, or remove the profile at")
