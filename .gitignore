@@ -18,7 +18,6 @@ secrets*
 .env.*
 *.local.json
 *.mobileconfig
-BariSign-*.mobileconfig
 
 # Saved state holds the Apple ID and the UDID — never commit it
 /state/

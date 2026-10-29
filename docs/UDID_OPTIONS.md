@@ -51,25 +51,8 @@ file).
 
 ## C — serve the profile yourself (no third party)
 
-This is what `sh bin/barisign udid --local` does, and it is the route verified first on this project. It
-needs a certificate authority that **you** generate, installed and trusted on the device once — after that
-iOS accepts your HTTPS endpoint.
-
-### C1 — let BariSign do it
-
-```
-sh bin/barisign udid --local --ca     # writes BariSign-CA.mobileconfig; share it to the device and install it
-                                      # then: Settings -> General -> About -> Certificate Trust Settings
-                                      #       -> switch ON "BariSign CA XX:XX"
-sh bin/barisign udid --local          # serves the UDID profile from this device, on your Wi-Fi, and waits
-```
-
-The certificate authority persists in `poc/barisign-ca.*` (git-ignored, mode 0600), so the trust switch is a
-one-time job. Nothing leaves your network.
-
-### C2 — write your own
-
-Any HTTPS server with a trusted certificate works. Two pieces are needed.
+BariSign does not ship a server: bring your own HTTPS endpoint with a certificate iOS trusts (a certificate
+authority you generate and install once is enough). Two pieces are needed.
 
 **1. The profile** — a `.mobileconfig` containing a `Profile Service` payload. iOS does not use `URL` for
 anything except the POST target:
@@ -115,7 +98,7 @@ srv.serve_forever()
 Rules that matter, learned the hard way:
 
 - The chain must be **trusted** by the device. A self-signed root works **only** after you install it and
-  switch its trust ON in **Certificate Trust Settings** — that is exactly what option C1 sets up.
+  switch its trust ON in **Certificate Trust Settings**.
 - Serve the profile from the **same host** the profile's `URL` names, and keep the server running: iOS
   posts the moment the profile finishes installing.
 - **Safari only.** Other browsers save the file instead of handing it to Settings.

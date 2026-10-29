@@ -51,9 +51,9 @@ The easiest way, in short:
 4. Back in a-Shell, paste it at the prompt (or: `sh bin/barisign udid 00008110-001a2c3e0e91801e`).
 5. Remove the profile again: Settings → General → VPN & Device Management → Remove Profile.
 
-Prefer not to use a third party? `docs/UDID_OPTIONS.md` shows two alternatives, including **serving the
-profile yourself** from this device (`sh bin/barisign udid --local`) — that is the route verified first on
-this project.
+Prefer not to use a third party? `docs/UDID_OPTIONS.md` shows how to **serve the profile yourself** — any
+HTTPS endpoint with a certificate iOS trusts will do, including a certificate authority you make. It is
+more work, and BariSign does not ship that part.
 
 Either way it ends with the UDID saved; `sh bin/barisign status` shows it.
 
@@ -123,6 +123,6 @@ the finished app travels:
 | anisette: one server fails, the next works | normal; the working one is remembered |
 | `That does not look like a UDID` | 40 hex characters, or 24 with a dash after the first 8 |
 | profile says **empty** | expected: a `Profile Service` profile configures nothing |
-| `--local` route: *trust switch is off* | Settings → General → About → Certificate Trust Settings → switch on **BariSign CA …** |
 | `sh bin/update` cannot update | run `sh install.sh` in `~/Documents/barisign` again |
 | nothing works at all | `sh bin/barisign check` prints what is broken, and nothing else |
+| leftovers from an older BariSign | delete `poc/barisign-ca.*` and any `BariSign-*.mobileconfig` in `~/Documents/barisign`, and the old profile in Settings → General → VPN & Device Management |

@@ -24,12 +24,12 @@ a-Shell on the iPhone/iPad
 The zip round trip exists only because iOS cannot AirDrop a file to itself. Any second device works; a Mac
 or another iPad is enough.
 
-## Why the UDID came off our own server
+## Why the UDID is just a pasted value
 
-The local certificate authority worked (device-verified), but it cost the user a two-step install and a
-trust switch, and it broke whenever the CA file was not carried over. The median.co profile is one tap and
-shows a copy button, so the script just asks for the pasted value. The local route stays as
-`udid --local` for when median.co is unreachable; nothing else depends on it.
+A profile service does the whole job: one tap, a copy button, and no endpoint of ours. The local
+certificate authority we built first also worked, but it cost a second install, a trust switch and a CA file
+to carry, and it broke whenever that file was not. So the code is gone and the script only takes the pasted
+value; `docs/UDID_OPTIONS.md` keeps the self-hosting instructions for anyone who wants no third party.
 
 ## Pairing file — decided: fork the three apps
 
@@ -70,3 +70,5 @@ its non-commercial licence, so the repo as a whole stays **non-commercial**.
 - Shortcut management: suspended at the user's request (the a-Shell flow replaces it).
 - Cloudflare Worker / SSH tunnel / DuckDNS fallbacks: deleted earlier, still unnecessary.
 - `itms-services` loopback: rejected by iOS, see `docs/RESULTS.md`.
+- Our own UDID server and certificate authority: `poc/udid_share.py` existed and worked; deleted with the
+  two-device flow.

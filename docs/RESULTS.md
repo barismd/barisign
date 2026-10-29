@@ -7,8 +7,6 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 
 | Thing | Result |
 |---|---|
-| UDID over a local HTTPS endpoint with our own CA, served by a-Shell | works, repeatedly |
-| UDID survives with a **persistent** CA (leaf-only chain, 1-day leaf) | works; a regenerated CA breaks trust silently |
 | Apple sign-in: anisette v3 + SRP-6a + 2FA, free Apple ID | works (`LOGIN: PASS`) |
 | Installing an **AirDropped** signed IPA | iOS installs it by itself; no extra "Install" tap |
 | a-Shell running our Python stack (`cryptography` 3.4.8, stdlib only) | works; no native binaries, no `openssl`/`unzip` |
@@ -46,7 +44,8 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 | One profile that both installs the CA and reads the UDID | nested `Profile Service` → iOS reports "unknown data" |
 | An MDM profile to read the UDID in one step | iOS keeps answering "the password is not correct" even with a hand-built legacy PKCS#12 identical to `openssl pkcs12 -export -legacy` |
 | A pure on-device install with no second device | blocked by Apple's Developer Mode gate ("Developer Mode only appears if you initiate pairing or previously connected the device to Xcode") |
-| Cloudflare Worker / SSH tunnel / DuckDNS + ACME | unnecessary once the CA is local; deleted |
+| Cloudflare Worker / SSH tunnel / DuckDNS + ACME | unnecessary; deleted |
+| Our own UDID server (persistent CA + local HTTPS, served from a-Shell) | it worked, and it is still verified — but it cost a second install, a trust switch and a CA file to carry. Removed; a pasted UDID from any profile service replaces it (`docs/UDID_OPTIONS.md`) |
 
 ## Facts about the apps and the account
 

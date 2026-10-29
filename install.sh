@@ -8,7 +8,7 @@
 #      sh install.sh
 #
 #  Run it again any time to update: it overwrites the program files and leaves
-#  your certificate authority (poc/barisign-ca.*) alone, so devices stay trusted.
+#  the saved state in state/ alone, so your Apple ID, UDID and profile stay.
 # =============================================================================
 
 set -u
@@ -52,7 +52,6 @@ fetch() {   # fetch <file-in-repo> <destination>
 }
 
 fail=0
-fetch poc/udid_share.py                   poc/udid_share.py                || fail=1
 fetch poc/poc_login.py                    poc/poc_login.py                 || fail=1
 fetch poc/poc_portal.py                   poc/poc_portal.py                || fail=1
 fetch poc/barisign.py                     poc/barisign.py                  || fail=1
@@ -63,7 +62,6 @@ fetch third_party/ca-bundle/cacert.pem    third_party/ca-bundle/cacert.pem || fa
 fetch variants.json                        variants.json                    || fail=1
 fetch bin/barisign                        bin/barisign                     || fail=1
 fetch bin/update                          bin/update                       || fail=1
-fetch bin/udid                            bin/udid                         || fail=1
 fetch bin/login                           bin/login                        || fail=1
 fetch bin/portal                          bin/portal                       || fail=1
 
@@ -71,7 +69,7 @@ chmod +x bin/* 2>/dev/null
 
 echo
 echo "Checking that the scripts work:"
-for f in poc/udid_share.py poc/poc_login.py poc/poc_portal.py poc/barisign.py \
+for f in poc/poc_login.py poc/poc_portal.py poc/barisign.py \
          third_party/sideinstaller/signin.py third_party/sideinstaller/portal.py; do
     if python3 -c "compile(open('$f').read(), 'x', 'exec')" 2>/dev/null; then
         echo "  $f  ok"
@@ -93,4 +91,3 @@ echo "  sh bin/barisign          guided run: check -> variant -> UDID -> Apple -
 echo "  sh bin/barisign check    runtime + anisette + Apple TLS only"
 echo
 echo "To update later, run this script again (or: sh bin/update)."
-echo "Your certificate authority in poc/barisign-ca.* is never touched."

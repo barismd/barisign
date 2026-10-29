@@ -19,8 +19,8 @@
 #      python3 -u poc/barisign.py status     show what is already known
 #      python3 -u poc/barisign.py forget     clear the saved state
 #
-#  `udid --local` still works if median.co is unreachable: it serves the profile
-#  from this device over the LAN with a certificate authority of our own.
+#  Other ways to read a UDID (other sites, or your own HTTPS server) are described
+#  in docs/UDID_OPTIONS.md; this script only takes the value and remembers it.
 # =============================================================================
 
 import json
@@ -41,7 +41,6 @@ sys.path.insert(0, _HERE)
 import poc_login                                              # noqa: E402  (sets up TLS trust)
 import signin                                                 # noqa: E402
 import portal                                                 # noqa: E402
-import udid_share                                             # noqa: E402
 from signin import AppleAccount, Fail, connect_anisette        # noqa: E402
 from portal import (DeveloperSession, ensure_app_id, ensure_device,               # noqa: E402
                     ensure_private_key, obtain_certificate, pick_team,
@@ -201,14 +200,6 @@ def cmd_status(_argv):
     print("  bundle id       : %s" % (state.get("bundle_id") or "(not set)"))
     print("  team            : %s" % (state.get("team_id") or "(not set)"))
     print("  profile         : %s" % (state.get("profile") or "(not downloaded)"))
-    print("  UDID source     : %s" % (state.get("udid_from") or "(unset)"))
-    if os.path.isfile(os.path.join(_HERE, udid_share.CA_CERT_NAME)):
-        try:
-            cert, _key = udid_share.load_or_create_ca()
-            print("  local CA        : \"BariSign CA %s\" (only for 'udid --local')"
-                  % udid_share.ca_fingerprint(cert)[:11])
-        except Exception:                                     # noqa: BLE001
-            pass
     print()
     print("  state file      : %s" % STATE_FILE)
     return 0
@@ -238,33 +229,12 @@ def normalise_udid(text):
 
 
 def cmd_udid(argv):
-    """Stage 1: the UDID of this device.
+    """Stage 1: the UDID of this device, pasted in.
 
-    The median.co profile is installed with one tap and displays the UDID, so this
-    stage needs no server, no certificate and no second device. `--local` keeps the
-    old path (a local certificate authority) for when median.co cannot be reached.
+    The median.co profile is installed with one tap and shows the UDID, so this stage
+    needs no server, no certificate and no second device. docs/UDID_OPTIONS.md lists
+    the alternatives (other sites, or your own HTTPS server).
     """
-    if "--local" in argv:
-        if "--ca" in argv:
-            _hr("stage 1 - the certificate authority (one time)")
-            code = udid_share.main_with(["--ca"])
-            if code == 0:
-                update_state(ca_shared=True)
-            return code
-        if not load_state().get("ca_shared"):
-            print(" First share the certificate authority, trust it on the device,")
-            print(" then run this again:")
-            print("     sh bin/barisign udid --local --ca")
-            return cmd_udid(["--local", "--ca"])
-        _hr("stage 1 - the UDID (served from this device)")
-        code = udid_share.main_with([])
-        if code == 0 and getattr(udid_share, "LAST_UDID", None):
-            update_state(udid=udid_share.LAST_UDID, udid_from="local")
-            _hr("saved")
-            print("  UDID %s is remembered." % udid_share.LAST_UDID)
-            return 0
-        return code or 1
-
     _hr("stage 1 - read this device's UDID")
     typed = [item for item in argv if not item.startswith("-")]
     udid = normalise_udid(typed[0]) if typed else ""
@@ -276,7 +246,7 @@ def cmd_udid(argv):
         print(" 4. Come back here and paste it (or:  sh bin/barisign udid <UDID>).")
         print()
         print(" Only the hardware ID is read, nothing is signed in, and the profile")
-        print(" can be removed straight afterwards.")
+        print(" can be removed straight afterwards. Other options: docs/UDID_OPTIONS.md")
         print()
         for _attempt in range(3):
             typed = _ask("Paste the UDID (blank = stop): ")
@@ -289,7 +259,7 @@ def cmd_udid(argv):
             print("  That does not look like a UDID: 40 hex characters, or 24 with a dash.")
     if not udid:
         return 1
-    update_state(udid=udid, udid_from="median")
+    update_state(udid=udid)
     _hr("saved")
     print("  UDID %s is remembered; the portal will register it." % udid)
     print("  Remove the profile now if you like: Settings > General > VPN & Device Management.")
@@ -446,7 +416,7 @@ def _usage():
     print("  barisign.py forget     clear the saved state")
     print()
     print("Common:  barisign.py check | udid | login | portal | status | forget")
-    print("UDID:    'udid <UDID>' stores a pasted one, 'udid --local' serves it locally.")
+    print("UDID:    'udid <UDID>' stores a pasted one; docs/UDID_OPTIONS.md has the alternatives.")
     print("The portal takes --bundle-id to skip the variant menu.")
 
 

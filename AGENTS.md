@@ -11,8 +11,9 @@ on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that
   No signer device, no target device. The finished signed IPA is packaged in a **`.zip`**; the user sends
   the zip to any second device, unzips it there and AirDrops the `.ipa` back — iOS installs an AirDropped
   IPA by itself. The round trip exists only because iOS cannot AirDrop to itself.
-- **UDID = the median.co profile**, one install tap, then paste the value into a-Shell. `udid --local`
-  keeps the verified local-CA route as a fallback only.
+- **UDID = the median.co profile**, one install tap, then paste the value into a-Shell. No server of ours:
+  the local-CA/HTTPS route was deleted; `docs/UDID_OPTIONS.md` documents other sites (unaffiliated) and
+  self-hosting for anyone who wants it.
 - **Shortcuts are suspended** (user decision). The interface is a plain text flow in a-Shell.
 - **Pairing file = a module inside the apps (user decision, 2026-10-29):** fork SideStore, AltStore
   Classic and LiveContainer+SideStore, add a pairing-file step to each start screen, rebuild on every
@@ -26,8 +27,8 @@ on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
 - Test devices: **iPhone 13 (iOS 27)** = the device that gets the app; **iPad (A16)** = the second
   device used only for the AirDrop round trip.
-- Phase 0/1: the UDID stage is verified (`poc/udid_share.py`); Apple sign-in is verified
-  (`poc/poc_login.py`). Next: the developer portal (stage 3) and the signer (stage 4).
+- Apple sign-in is verified (`poc/poc_login.py`); the UDID paste flow is written, not yet
+  device-tested. Next: the developer portal (stage 3) and the signer (stage 4).
 - Never use GitHub `releases/latest` for SideStore (it returns `0.7.0-alpha`); list releases and
   reject `alpha`/`beta`/`rc` tags.
 - **Licence constraint:** code ported from `FrizzleM/SideInstaller` is **isolated** in

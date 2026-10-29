@@ -1,4 +1,0 @@
-#!/bin/sh
-# BariSign - read this device's UDID by serving the profile locally (see GUIDE.md).
-cd "$(dirname "$0")/.." || exit 1
-exec python3 -u poc/barisign.py udid --local "$@"

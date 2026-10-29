@@ -15,7 +15,7 @@ in [a-Shell](https://holzschu.github.io/a-Shell_iOS/).
 
 | Stage | State | How |
 |---|---|---|
-| **Read the UDID** | ✅ **verified** | one-tap profile from `median.co/udid`, paste the value — or serve it yourself (`udid --local`) |
+| **Read the UDID** | ✅ **verified** | one-tap profile (median.co or any other service), paste the value |
 | **Sign in to Apple** (anisette + SRP-6a + 2FA, free account) | ✅ **verified** (`LOGIN: PASS`) | `poc/poc_login.py` |
 | **Install a signed IPA** | ✅ **verified** | AirDrop: iOS installs it by itself, no extra tap |
 | Register the UDID, App ID, certificate and profile | ⚠️ **written, untested** | `poc/poc_portal.py` |
@@ -34,8 +34,7 @@ curl -sSL "https://github.com/barismd/barisign/blob/main/install.sh?raw=true" -o
 sh install.sh
 ```
 
-Run `sh install.sh` again (or `sh bin/update`) any time to update. Your certificate authority in
-`poc/barisign-ca.*` is never touched.
+Run `sh install.sh` again (or `sh bin/update`) any time to update. Your saved state in `state/` is kept.
 
 Then one command drives everything and remembers each result:
 
