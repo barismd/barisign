@@ -103,6 +103,9 @@ def _parse(argv):
 
 
 def main(argv):
+    if argv and argv[0] in ("-h", "--help"):
+        _usage()
+        return 0
     options = _parse(argv)
     if options is None:
         _usage()
