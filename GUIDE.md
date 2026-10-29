@@ -144,7 +144,7 @@ the finished app travels:
 | What you see | What it means |
 |---|---|
 | `PASS - safe to continue` | runtime, crypto, anisette and Apple's TLS all work |
-| login: `HTTP 503 … Service Temporarily Unavailable` on every identity | Apple's edge is refusing before it reads the account. Nothing about the password. Wait 10–15 minutes without retrying, turn off any VPN (LocalDevVPN/StosVPN) first, then run `sh bin/barisign login` again |
+| login: `HTTP 503 … Service Temporarily Unavailable` | Apple's edge is refusing before it reads the account. Nothing about the password. Wait 10–15 minutes without retrying, turn off any VPN (LocalDevVPN/StosVPN) first, then check with `sh bin/barisign login --probe` (no password) and run `login` once it passes |
 | anisette: one server fails, the next works | normal; the working one is remembered |
 | `That does not look like a UDID` | 40 hex characters, or 24 with a dash after the first 8 |
 | profile says **empty** | expected: a `Profile Service` profile configures nothing |

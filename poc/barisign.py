@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -511,7 +511,38 @@ def cmd_udid(argv):
     return 0
 
 
+def _probe_apple():
+    """Anisette + Apple's URL bag. No account, no password, no SRP request.
+
+    Use it to see whether a 503 block has lifted without spending sign-in attempts:
+    it makes one unauthenticated GET per anisette server.
+    """
+    _hr("probe - anisette and Apple, nothing else")
+    state_path = os.path.join(STATE_DIR, "anisette.json")
+    candidates = signin.anisette_candidates("")[:4]
+    for index, url in enumerate(candidates, 1):
+        print("  anisette %d/%d        : %s" % (index, len(candidates), url))
+        try:
+            anisette, gs = connect_anisette(url, state_path)
+        except Fail as exc:
+            print("    unusable: %s" % exc)
+            continue
+        print("    headers minted (v%s)" % getattr(anisette, "version", "?"))
+        if _preflight_apple(gs):
+            _hr("result")
+            print("PROBE: PASS - Apple is answering. Run 'sh bin/barisign login' now.")
+            return 0
+    _hr("result")
+    print("PROBE: FAIL - Apple's edge is still refusing (the URL bag answered 503).")
+    print("  Nothing was sent about your account and no password was asked.")
+    print("  Wait longer (15 minutes is a minimum, not a promise), switch network")
+    print("  if you can, and turn off LocalDevVPN / StosVPN / any VPN first.")
+    return 1
+
+
 def cmd_login(argv):
+    if "--probe" in argv:
+        return _probe_apple()
     """Stage 2: sign in and remember the account."""
     email = argv[0] if argv and not argv[0].startswith("-") else _ask("Apple ID (email): ")
     if not email:
@@ -661,6 +692,7 @@ def _usage():
     print("  barisign.py check      runtime + crypto + anisette + Apple TLS, nothing else")
     print("  barisign.py udid       stage 1: this device's UDID (median.co profile)")
     print("  barisign.py login      stage 2: sign in to Apple with a free Apple ID")
+    print("  barisign.py login --probe   anisette + Apple only (no password, no account)")
     print("  barisign.py portal     stage 3: register the UDID + certificate + profile")
     print("  barisign.py status     what is already saved")
     print("  barisign.py version    which copy is running (version + fingerprint)")
