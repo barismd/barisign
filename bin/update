@@ -1,17 +1,26 @@
 #!/bin/sh
-# BariSign - update in place. Uses git when this is a git checkout, otherwise
-# re-runs the installer (which needs only curl).
+# BariSign - update in place.
+# A git checkout pulls; an installed copy fetches the newest installer and runs it.
 cd "$(dirname "$0")/.." || exit 1
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
     echo "Updating with git in $(pwd)"
     git pull --ff-only || { echo "git pull failed - fix that first"; exit 1; }
 else
-    echo "Updating by re-running the installer in $(pwd)"
-    if [ -f install.sh ]; then
-        sh install.sh || exit 1
+    echo "Fetching the newest installer into $(pwd)"
+    rm -f install.sh.new
+    if curl -sSL -H 'Cache-Control: no-cache' \
+            "https://raw.githubusercontent.com/barismd/barisign/main/install.sh" -o install.sh.new \
+       && [ -s install.sh.new ]; then
+        BARISIGN_DIR="$(pwd)" sh install.sh.new || {
+            echo "The update did not finish; what was already installed still works."
+            rm -f install.sh.new
+            exit 1
+        }
+        mv install.sh.new install.sh
     else
-        curl -sSL "https://github.com/barismd/barisign/blob/main/install.sh?raw=true" -o install.sh || exit 1
-        sh install.sh || exit 1
+        echo "Could not download the installer. Check the network."
+        rm -f install.sh.new
+        exit 1
     fi
 fi
 echo

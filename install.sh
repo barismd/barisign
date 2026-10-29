@@ -34,14 +34,21 @@ cd "$DIR" || exit 1
 # every file *pinned to that commit*: those URLs are immutable, so the set can
 # never be a mix of two revisions.
 ATOM="https://github.com/barismd/barisign/commits/main.atom"
-SHA=$(curl -sSL --max-time 25 "$ATOM" 2>/dev/null \
-      | grep -oE 'barisign/commit/[0-9a-f]{40}' | head -1 | rev | cut -d/ -f1 | rev)
+# a-Shell has no rev/cut/head, so the commit id is read with python3 alone.
+SHA=$(curl -sSL --max-time 25 "$ATOM" 2>/dev/null | python3 -c "
+import re, sys
+found = re.search(r'barisign/commit/([0-9a-f]{40})', sys.stdin.read())
+print(found.group(1) if found else '')
+" 2>/dev/null)
 if [ -n "${SHA:-}" ]; then
     RAW="https://raw.githubusercontent.com/barismd/barisign/$SHA"
     REVISION="$SHA"
 else
     RAW="https://raw.githubusercontent.com/barismd/barisign/main"
-    REVISION="main (the commit id could not be read)"
+    REVISION="main (NOT pinned)"
+    echo "  WARNING: the newest commit id could not be read, so the downloads"
+    echo "           are not pinned to it. GitHub can then serve an older copy."
+    echo "           If anything looks old, run this script again in a minute."
 fi
 echo "  revision: $REVISION"
 echo
@@ -53,7 +60,7 @@ fetch() {   # fetch <file-in-repo> <destination>
         return 0
     fi
     if curl -sSL -H 'Cache-Control: no-cache' \
-            "https://raw.githubusercontent.com/barismd/barisign/main/$1?cb=$STAMP" -o "$2" 2>/dev/null \
+            "https://raw.githubusercontent.com/barismd/barisign/main/$1" -o "$2" 2>/dev/null \
        && [ -s "$2" ]; then
         echo "ok (unpinned fallback)"
         return 0
@@ -63,7 +70,6 @@ fetch() {   # fetch <file-in-repo> <destination>
 }
 
 download_all() {
-    STAMP="$(date +%s)"
     fail=0
     fetch poc/poc_login.py                    poc/poc_login.py                 || fail=1
     fetch poc/poc_portal.py                   poc/poc_portal.py                || fail=1
