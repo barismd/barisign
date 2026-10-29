@@ -23,6 +23,7 @@
 #  in docs/UDID_OPTIONS.md; this script only takes the value and remembers it.
 # =============================================================================
 
+import hashlib
 import json
 import os
 import re
@@ -52,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -101,12 +102,12 @@ def _hr(label):
 
 
 def _ask(prompt, default=None):
-    entered, worked = poc_login._read_line(prompt, mask=False)
-    if not worked:
-        try:
-            entered = input("")
-        except EOFError:
-            entered = ""
+    # Plain input(): a-Shell echoes it normally, and nothing touches termios, so a
+    # later prompt cannot end up with echo switched off (that bit us once).
+    try:
+        entered = input(prompt)
+    except EOFError:
+        entered = ""
     entered = (entered or "").strip()
     return entered or (default or "")
 
@@ -201,6 +202,36 @@ def cmd_check(_argv):
     return passed
 
 
+def cmd_version(_argv):
+    """Prove which copy is running: version, file, size and fingerprint."""
+    path = os.path.abspath(__file__)
+    try:
+        with open(path, "rb") as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()[:12]
+        size = os.path.getsize(path)
+        stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(path)))
+    except OSError as exc:                                    # noqa: BLE001
+        print("could not read %s: %r" % (path, exc))
+        return 1
+    print("BariSign %s" % VERSION)
+    print("  file        : %s" % path)
+    print("  size        : %d bytes" % size)
+    print("  last change : %s" % stamp)
+    print("  sha256[:12] : %s" % digest)
+    print("  clipboard   : %s" % ("pbpaste found" if _have_command("pbpaste") else "no pbpaste"))
+    print("  open        : %s" % ("found" if _have_command("open") else "missing"))
+    print("  stdin is tty: %s" % sys.stdin.isatty())
+    return 0
+
+
+def _have_command(name):
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(directory, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return True
+    return False
+
+
 def cmd_status(_argv):
     state = load_state()
     _hr("what BariSign already knows")
@@ -281,16 +312,13 @@ def normalise_udid(text):
 
 
 def _press_return(prompt):
-    """Wait for Return. a-Shell's own reader, so the terminal stays usable."""
+    """Wait for Return with plain input(): no terminal modes are changed."""
     if not sys.stdin.isatty():
         return ""            # piped input: do not swallow the next line
-    entered, worked = poc_login._read_line(prompt, mask=False, idle_limit=600.0)
-    if not worked:
-        try:
-            input("")
-        except EOFError:
-            pass
-    return entered
+    try:
+        return input(prompt)
+    except EOFError:
+        return ""
 
 
 def _open_in_safari(url):
@@ -339,13 +367,19 @@ def cmd_udid(argv):
             print()
         for attempt in range(3):
             if attempt == 0:
-                from_clipboard = extract_udid(_clipboard_text())
+                clip = _clipboard_text()
+                from_clipboard = extract_udid(clip)
                 if from_clipboard:
                     print(" The clipboard already holds a UDID: %s" % from_clipboard)
                     if _yes(" Use this one?", True):
                         udid = from_clipboard
                         break
                     print(" Okay, type or paste the right one.")
+                elif not _have_command("pbpaste"):
+                    print(" a-Shell has no 'pbpaste' here, so the clipboard cannot be read:")
+                    print(" copy the UDID and paste it below.")
+                else:
+                    print(" The clipboard holds no UDID (%r): paste it below." % (clip[:40],))
             try:
                 typed = input(" Paste the UDID (blank = stop): ")
             except EOFError:
@@ -500,6 +534,7 @@ def cmd_guided(_argv):
 
 
 COMMANDS = {
+    "version": cmd_version,
     "check": cmd_check,
     "status": cmd_status,
     "forget": cmd_forget,
@@ -519,6 +554,7 @@ def _usage():
     print("  barisign.py login      stage 2: sign in to Apple with a free Apple ID")
     print("  barisign.py portal     stage 3: register the UDID + certificate + profile")
     print("  barisign.py status     what is already saved")
+    print("  barisign.py version    which copy is running (version + fingerprint)")
     print("  barisign.py forget     clear the saved state")
     print()
     print("Common:  barisign.py check | udid | login | portal | status | forget")
