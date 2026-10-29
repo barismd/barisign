@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 # =============================================================================
-#  BariSign — PoC-D : on-device Apple ID sign-in (no computer)
+#  BariSign — stage 2: on-device Apple ID sign-in (no computer)
 #  MIT licence (this file). It imports the vendored sign-in stack from
 #  third_party/sideinstaller/signin.py, which is under a different licence.
 # =============================================================================
 #
-#  RUN IT (on the iPad/iPhone, in a-Shell):
+#  RUN IT (in a-Shell, from the installed folder):
 #
-#      mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
-#      curl -sL <REPO>/third_party/sideinstaller/signin.py   -o signin.py
-#      curl -sL <REPO>/poc/poc_login.py                      -o poc_login.py
-#      curl -sL <REPO>/third_party/apple-roots/apple-roots.pem -o apple-roots.pem
-#      curl -sL <REPO>/third_party/ca-bundle/cacert.pem      -o cacert.pem
-#      python3 poc_login.py --selftest
-#      python3 poc_login.py --login YOUR-THROWAWAY-APPLE-ID
+#      sh bin/barisign login                 the normal way; the account is remembered
+#      python3 poc/poc_login.py --selftest   the six checks on their own
+#      python3 poc/poc_login.py --diag       CA bundles + TLS reachability
+#      python3 poc/poc_login.py --login YOU@example.com
 #
 #  NOTE: a-Shell can only write inside ~/Documents. Every file this PoC writes
 #  (anisette identity, caches) goes under ~/Documents/barisign. Nothing else.
@@ -29,8 +26,8 @@
 #    * Stops after sign-in. No device registration, no certificate, no profile,
 #      no signing, nothing installed.
 #
-#  STATUS: the six self-test checks were run on Linux during development; the
-#          --login path has NOT been run against Apple by BariSign. UNTESTED.
+#  STATUS: VERIFIED ON DEVICE (iPhone 13, iOS 27) — the six self-test checks pass
+#          in a-Shell and --login completes with a free Apple ID (LOGIN: ok).
 # =============================================================================
 
 import os
@@ -54,7 +51,7 @@ sys.path.insert(0, _HERE)
 try:
     import signin
     from signin import (Fail, SRP_N, SRP_g, AppleAccount, aes_cbc_decrypt,
-                        ask, connect_anisette, request)
+                        ask, connect_anisette)
 except ImportError as exc:                                    # noqa: PERF203
     print("Could not import signin.py: %s" % exc)
     print("Download it next to this file (from the repository):")

@@ -70,5 +70,5 @@ its non-commercial licence, so the repo as a whole stays **non-commercial**.
 - Shortcut management: suspended at the user's request (the a-Shell flow replaces it).
 - Cloudflare Worker / SSH tunnel / DuckDNS fallbacks: deleted earlier, still unnecessary.
 - `itms-services` loopback: rejected by iOS, see `docs/RESULTS.md`.
-- Our own UDID server and certificate authority: `poc/udid_share.py` existed and worked; deleted with the
-  two-device flow.
+- Our own UDID server and certificate authority: it existed and worked; deleted with the two-device
+  flow, since a pasted UDID needs no endpoint of ours.

@@ -1,4 +1,5 @@
 #!/bin/sh
 # BariSign - sign in to Apple with a free Apple ID (see GUIDE.md, stage 2).
+# Goes through barisign.py so the account is remembered for the next stage.
 cd "$(dirname "$0")/.." || exit 1
-exec python3 -u poc/poc_login.py "$@"
+exec python3 -u poc/barisign.py login "$@"

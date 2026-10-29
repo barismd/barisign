@@ -10,7 +10,8 @@ BariSign reuses open-source code. This file records what, where, and under which
 - Copyright (c) 2026 FrizzleM
 - **Licence: custom, NOT MIT.** Full text: `third_party/sideinstaller/LICENSE.md`.
 - Required credit (§4): *SideInstaller by FrizzleM*, linked above.
-- Files: `third_party/sideinstaller/signin.py` (the ported sign-in stack) and
+- Files: `third_party/sideinstaller/signin.py` (the ported sign-in stack),
+  `third_party/sideinstaller/portal.py` (the ported developer portal) and
   `third_party/sideinstaller/README.md` (what was taken and what we changed).
 
 **Consequence for this repository:** it contains non-commercial-licensed parts, so **the repository

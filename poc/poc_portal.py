@@ -23,8 +23,8 @@
 # =============================================================================
 
 import os
+import re
 import sys
-import tempfile
 import time
 import traceback
 
@@ -65,6 +65,19 @@ def _usage():
     print("  --app-name     name for the App ID")
 
 
+UDID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{24})$")
+
+
+def _normalise_udid(text):
+    """Same rule as `barisign.py udid`: 40 hex, or 8+16 with an optional dash."""
+    cleaned = re.sub(r"[\s\-]", "", (text or "")).lower()
+    if not UDID_PATTERN.match(cleaned):
+        return ""
+    if len(cleaned) == 40:
+        return cleaned
+    return "%s-%s" % (cleaned[:8], cleaned[8:])
+
+
 def _parse(argv):
     values = {"email": None, "udid": None, "bundle_id": "com.barisign.smoke",
               "device_name": "BariSign test device", "app_name": "BariSign test"}
@@ -82,6 +95,10 @@ def _parse(argv):
         values[key] = rest.pop(0)
     if not values["email"] or not values["udid"]:
         return None
+    values["udid"] = _normalise_udid(values["udid"])
+    if not values["udid"]:
+        print("--udid is not a UDID: 40 hex characters, or 24 with a dash after the first 8.")
+        return None
     return values
 
 
@@ -96,7 +113,6 @@ def main(argv):
     os.makedirs(state_dir, exist_ok=True)
     portal.STORAGE = state_dir
     signin.STORAGE = state_dir
-    workdir = tempfile.mkdtemp(prefix="portal-", dir=state_dir)
 
     _hr("runtime")
     print("poc_portal.py ver : %s" % POC_VERSION)
@@ -138,8 +154,8 @@ def main(argv):
     print("  App ID          : %s" % bundle_id)
 
     key_path = ensure_private_key(options["email"])
-    cert_pem, reused = obtain_certificate(session, team, key_path, workdir)
-    print("  certificate     : %s" % ("reused" if reused else "created"))
+    cert_path, reused = obtain_certificate(session, team, key_path, state_dir)
+    print("  certificate     : %s (%s)" % (cert_path, "reused" if reused else "created"))
     print("  private key     : %s" % key_path)
 
     profile = download_profile(session, team, app_id)
@@ -166,7 +182,9 @@ def main(argv):
     _hr("result")
     print("PORTAL: ok — registered, signed up, and Apple returned a profile.")
     print("Files kept in %s:" % state_dir)
-    print("  key.pem (under %s), profile.mobileprovision" % os.path.dirname(key_path))
+    print("  %s" % os.path.basename(key_path))
+    print("  %s" % os.path.basename(cert_path))
+    print("  %s" % os.path.basename(profile_path))
     print("Took %.0f s." % (time.time() - started))
     print()
     print("NEXT: the signer (stage 4) will use this certificate + profile to sign")

@@ -146,13 +146,17 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
     ensure_device(session, team, udid, device_name)
     print("  device          : %s registered" % udid)
 
-    full_bundle_id = "%s.%s" % (bundle_id, team["teamId"])
+    if not bundle_id:
+        raise Fail("No bundle identifier, so there is nothing to register.")
+    # state keeps the *full* identifier, so never append the team twice
+    suffix = "." + team["teamId"]
+    full_bundle_id = (bundle_id[:-len(suffix)] if bundle_id.endswith(suffix) else bundle_id) + suffix
     app_id = ensure_app_id(session, team, full_bundle_id, app_name)
     print("  App ID          : %s" % full_bundle_id)
 
     key_path = ensure_private_key(email)
-    cert_pem, reused = obtain_certificate(session, team, key_path, STATE_DIR)
-    print("  certificate     : %s" % ("reused" if reused else "created"))
+    cert_path, reused = obtain_certificate(session, team, key_path, STATE_DIR)
+    print("  certificate     : %s (%s)" % (cert_path, "reused" if reused else "created"))
     print("  private key     : %s" % key_path)
 
     profile = download_profile(session, team, app_id)
@@ -176,7 +180,7 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
     print("  took %.0f s" % (time.time() - started))
 
     return {"team_id": team["teamId"], "bundle_id": full_bundle_id,
-            "profile": profile_path, "key": key_path}
+            "profile": profile_path, "key": key_path, "cert": cert_path}
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +203,7 @@ def cmd_status(_argv):
     print("  variant         : %s" % (state.get("variant") or "(not chosen)"))
     print("  bundle id       : %s" % (state.get("bundle_id") or "(not set)"))
     print("  team            : %s" % (state.get("team_id") or "(not set)"))
+    print("  certificate     : %s" % (state.get("cert") or "(not issued)"))
     print("  profile         : %s" % (state.get("profile") or "(not downloaded)"))
     print()
     print("  state file      : %s" % STATE_FILE)
@@ -299,7 +304,11 @@ def cmd_portal(argv):
     variant = state.get("variant") or ""
     bundle_id = state.get("bundle_id") or ""
     if "--bundle-id" in argv:
-        bundle_id = argv[argv.index("--bundle-id") + 1]
+        position = argv.index("--bundle-id") + 1
+        if position >= len(argv):
+            print("--bundle-id needs a value, e.g. --bundle-id com.SideStore.SideStore")
+            return 2
+        bundle_id = argv[position]
     if not bundle_id:
         variants = load_variants()
         if variants:
@@ -334,7 +343,7 @@ def cmd_portal(argv):
 
     update_state(email=email, udid=udid, variant=variant or state.get("variant", ""),
                  bundle_id=result["bundle_id"], team_id=result["team_id"],
-                 profile=result["profile"], key=result["key"])
+                 profile=result["profile"], key=result["key"], cert=result["cert"])
 
     _hr("result")
     print("PORTAL: ok - the device is registered and Apple returned a profile.")
@@ -384,7 +393,7 @@ def cmd_guided(_argv):
     result = _portal(account, email, state.get("udid", ""), state.get("bundle_id", ""),
                      "BariSign device", "BariSign")
     update_state(email=email, bundle_id=result["bundle_id"], team_id=result["team_id"],
-                 profile=result["profile"], key=result["key"])
+                 profile=result["profile"], key=result["key"], cert=result["cert"])
 
     _hr("done")
     print("Registered, certified, and the profile is saved.")
