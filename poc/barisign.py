@@ -45,7 +45,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist, list_devices)
 
-VERSION = "0.5.4"
+VERSION = "0.5.5"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -684,7 +684,18 @@ def cmd_portal(argv):
         print("no bundle id")
         return 2
 
-    udid = state.get("udid") or ""
+    udid = ""
+    if "--udid" in argv:
+        position = argv.index("--udid") + 1
+        if position >= len(argv):
+            print("--udid needs a value")
+            return 2
+        udid = normalise_udid(argv[position])
+        if not udid:
+            print("! that is not a UDID")
+            return 2
+    if not udid:
+        udid = state.get("udid") or ""
     if not udid:
         print("no UDID: running udid first")
         if cmd_udid([]) != 0:
@@ -768,6 +779,7 @@ def _usage():
     print("  sh bin/barisign forget    clear the saved state")
     print()
     print("  login:  --use-clipboard (no typing)   --server URL (pin anisette)")
+    print("  portal: --udid UDID (register another device, e.g. an iPad)")
     print("  udid:   --no-open (do not open Safari)")
 
 
