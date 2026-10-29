@@ -28,29 +28,36 @@ mkdir -p "$DIR/poc" "$DIR/bin" "$DIR/third_party/sideinstaller" \
 }
 cd "$DIR" || exit 1
 
-# GitHub caches both the web (raw) URLs and the API for a minute or two after a
-# push, and the unauthenticated API also rate-limits. Measure, not guess: the raw
-# host with a no-cache header is fresh in practice, so try it first and keep the
-# API as the fallback. Every request carries a cache-buster as well.
-RAW="https://raw.githubusercontent.com/barismd/barisign/main"
+# GitHub caches the /main/ URLs for a while after a push, and the unauthenticated
+# API rate-limits, so neither can be trusted for a fresh install. Instead we read
+# the newest commit id from the public atom feed (not rate-limited) and download
+# every file *pinned to that commit*: those URLs are immutable, so the set can
+# never be a mix of two revisions.
+ATOM="https://github.com/barismd/barisign/commits/main.atom"
+SHA=$(curl -sSL --max-time 25 "$ATOM" 2>/dev/null \
+      | grep -oE 'barisign/commit/[0-9a-f]{40}' | head -1 | rev | cut -d/ -f1 | rev)
+if [ -n "${SHA:-}" ]; then
+    RAW="https://raw.githubusercontent.com/barismd/barisign/$SHA"
+    REVISION="$SHA"
+else
+    RAW="https://raw.githubusercontent.com/barismd/barisign/main"
+    REVISION="main (the commit id could not be read)"
+fi
+echo "  revision: $REVISION"
+echo
 
 fetch() {   # fetch <file-in-repo> <destination>
     printf '  %-40s' "$2"
-    if curl -sSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-            "$RAW/$1?cb=$STAMP" -o "$2" 2>/dev/null && [ -s "$2" ]; then
+    if curl -sSL -H 'Cache-Control: no-cache' "$RAW/$1" -o "$2" 2>/dev/null && [ -s "$2" ]; then
         echo "ok"
         return 0
     fi
-    tmp="$2.api.tmp"
-    if curl -sSL -H 'Cache-Control: no-cache' "$API/$1?ref=main&cb=$STAMP" -o "$tmp" 2>/dev/null \
-       && [ -s "$tmp" ] \
-       && python3 -c "import base64,json;d=json.load(open('$tmp'));open('$2','wb').write(base64.b64decode(d['content']))" 2>/dev/null \
+    if curl -sSL -H 'Cache-Control: no-cache' \
+            "https://raw.githubusercontent.com/barismd/barisign/main/$1?cb=$STAMP" -o "$2" 2>/dev/null \
        && [ -s "$2" ]; then
-        rm -f "$tmp"
-        echo "ok (API fallback)"
+        echo "ok (unpinned fallback)"
         return 0
     fi
-    rm -f "$tmp"
     echo "FAILED"
     return 1
 }
@@ -97,17 +104,16 @@ works() {
 }
 
 attempt=1
-while [ "$attempt" -le 3 ]; do
+while [ "$attempt" -le 2 ]; do
     download_all
     check_compiles
     if [ "$fail" -eq 0 ] && works; then
         break
     fi
-    if [ "$attempt" -lt 3 ]; then
+    if [ "$attempt" -lt 2 ]; then
         echo
-        echo "GitHub is still handing out the previous copy (its cache lags a"
-        echo "minute or two after a release). Retrying in 20 seconds..."
-        sleep 20
+        echo "A download failed or the set did not check out. Retrying in 5 seconds..."
+        sleep 5
     fi
     attempt=$((attempt + 1))
 done
@@ -115,8 +121,8 @@ done
 echo
 if [ "$fail" -ne 0 ] || ! works; then
     echo "The download did not come out right. Nothing here is destructive, so"
-    echo "just run this script again in a minute. If it keeps failing, check the"
-    echo "network (Safari should open github.com)."
+    echo "just run this script again. If it keeps failing, check the network"
+    echo "(Safari should open github.com)."
     exit 1
 fi
 
@@ -125,4 +131,5 @@ echo
 echo "  sh bin/barisign          guided run: check -> variant -> UDID -> Apple -> portal"
 echo "  sh bin/barisign check    runtime + anisette + Apple TLS only"
 echo
+echo "Installed revision: $REVISION"
 echo "To update later, run this script again (or: sh bin/update)."
