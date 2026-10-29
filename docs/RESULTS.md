@@ -11,14 +11,18 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 | Installing an **AirDropped** signed IPA | iOS installs it by itself; no extra "Install" tap |
 | a-Shell running our Python stack (`cryptography` 3.4.8, stdlib only) | works; no native binaries, no `openssl`/`unzip` |
 
-## Written but **never tested against Apple**
+## Written but **never tested on a device**
 
-- `portal`: register UDID → App ID → certificate → provisioning profile (`poc/poc_portal.py`).
+- `portal`: register UDID → App ID → certificate → provisioning profile.
+- The signer (Mach-O + entitlements + CodeResources + Apple CMS) and the `.zip` packaging. On Linux it was
+  checked three ways: every signature verifies with an independent codesign implementation
+  (apple-codesign 0.29), every CMS verifies with openssl, and the generated `CodeResources` matches
+  Apple's own for AltStore (same key sets, same rules, identical hashes for files we did not touch).
+  Nothing has been installed from it yet.
 
 ## Not built
 
-- The signer (Mach-O + entitlements + CodeResources + Apple CMS), the `.zip` packaging, the AirDrop round
-  trip, and the pairing module in the forked apps.
+- The pairing module in the forked apps.
 
 ## a-Shell quirks that shaped the code (all device-confirmed)
 

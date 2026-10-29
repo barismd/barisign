@@ -5,7 +5,8 @@ Install **SideStore** — or **LiveContainer + SideStore**, or **AltStore Classi
 in [a-Shell](https://holzschu.github.io/a-Shell_iOS/).
 
 > **Status:** the UDID, the Apple sign-in and the AirDrop install are verified on a real device
-> (iPhone 13, iOS 27). The **signer** is not built, so nothing installs yet.
+> (iPhone 13, iOS 27). The **signer** is written and checked on Linux against real IPAs, but its first
+> install on a device has not happened yet.
 
 ---
 
@@ -17,7 +18,7 @@ in [a-Shell](https://holzschu.github.io/a-Shell_iOS/).
 | **Apple sign-in** (free ID, 2FA) | ✅ verified |
 | **Installing a signed IPA** | ✅ verified — AirDrop, iOS installs it itself |
 | **Device, certificate, profile** | ⚠️ written, untested against Apple |
-| **Signer** (makes an IPA installable) | 🚧 not built |
+| **Download + sign + zip** | ⚠️ written, untested on device |
 
 ## Get it — no git needed, just `curl`
 
@@ -34,7 +35,7 @@ Run `sh install.sh` again (or `sh bin/update`) any time to update. Your saved st
 Then one command drives everything and remembers each result:
 
 ```
-sh bin/barisign          # guided: check -> variant -> UDID -> Apple -> portal
+sh bin/barisign          # guided: check -> variant -> UDID -> Apple -> portal -> download -> sign -> zip
 sh bin/barisign status   # what is already known
 sh bin/barisign --help   # every command
 ```

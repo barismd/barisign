@@ -14,7 +14,7 @@ a-Shell on the iPhone/iPad
   2. Apple ID    anisette + SRP-6a + 2FA                        (verified)
   3. portal      register UDID, App ID, certificate, profile    (written, untested)
   4. download    the chosen variant's IPA, resolved at runtime
-  5. sign        Mach-O + entitlements + CodeResources + CMS    (to build - the big piece)
+  5. sign        Mach-O + entitlements + CodeResources + CMS    (written, untested)
   6. package     signed .ipa inside a .zip
        |
        +--> AirDrop the zip to any second device, unzip, AirDrop the .ipa back
@@ -61,7 +61,8 @@ its non-commercial licence, so the repo as a whole stays **non-commercial**.
 1. UDID via median.co + single-device wording — **done** (untested on device).
 2. Portal against Apple — first run will show what breaks.
 3. **Signer** — Mach-O signature injection, entitlements, CodeResources, CMS SignedData with Apple's
-   `1.2.840.113635.100.9.1`/`.9.2` OIDs; then zip packaging. This is the whole project.
+   `1.2.840.113635.100.9.1`/`.9.2` OIDs; then zip packaging. **Written, self-checked and compared with
+   Apple's own output on Linux; the device install is the open question.**
 4. Pairing: pick A or B, then build it.
 5. Turkish translation of every user-facing string, last.
 

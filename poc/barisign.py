@@ -8,7 +8,7 @@
 #      python3 -u poc/barisign.py udid       this device's UDID
 #      python3 -u poc/barisign.py login      Apple sign-in
 #      python3 -u poc/barisign.py portal     UDID + certificate + profile
-#      python3 -u poc/barisign.py sign       sign an IPA and zip the result
+#      python3 -u poc/barisign.py sign       download, sign and zip
 #      python3 -u poc/barisign.py status     what is saved
 #      python3 -u poc/barisign.py check      diagnostics only
 #      python3 -u poc/barisign.py version    which copy is running
@@ -47,13 +47,14 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     download_profile, profile_plist, list_devices)
 try:
     import signer                                              # noqa: E402
+    import download                                            # noqa: E402
 except ImportError as exc:                                    # noqa: BLE001
-    print("Could not import the signer module: %s" % exc)
-    print("poc/signer.py is missing or incomplete.")
+    print("Could not import the signer or downloader module: %s" % exc)
+    print("poc/signer.py or poc/download.py is missing or incomplete.")
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.5.6"
+VERSION = "0.6.0"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -488,9 +489,11 @@ def cmd_status(_argv):
     state = load_state()
     _stage("Status")
     rows = (("Apple ID", state.get("email")), ("UDID", state.get("udid")),
-            ("variant", state.get("variant")), ("bundle", state.get("bundle_id")),
-            ("team", state.get("team_id")), ("cert", state.get("cert")),
-            ("profile", state.get("profile")))
+            ("variant", state.get("variant")), ("release", state.get("asset_version")),
+            ("bundle", state.get("bundle_id")), ("team", state.get("team_id")),
+            ("cert", state.get("cert")), ("profile", state.get("profile")),
+            ("ipa", state.get("ipa")), ("signed", state.get("signed_ipa")),
+            ("zip", state.get("zip")))
     for label, value in rows:
         print("  %-9s %s" % (label, value or "-"))
     return 0
@@ -737,29 +740,107 @@ _SIGN_STEPS = {"read": (1, 5, "ipa"), "open": (2, 5, "unpack"),
                "zip": (5, 5, "zip"), "done": (5, 5, "done")}
 
 
-def _default_ipa():
-    """The newest .ipa in the install folder, ignoring earlier signed output."""
+def _sign_progress(label):
+    index, total, text = _SIGN_STEPS.get(label, (3, 5, label))
+    _step(index, total, text)
+
+
+def _choose_variant(state, variants):
+    """The one-line menu; remembers the choice in state."""
+    _stage("Variant")
+    for index, item in enumerate(variants, 1):
+        print("  %d  %s" % (index, item["name"]))
+    choice = _ask("  choose 1-%d: " % len(variants), "1")
+    if not (choice.isdigit() and 1 <= int(choice) <= len(variants)):
+        choice = "1"
+    chosen = variants[int(choice) - 1]
+    update_state(variant=chosen["id"], bundle_id=chosen["bundle_id"])
+    print("  %s" % chosen["name"])
+    return chosen
+
+
+def _obtain_ipa(state, argv):
+    """Return (path, info): --ipa, else the chosen variant's current release."""
+    typed = argv_get(argv, "--ipa")
+    if typed:
+        path = os.path.abspath(typed)
+        if not os.path.isfile(path):
+            print("  ! not found: %s" % path)
+            return "", {}
+        return path, {"version": os.path.basename(path)}
+
+    variants = load_variants()
+    variant = download.variant_by_id(variants, state.get("variant") or "")
+    if variant is None:
+        if not variants:
+            print("  ! variants.json is missing or empty")
+            return "", {}
+        variant = _choose_variant(state, variants)
+        state = load_state()
+
     folder = os.path.dirname(STATE_DIR)
-    best, best_time = "", 0
     try:
-        names = os.listdir(folder)
-    except OSError:
-        return ""
-    for name in names:
-        if not name.lower().endswith(".ipa") or name.lower().endswith("-signed.ipa"):
-            continue
-        path = os.path.join(folder, name)
-        try:
-            stamp = os.path.getmtime(path)
-        except OSError:
-            continue
-        if stamp > best_time:
-            best, best_time = path, stamp
-    return best
+        _step(1, 2, "resolve")
+        info = download.resolve(variant)
+    except download.DownloadError as exc:
+        saved = os.path.join(folder, (variant.get("id") or "barisign") + ".ipa")
+        if os.path.isfile(saved) and os.path.getsize(saved) > 0:
+            _result("IPA", "%s (no GitHub; using the saved file)"
+                    % os.path.basename(saved))
+            return saved, {"version": "saved file"}
+        _line_clear()
+        print()
+        print("! %s" % exc)
+        return "", {}
+
+    _line_clear()
+    print("  ipa   %s  (%.1f MB)" % (info["version"], (info["size"] or 0) / 1048576.0))
+    if info["warning"]:
+        print("  ! nightly builds may be unstable")
+    update_state(variant=variant["id"], asset_version=info["version"])
+
+    last = [-5]
+
+    def moved(received, total):
+        percent = int(received * 100 / total) if total else 0
+        if percent >= last[0] + 5 or percent == 100:
+            last[0] = percent
+            _step(2, 2, "download %d%%" % percent)
+
+    try:
+        info = download.ensure(variant, folder, moved)
+    except download.DownloadError as exc:
+        _line_clear()
+        print()
+        print("! %s" % exc)
+        return "", {}
+    update_state(ipa=info["path"])
+    return info["path"], info
+
+
+def _sign_now(ipa, saved, argv):
+    """Run the signer, then print the two closing lines."""
+    try:
+        result = signer.sign_ipa(ipa, saved["profile"], saved["key"], saved["cert"],
+                                 output_ipa=argv_get(argv, "--out") or None,
+                                 udid=saved.get("udid") or None,
+                                 progress=_sign_progress,
+                                 make_zip="--no-zip" not in argv)
+    except signer.SigningError as exc:
+        _line_clear()
+        print()
+        print("! %s" % exc)
+        return None
+    update_state(ipa=ipa, signed_ipa=result["ipa"], zip=result["zip"])
+    _result("SIGN", "ok  %s" % os.path.basename(result["ipa"]))
+    if result["zip"]:
+        print("  zip   %s" % result["zip"])
+    print("  next  airDrop the zip, unzip it, airDrop the .ipa back")
+    return result
 
 
 def cmd_sign(argv):
-    """Sign the downloaded IPA with the key, certificate and profile from portal."""
+    """Download the chosen variant (unless --ipa) and sign it."""
     _stage("Sign")
     saved = signer.find_saved_paths(STATE_DIR)
     missing = [label for label, path in (("key", saved["key"]),
@@ -769,46 +850,16 @@ def cmd_sign(argv):
         print("  ! no %s: run 'sh bin/barisign portal' first" % ", ".join(missing))
         return 2
 
-    ipa = argv_get(argv, "--ipa")
+    ipa, _info = _obtain_ipa(load_state(), argv)
     if not ipa:
-        ipa = _default_ipa()
-        if not ipa:
-            _step(1, 5, "ipa")
-            _pause_for_input()
-            ipa = _ask("  ipa path: ")
-        else:
-            print("  ipa   %s" % os.path.basename(ipa))
-            print()
-    ipa = os.path.abspath(ipa) if ipa else ""
-    if not ipa or not os.path.isfile(ipa):
-        print("  ! not found: %s" % (ipa or "(nothing)"))
-        return 2
-
-    def progress(label):
-        index, total, text = _SIGN_STEPS.get(label, (3, 5, label))
-        _step(index, total, text)
-
-    try:
-        result = signer.sign_ipa(ipa, saved["profile"], saved["key"], saved["cert"],
-                                 output_ipa=argv_get(argv, "--out") or None,
-                                 udid=saved.get("udid") or None,
-                                 progress=progress,
-                                 make_zip="--no-zip" not in argv)
-    except signer.SigningError as exc:
-        _line_clear()
-        print()
-        print("! %s" % exc)
         return 1
-
-    _result("SIGN", "ok  %s" % os.path.basename(result["ipa"]))
-    if result["zip"]:
-        print("  zip   %s" % result["zip"])
-    print("  next  airDrop the zip, unzip it, airDrop the .ipa back")
+    if _sign_now(ipa, saved, argv) is None:
+        return 1
     return 0
 
 
-def cmd_guided(_argv):
-    """check -> variant -> udid -> login -> portal."""
+def cmd_guided(argv):
+    """check -> variant -> udid -> login -> portal -> download -> sign -> zip."""
     state = load_state()
     print("BariSign %s" % VERSION)
     if poc_login._selftest(quiet=True) != 0:
@@ -818,15 +869,8 @@ def cmd_guided(_argv):
 
     variants = load_variants()
     if variants:
-        _stage("Variant")
-        for index, item in enumerate(variants, 1):
-            print("  %d  %s" % (index, item["name"]))
-        choice = _ask("  choose 1-%d: " % len(variants), "1")
-        if not (choice.isdigit() and 1 <= int(choice) <= len(variants)):
-            choice = "1"
-        chosen = variants[int(choice) - 1]
-        state = update_state(variant=chosen["id"], bundle_id=chosen["bundle_id"])
-        print("  %s" % chosen["name"])
+        _choose_variant(state, variants)
+        state = load_state()
 
     if state.get("udid") and _yes("  keep UDID %s?" % state["udid"], True):
         pass
@@ -846,6 +890,14 @@ def cmd_guided(_argv):
     update_state(bundle_id=result["bundle_id"], team_id=result["team_id"],
                  profile=result["profile"], key=result["key"], cert=result["cert"])
     _result("PORTAL", "ok")
+
+    state = load_state()
+    ipa, _info = _obtain_ipa(state, argv)
+    if not ipa:
+        return 1
+    saved = signer.find_saved_paths(STATE_DIR)
+    if _sign_now(ipa, saved, argv) is None:
+        return 1
     return 0
 
 
@@ -869,7 +921,7 @@ def _usage():
     print("  sh bin/barisign udid      this device's UDID")
     print("  sh bin/barisign login     Apple sign-in")
     print("  sh bin/barisign portal    UDID + certificate + profile")
-    print("  sh bin/barisign sign      sign an IPA and zip the result")
+    print("  sh bin/barisign sign      download, sign and zip the chosen variant")
     print("  sh bin/barisign status    what is saved")
     print("  sh bin/barisign check     diagnostics only")
     print("  sh bin/barisign version   which copy is running")
@@ -877,7 +929,7 @@ def _usage():
     print()
     print("  login:  --use-clipboard (no typing)   --server URL (pin anisette)")
     print("  portal: --udid UDID (register another device, e.g. an iPad)")
-    print("  sign:   --ipa FILE (the one to sign)   --out FILE   --no-zip")
+    print("  sign:   --ipa FILE (skip the download)   --out FILE   --no-zip")
     print("  udid:   --no-open (do not open Safari)")
 
 

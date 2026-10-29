@@ -2,8 +2,8 @@
 
 Runs in **a-Shell** on the device that gets the app. No computer, no second device.
 
-**Status:** UDID and Apple sign-in work. The signer — the part that makes an IPA installable — is not
-built yet, so nothing installs today.
+**Status:** UDID and Apple sign-in work. The signer and the downloader are written and were checked on
+Linux against real IPAs, but no install from this flow has happened on a device yet.
 
 ---
 
@@ -62,8 +62,17 @@ Registers the UDID, issues a certificate, downloads a provisioning profile. Unte
 
 ## SIGN and INSTALL
 
-Not built. When it is: the signed app is written as a `.zip`, AirDropped to any second device, unzipped
-there, and AirDropped back — iOS installs an AirDropped IPA by itself.
+The guided run does this for you: it resolves the chosen variant's current `.ipa` from the project's own
+releases, checks the SHA-256 GitHub publishes, signs it with the key, certificate and profile from the
+portal, verifies the result, and writes `<name>-signed.zip`.
+
+```
+sh bin/barisign sign              # download (unless --ipa), sign, zip
+sh bin/barisign sign --ipa X.ipa  # sign a file you already have
+```
+
+AirDrop that `.zip` to any second device, unzip it there, and AirDrop the `.ipa` back — iOS installs an
+AirDropped IPA by itself. Untested on a device: this is the next thing to try.
 
 ---
 

@@ -109,7 +109,7 @@ The a-Shell interface (no Shortcuts):
 - If the same problem fails twice, **stop** and report so the user can switch to a stronger model.
 - Stages 1–2 are verified on device, 3 is written; the plan is `docs/PLAN_V2.md`, the verified facts
   are in `docs/RESULTS.md`.
-- Next: the signer — the whole remaining project — then the forks, then i18n + Turkish last.
+- Next: the signer on a device (written and Linux-checked), then the forks, then i18n + Turkish last.
 
 ## Verified / unverified convention
 
