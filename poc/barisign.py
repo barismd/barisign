@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -183,15 +183,14 @@ def _sign_in(email, preferred=None):
     password = None
 
     def ask_code(label):
-        entered, worked = poc_login._read_line("%s: " % label, mask=False)
-        if not worked:
-            entered = signin.ask(label)
+        try:
+            entered = input("%s: " % label)
+        except EOFError:
+            entered = ""
         return "".join(ch for ch in entered if ch.isdigit())
 
     for index, url in enumerate(candidates, 1):
-        print("  anisette %d/%d        : %s%s"
-              % (index, len(candidates), url,
-                 "" if url in TRUSTED_ANISETTE else "  (community server)"))
+        print("  anisette %d/%d        : %s" % (index, len(candidates), url))
         try:
             anisette, gs = connect_anisette(url, state_path)
         except Fail as exc:
@@ -534,8 +533,8 @@ def cmd_udid(argv):
 # These two are what we use by default. Both are jkcoxson's, both are entries in
 # SideStore's own curated list (github.com/SideStore/anisette-servers, AGPL-3.0,
 # `kind: 2` = macOS), and both report a Mac client_info (checked 2026-10-29).
-# Everything below them is only reached if these two are down, and it is marked
-# as a community server when it is used.
+# Everything else comes from the same curated HTTPS list and is used in the order
+# SideStore publishes it; the first two are simply the ones known to sign in today.
 TRUSTED_ANISETTE = (
     "https://mac-ani.jkcoxson.com",
     "https://ani.jkcoxson.com",
@@ -552,12 +551,12 @@ def argv_get(argv, flag):
 
 
 def _anisette_order(preferred):
-    """Trusted servers first, then the curated list — HTTPS only.
+    """The curated list, HTTPS only, with the Mac servers that work today first.
 
-    The software behind these servers is open source (SideStore's
-    omnisette-server, Dadoum's anisette-v3-server). Some entries in the public
-    list are plain http://, and anisette headers have no business travelling in
-    clear text, so those are dropped here.
+    All of these are official entries in SideStore's list and the software behind
+    them is open source (omnisette-server, anisette-v3-server), so any https://
+    entry is acceptable. Plain http:// entries are dropped: anisette headers have
+    no business travelling in clear text.
     """
     order = []
     for url in list(preferred) + list(TRUSTED_ANISETTE) + signin.anisette_candidates(""):
@@ -578,9 +577,7 @@ def _probe_apple(preferred=None):
     state_path = os.path.join(STATE_DIR, "anisette.json")
     candidates = _anisette_order([preferred] if preferred else [])[:4]
     for index, url in enumerate(candidates, 1):
-        print("  anisette %d/%d        : %s%s"
-              % (index, len(candidates), url,
-                 "" if url in TRUSTED_ANISETTE else "  (community server)"))
+        print("  anisette %d/%d        : %s" % (index, len(candidates), url))
         try:
             anisette, gs = connect_anisette(url, state_path)
         except Fail as exc:
@@ -673,10 +670,10 @@ def cmd_portal(argv):
         print("Using the saved UDID %s (run 'barisign.py udid' to read another)." % udid)
 
     account = _sign_in(email)
-    result = _portal(account, email, udid,
-                     bundle_id,
-                     _ask("Device name for the portal [BariSign device]: ", "BariSign device"),
-                     _ask("App name for the portal [BariSign]: ", "BariSign"))
+    # Apple's portal wants a name for the registered device and for the App ID.
+    # They only appear at developer.apple.com, so they are filled in rather than
+    # asked: one less prompt for the user.
+    result = _portal(account, email, udid, bundle_id, "BariSign device", "BariSign")
 
     update_state(email=email, udid=udid, variant=variant or state.get("variant", ""),
                  bundle_id=result["bundle_id"], team_id=result["team_id"],

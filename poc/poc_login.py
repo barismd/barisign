@@ -27,7 +27,9 @@
 #      no signing, nothing installed.
 #
 #  STATUS: VERIFIED ON DEVICE (iPhone 13, iOS 27) — the six self-test checks pass
-#          in a-Shell and --login completes with a free Apple ID (LOGIN: ok).
+#          in a-Shell and sign-in completes with a free Apple ID.
+#
+#  The password prompt uses plain input(): it is visible, and it is never stored.
 # =============================================================================
 
 import os
@@ -51,7 +53,7 @@ sys.path.insert(0, _HERE)
 try:
     import signin
     from signin import (Fail, SRP_N, SRP_g, AppleAccount, aes_cbc_decrypt,
-                        ask, connect_anisette)
+                        connect_anisette)
 except ImportError as exc:                                    # noqa: PERF203
     print("Could not import the vendored sign-in stack: %s" % exc)
     print("third_party/sideinstaller/signin.py is missing or incomplete.")
@@ -367,129 +369,19 @@ def _selftest():
     return 0
 
 
-def _read_line(prompt, mask=False, idle_limit=20.0):
-    """Read one line byte-by-byte in cbreak mode. Returns (text, worked).
-
-    Why not `input()`: a-Shell's terminal does not reliably return to its original
-    mode after a masked read, so a later `input()` can end up invisible or blocked
-    on a bare carriage return. Reading every prompt through the same mechanism
-    means we never depend on the terminal being in a "normal" state.
-
-    `mask=True` prints `*`; `mask=False` echoes what you type. Every read is
-    bounded by `select`, so this can never wedge, and the terminal attributes are
-    restored (and verified) in `finally`.
-    """
-    fd = sys.stdin.fileno()
-    try:
-        import select
-        import termios
-    except ImportError:
-        return "", False
-
-    try:
-        saved = termios.tcgetattr(fd)
-    except Exception:                                          # noqa: BLE001
-        return "", False
-
-    buf = bytearray()
-    try:
-        new = list(saved)
-        if mask:
-            new[3] = new[3] & ~termios.ECHO
-        new[3] = new[3] & ~termios.ICANON          # deliver bytes without waiting
-        new[6] = list(new[6])
-        new[6][termios.VMIN] = 0
-        new[6][termios.VTIME] = 0
-        try:
-            termios.tcsetattr(fd, termios.TCSANOW, new)
-        except Exception:                                      # noqa: BLE001
-            return "", False
-
-        sys.stdout.write(prompt)
-        sys.stdout.flush()
-        last = time.time()
-        while True:
-            try:
-                ready, _, _ = select.select([fd], [], [], 1.0)
-            except Exception:                                  # noqa: BLE001
-                break
-            if not ready:
-                if time.time() - last > idle_limit:
-                    return "", False            # nothing arrived -> let caller decide
-                continue
-            try:
-                chunk = os.read(fd, 1)
-            except Exception:                                  # noqa: BLE001
-                break
-            if not chunk:
-                break
-            last = time.time()
-            byte = chunk[0]
-            if byte in (0x0A, 0x0D):                            # Return
-                break
-            if byte in (0x7F, 0x08):                            # Backspace
-                if buf:
-                    buf.pop()
-                    sys.stdout.write("\b \b")
-                    sys.stdout.flush()
-                continue
-            if byte == 0x03:                                    # Ctrl-C
-                raise KeyboardInterrupt
-            buf.append(byte)
-            if mask:
-                sys.stdout.write("*")
-            else:
-                sys.stdout.write(bytes([byte]).decode("utf-8", "replace"))
-            sys.stdout.flush()
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-        return bytes(buf).decode("utf-8", "replace"), True
-    finally:
-        _restore_terminal(fd)
-
-
-def _restore_terminal(fd):
-    """Put the terminal back, and say so if we could not."""
-    try:
-        import termios
-    except ImportError:
-        return
-    for _attempt in range(2):
-        try:
-            current = termios.tcgetattr(fd)
-            current[3] = current[3] | termios.ICANON | termios.ECHO | termios.ISIG
-            current[6] = list(current[6])
-            current[6][termios.VMIN] = 1
-            current[6][termios.VTIME] = 0
-            termios.tcsetattr(fd, termios.TCSANOW, current)
-        except Exception:                                      # noqa: BLE001
-            return
-        try:
-            if termios.tcgetattr(fd)[3] & termios.ECHO:
-                return
-        except Exception:                                      # noqa: BLE001
-            return
-    print()
-    print("NOTE: this terminal did not accept its settings back. If the shell looks")
-    print("odd afterwards (no echo), close and reopen a-Shell — nothing is broken.")
-
-
 def _read_password(prompt):
     """Hidden when possible, visible when not, and never wedged.
 
     (1) a pipe means another program is driving -> read it; (2) masked cbreak read;
     (3) plain `input()` as a last resort.
     """
-    if not sys.stdin.isatty():
-        return sys.stdin.readline().rstrip("\r\n")
-
-    secret, worked = _read_line(prompt, mask=True)
-    if worked:
-        return secret
-
-    print("(this terminal cannot hide typing, so what you type will be visible)")
+    # CHANGED BY BARISIGN. This used to put the terminal in cbreak/no-echo mode.
+    # In a-Shell that does not always come back: echo stays off and later prompts
+    # stop accepting input. Nothing here touches terminal modes any more; the
+    # password is shown as you type it, which is the price of a terminal that
+    # keeps working.
     try:
-        return input("")
+        return input(prompt)
     except EOFError:
         return ""
 
@@ -514,12 +406,12 @@ def _login(email, server):
         raise Fail("No password entered.")
 
     def ask_code(label):
-        # Deliberately NOT masked (mask=False): a verification code is not a
-        # secret, and seeing it on screen makes a wrong code obvious instead of
-        # turning it into a mystery failure. Only the password is masked.
-        entered, worked = _read_line("%s: " % label, mask=False)
-        if not worked:
-            entered = ask(label)
+        # A verification code is not a secret, and plain input() keeps the
+        # terminal untouched (the old cbreak reader could leave echo off).
+        try:
+            entered = input("%s: " % label)
+        except EOFError:
+            entered = ""
         return re.sub(r"\D", "", entered)
 
     account.login(password, ask_code)

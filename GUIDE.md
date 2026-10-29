@@ -72,6 +72,10 @@ Either way it ends with the UDID saved; `sh bin/barisign status` shows it.
 sh bin/barisign login
 ```
 
+No prompt in this project changes the terminal's modes any more — that is what used to leave a-Shell
+with echo off (unable to type, unable to press Return). The one price: **the password is visible while
+you type it.** It is never stored.
+
 The order matters: it first proves an **anisette** server works and that **Apple's edge
 answers**, and only then asks for the password:
 

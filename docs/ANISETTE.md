@@ -37,8 +37,8 @@ BariSign's default order (checked live 2026-10-29):
 | 2 | `ani.jkcoxson.com` | jkcoxson | macOS (was Windows) | second instance, different machine IDs |
 | 3 | `ani.sidestore.io` | SideStore team | macOS | long-running, official |
 
-Anything after those three is a community entry from the same curated list; when one is used, BariSign
-prints **`(community server)`** next to it so you know. Two deliberate rules:
+Every other entry in that curated list is treated the same way and is tried next, in SideStore's own
+order. Two deliberate rules:
 
 - **HTTPS only.** The public list contains at least one plain `http://` server. Anisette headers do not
   belong in clear text, so those entries are dropped.

@@ -137,10 +137,10 @@ def main(argv):
         raise Fail("No password entered.")
 
     def ask_code(label):
-        entered, worked = poc_login._read_line("%s: " % label, mask=False)
-        if not worked:
-            from signin import ask
-            entered = ask(label)
+        try:
+            entered = input("%s: " % label)
+        except EOFError:
+            entered = ""
         return "".join(ch for ch in entered if ch.isdigit())
 
     account.login(password, ask_code)
