@@ -33,13 +33,18 @@ provisioning-profile download/parsing.
    `openssl enc -d`, and this function is on the sign-in path (it decrypts Apple's SPD reply).
    a-Shell has no `openssl`.
 2. The `openssl()` helper was **removed** (it is unused once the function above is replaced).
-3. **HTTP errors now quote Apple's reply**: `plist_request()` appends the first ~240
+3. **`Anisette.detect()` keeps the server's `client_info`/`user_agent`** instead of discarding them.
+   Since 2026-10-12 Apple refuses a sign-in whose claimed platform (-80045) differs from the platform
+   the anisette data was minted on, and since ~10-24 it refuses the Android claim outright
+   (-80046 / 503). The server's own strings are the only safe values.
+4. **`GrandSlam.mac_headers()`** keeps the server's string when it already describes a Mac.
+5. **HTTP errors now quote Apple's reply**: `plist_request()` appends the first ~240
    characters of the response body, because a 503 carries the only clue there is.
-4. **`portal.py`: every `openssl` call replaced with `cryptography`** — CSR building, PEM/DER
+6. **`portal.py`: every `openssl` call replaced with `cryptography`** — CSR building, PEM/DER
    conversion and the key-modulus comparison (a-Shell has no `openssl` binary).
-5. The files were **cut** to the parts listed above; our command-line front ends live in
+7. The files were **cut** to the parts listed above; our command-line front ends live in
    `../../poc/poc_login.py`, `../../poc/poc_portal.py` and `../../poc/barisign.py`, all MIT.
-6. `STORAGE` is overridden by the caller to `state/` inside the installed folder, because a-Shell can
+8. `STORAGE` is overridden by the caller to `state/` inside the installed folder, because a-Shell can
    only write under `~/Documents`.
 
 ## Do not copy from here into MIT files

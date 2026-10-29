@@ -47,6 +47,29 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 | Cloudflare Worker / SSH tunnel / DuckDNS + ACME | unnecessary; deleted |
 | Our own UDID server (persistent CA + local HTTPS, served from a-Shell) | it worked, and it is still verified — but it cost a second install, a trust switch and a CA file to carry. Removed; a pasted UDID from any profile service replaces it (`docs/UDID_OPTIONS.md`) |
 
+## Apple's October 2026 sign-in changes (why login broke and what fixes it)
+
+Apple changed the rules twice in one month, and both changes are about the **platform we claim**
+(`X-Mme-Client-Info`) relative to the platform the anisette data was minted on:
+
+| Date | What Apple did | What broke |
+|---|---|---|
+| 2026-09-11 | answers **HTTP 503** to any sign-in whose `X-Mme-Client-Info` contains `com.apple.dt.Xcode` | everything that still claimed Xcode ([SideStore #1506](https://github.com/SideStore/SideStore/issues/1506)) |
+| 2026-10-12 | refuses a sign-in whose claimed platform differs from the anisette data (**-80045**) | claiming Mac while the anisette came from Android code |
+| ~2026-10-22 | refuses the **Android** claim itself (**-80046**, sometimes a bare 503) | claiming Android with Mac anisette |
+| 2026-10-24 | working setup: an anisette server that **emulates a Mac** + claim what it says | — |
+
+So the only reliable combination now is: a **Mac-emulating anisette server**, and the
+**client_info/user_agent that server reports** — not a hardcoded string. Verified live (2026-10-29):
+`mac-ani.jkcoxson.com`, `ani.jkcoxson.com` and `ani.sidestore.io` all report a Mac client info; BariSign
+uses `mac-ani.jkcoxson.com` first, adopts its strings, and fails over to a new identity on
+-80045 / -80046 / 503.
+
+Sources: [SideStore #1506](https://github.com/SideStore/SideStore/issues/1506),
+[iloader #921](https://github.com/nab138/iloader/issues/921), and Ixion's write-up
+*"iOS sideloading error -80046"* (2026-10-24), which lists the tools that shipped the fix
+(xtool 1.23.0, iloader 2.4.0, atvloadly 0.7.4).
+
 ## Facts about the apps and the account
 
 - **Free Apple ID:** 3 apps installed at a time (SideStore counts as one), a 10 App ID limit, 7-day signing.

@@ -731,9 +731,20 @@ class Anisette:
                 payload = json.loads(body)
             except ValueError:
                 payload = {}
-            # Only the shape identifies a v3 server; its values are not sent.
+            # CHANGED BY BARISIGN. The shape used to be the only thing we took;
+            # the values are now the point. Since 2026-10-12 Apple refuses a
+            # sign-in whose claimed platform differs from the anisette data
+            # (-80045), and since ~10-24 it refuses the Android claim outright
+            # (-80046 / HTTP 503). Every server we can reach now mints Mac
+            # anisette, so its own client_info/user_agent is the only safe value.
             if isinstance(payload, dict) and "client_info" in payload and "user_agent" in payload:
                 self.version = 3
+                info = payload.get("client_info")
+                agent = payload.get("user_agent")
+                if isinstance(info, str) and info.strip():
+                    self.client_info = info.strip()
+                if isinstance(agent, str) and agent.strip():
+                    self.user_agent = agent.strip()
                 return 3
 
         status, _, body = request("GET", self.url + "/")
@@ -877,9 +888,18 @@ class GrandSlam:
         return headers
 
     def mac_headers(self, plist=True):
-        """base_headers, saying the client is a Mac (see GSA_MAC_CLIENT_INFO)."""
+        """base_headers, saying the client is a Mac.
+
+        CHANGED BY BARISIGN: if the anisette server already describes a Mac, keep
+        its string, so the claim matches the machine the anisette data came from.
+        The bag and the 2FA pages only answer a Mac either way.
+        """
         headers = self.base_headers(plist)
-        headers["X-Mme-Client-Info"] = GSA_MAC_CLIENT_INFO
+        info = self.anisette.client_info
+        if "mac" in info.lower():
+            headers["X-Mme-Client-Info"] = info
+        else:
+            headers["X-Mme-Client-Info"] = GSA_MAC_CLIENT_INFO
         return headers
 
     def url(self, key):

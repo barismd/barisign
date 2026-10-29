@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.3.5"
+VERSION = "0.4.0"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -165,17 +165,19 @@ def _preflight_apple(gs):
     return False
 
 
-def _sign_in(email):
+def _sign_in(email, preferred=None):
     """Anisette, then Apple, then the password — never the other way round.
 
-    A 503 from gsa.apple.com arrives *after* the password step but before Apple
-    reads the account: the edge has rejected the client identity or the IP that
-    minted it. The cure is a different server and a fresh identity, so fail over.
-    The password is read once, used once, and never stored.
+    Apple's October 2026 rules (verified against release notes, issue trackers and
+    live servers): the sign-in must claim the platform the anisette data was made
+    on, and only Mac anisette still signs in. So the Mac-emitting servers are tried
+    first and their own client_info is what we send. A 503 or -80046 means the edge
+    refused the identity: forget it and try the next server. The password is asked
+    once, after Apple has answered, and never stored.
     """
     _hr("Apple sign-in")
     state_path = os.path.join(STATE_DIR, "anisette.json")
-    candidates = signin.anisette_candidates("")[:4]
+    candidates = _anisette_order([preferred] if preferred else [])
     last_error = None
     saw_503 = False
     password = None
@@ -215,10 +217,10 @@ def _sign_in(email):
         except Fail as exc:
             last_error = exc
             print("    %s" % exc)
-            if "503" not in str(exc) and "Service Unavailable" not in str(exc):
+            if not _identity_refused(str(exc)):
                 raise
-            print("    Apple refused the sign-in itself (HTTP 503). Forgetting this")
-            print("    identity and trying the next server…")
+            print("    Apple refused this identity (-80045/-80046/503). Forgetting")
+            print("    it and trying the next anisette server…")
             saw_503 = True
             _forget_anisette(anisette, state_path)
             continue
@@ -236,6 +238,19 @@ def _sign_in(email):
                "    account, so the password was never the problem. Wait 10-15 minutes\n"
                "    without retrying, then run login again. Repeated attempts of the\n"
                "    same minute keep the block alive." % len(candidates))
+
+
+def _identity_refused(message):
+    """True when Apple refused the *identity*, not the credentials.
+
+    2026-10-12: a sign-in whose claimed platform differs from the anisette data is
+    answered -80045. 2026-10-24: the Android claim itself is answered -80046, and
+    some edges answer a bare HTTP 503 before reading the account. In all three
+    cases the cure is another server and a fresh identity, never another password.
+    """
+    text = message.lower()
+    return ("503" in text or "service unavailable" in text
+            or "-80045" in text or "-80046" in text or "cannot be completed at this time" in text)
 
 
 def _forget_anisette(anisette, state_path):
@@ -511,7 +526,34 @@ def cmd_udid(argv):
     return 0
 
 
-def _probe_apple():
+# Apple's October 2026 rule: the sign-in must claim the platform the anisette
+# data was made on, and Mac anisette is the only kind that still signs in. These
+# servers emulate a Mac (ani.jkcoxson.com is the one the 2026-10-24 fixes use);
+# everything else is a fallback in case they are down.
+MAC_ANISETTE_SERVERS = (
+    "https://mac-ani.jkcoxson.com",
+    "https://ani.jkcoxson.com",
+)
+
+
+def argv_get(argv, flag):
+    if flag in argv:
+        position = argv.index(flag) + 1
+        if position < len(argv):
+            return argv[position]
+    return ""
+
+
+def _anisette_order(preferred):
+    """Mac-emitting servers first, then whatever the community list offers."""
+    order = []
+    for url in list(preferred) + list(MAC_ANISETTE_SERVERS) + signin.anisette_candidates(""):
+        if url and url.rstrip("/") not in order:
+            order.append(url.rstrip("/"))
+    return order[:6]
+
+
+def _probe_apple(preferred=None):
     """Anisette + Apple's URL bag. No account, no password, no SRP request.
 
     Use it to see whether a 503 block has lifted without spending sign-in attempts:
@@ -519,7 +561,7 @@ def _probe_apple():
     """
     _hr("probe - anisette and Apple, nothing else")
     state_path = os.path.join(STATE_DIR, "anisette.json")
-    candidates = signin.anisette_candidates("")[:4]
+    candidates = _anisette_order([preferred] if preferred else [])[:4]
     for index, url in enumerate(candidates, 1):
         print("  anisette %d/%d        : %s" % (index, len(candidates), url))
         try:
@@ -541,14 +583,21 @@ def _probe_apple():
 
 
 def cmd_login(argv):
+    """Stage 2: sign in and remember the account.
+
+    `--probe` stops after the anisette + Apple check; `--server URL` pins an
+    anisette server instead of the built-in Mac-first order.
+    """
+    preferred = argv_get(argv, "--server")
     if "--probe" in argv:
-        return _probe_apple()
-    """Stage 2: sign in and remember the account."""
-    email = argv[0] if argv and not argv[0].startswith("-") else _ask("Apple ID (email): ")
+        return _probe_apple(preferred)
+    positional = [item for item in argv if not item.startswith("-")
+                  and item != preferred]
+    email = positional[0] if positional else _ask("Apple ID (email): ")
     if not email:
         print("No Apple ID given.")
         return 2
-    account = _sign_in(email)
+    account = _sign_in(email, preferred)
     _hr("result")
     print("LOGIN: ok. Nothing was registered and nothing was installed.")
     update_state(email=email)
@@ -693,6 +742,7 @@ def _usage():
     print("  barisign.py udid       stage 1: this device's UDID (median.co profile)")
     print("  barisign.py login      stage 2: sign in to Apple with a free Apple ID")
     print("  barisign.py login --probe   anisette + Apple only (no password, no account)")
+    print("  login --server URL          pin an anisette server (default: Mac-first order)")
     print("  barisign.py portal     stage 3: register the UDID + certificate + profile")
     print("  barisign.py status     what is already saved")
     print("  barisign.py version    which copy is running (version + fingerprint)")

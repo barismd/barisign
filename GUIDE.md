@@ -77,12 +77,18 @@ answers**, and only then asks for the password:
 
 ```
 ---- Apple sign-in ----
-  anisette 1/4        : https://ani.sidestore.io
+  anisette 1/4        : https://mac-ani.jkcoxson.com
+    Provisioning with https://mac-ani.jkcoxson.com (first run only)…
     headers minted (v3)
   Apple reachable      : yes (URL bag, as a Mac)
 Password (not shown, not stored):
-  signed in via https://ani.sidestore.io
+  signed in via https://mac-ani.jkcoxson.com
 ```
+
+The server matters: since October 2026 Apple only accepts a sign-in that claims the **same platform
+the anisette data was made on**, and only **Mac** anisette still signs in. BariSign therefore tries
+Mac-emulating servers first, adopts the client identity the server reports, and only then asks for the
+password. `--server https://…` pins a different one.
 
 If Apple answers **503**, it moves on to the next anisette server (a new identity) and
 **never asks for the password** while Apple is refusing. It does not try other client
@@ -144,6 +150,7 @@ the finished app travels:
 | What you see | What it means |
 |---|---|
 | `PASS - safe to continue` | runtime, crypto, anisette and Apple's TLS all work |
+| login: `-80045` / `-80046` / `HTTP 503` on every server | Apple is refusing the *identity*, not the password. BariSign already forgets it and tries the next Mac server; if all fail, wait and retry, or pin one: `sh bin/barisign login --server https://ani.jkcoxson.com` |
 | login: `HTTP 503 … Service Temporarily Unavailable` | Apple's edge is refusing before it reads the account. Nothing about the password. Wait 10–15 minutes without retrying, turn off any VPN (LocalDevVPN/StosVPN) first, then check with `sh bin/barisign login --probe` (no password) and run `login` once it passes |
 | anisette: one server fails, the next works | normal; the working one is remembered |
 | `That does not look like a UDID` | 40 hex characters, or 24 with a dash after the first 8 |
