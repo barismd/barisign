@@ -106,6 +106,7 @@ and you are shown which version you are about to get. `variants.json` is the mac
 |---|---|
 | **`GUIDE.md`** | step-by-step, in plain language |
 | `docs/UDID_OPTIONS.md` | the three ways to read a UDID, and how to serve one yourself |
+| `docs/ANISETTE.md` | anisette servers: what they see, which ones we use, how to pin or self-host |
 | `docs/PLAN_V2.md` | the current architecture and why |
 | `docs/FORK_PLAN.md` | the pairing module inside the forked apps: licences, CI, risks |
 | `docs/RESULTS.md` | what is verified on device, and the device quirks we had to work around |

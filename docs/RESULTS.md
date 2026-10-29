@@ -65,6 +65,8 @@ So the only reliable combination now is: a **Mac-emulating anisette server**, an
 uses `mac-ani.jkcoxson.com` first, adopts its strings, and fails over to a new identity on
 -80045 / -80046 / 503.
 
+The servers themselves, and what they can see: `docs/ANISETTE.md`.
+
 Sources: [SideStore #1506](https://github.com/SideStore/SideStore/issues/1506),
 [iloader #921](https://github.com/nab138/iloader/issues/921), and Ixion's write-up
 *"iOS sideloading error -80046"* (2026-10-24), which lists the tools that shipped the fix

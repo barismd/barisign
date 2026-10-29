@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -189,7 +189,9 @@ def _sign_in(email, preferred=None):
         return "".join(ch for ch in entered if ch.isdigit())
 
     for index, url in enumerate(candidates, 1):
-        print("  anisette %d/%d        : %s" % (index, len(candidates), url))
+        print("  anisette %d/%d        : %s%s"
+              % (index, len(candidates), url,
+                 "" if url in TRUSTED_ANISETTE else "  (community server)"))
         try:
             anisette, gs = connect_anisette(url, state_path)
         except Fail as exc:
@@ -527,12 +529,17 @@ def cmd_udid(argv):
 
 
 # Apple's October 2026 rule: the sign-in must claim the platform the anisette
-# data was made on, and Mac anisette is the only kind that still signs in. These
-# servers emulate a Mac (ani.jkcoxson.com is the one the 2026-10-24 fixes use);
-# everything else is a fallback in case they are down.
-MAC_ANISETTE_SERVERS = (
+# data was made on, and only Mac anisette still signs in.
+#
+# These two are what we use by default. Both are jkcoxson's, both are entries in
+# SideStore's own curated list (github.com/SideStore/anisette-servers, AGPL-3.0,
+# `kind: 2` = macOS), and both report a Mac client_info (checked 2026-10-29).
+# Everything below them is only reached if these two are down, and it is marked
+# as a community server when it is used.
+TRUSTED_ANISETTE = (
     "https://mac-ani.jkcoxson.com",
     "https://ani.jkcoxson.com",
+    "https://ani.sidestore.io",
 )
 
 
@@ -545,11 +552,19 @@ def argv_get(argv, flag):
 
 
 def _anisette_order(preferred):
-    """Mac-emitting servers first, then whatever the community list offers."""
+    """Trusted servers first, then the curated list — HTTPS only.
+
+    The software behind these servers is open source (SideStore's
+    omnisette-server, Dadoum's anisette-v3-server). Some entries in the public
+    list are plain http://, and anisette headers have no business travelling in
+    clear text, so those are dropped here.
+    """
     order = []
-    for url in list(preferred) + list(MAC_ANISETTE_SERVERS) + signin.anisette_candidates(""):
-        if url and url.rstrip("/") not in order:
-            order.append(url.rstrip("/"))
+    for url in list(preferred) + list(TRUSTED_ANISETTE) + signin.anisette_candidates(""):
+        url = (url or "").rstrip("/")
+        if not url.startswith("https://") or url in order:
+            continue
+        order.append(url)
     return order[:6]
 
 
@@ -563,7 +578,9 @@ def _probe_apple(preferred=None):
     state_path = os.path.join(STATE_DIR, "anisette.json")
     candidates = _anisette_order([preferred] if preferred else [])[:4]
     for index, url in enumerate(candidates, 1):
-        print("  anisette %d/%d        : %s" % (index, len(candidates), url))
+        print("  anisette %d/%d        : %s%s"
+              % (index, len(candidates), url,
+                 "" if url in TRUSTED_ANISETTE else "  (community server)"))
         try:
             anisette, gs = connect_anisette(url, state_path)
         except Fail as exc:
