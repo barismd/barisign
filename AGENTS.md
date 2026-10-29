@@ -14,9 +14,11 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 - **UDID = the median.co profile**, one install tap, then paste the value into a-Shell. `udid --local`
   keeps the verified local-CA route as a fallback only.
 - **Shortcuts are suspended** (user decision). The interface is a plain text flow in a-Shell.
-- **Open item:** pairing file for SideStore / AltStore / LiveContainer. iOS 27's
-  "Developer Mode → Pair with <app>" makes it possible on-device; the choice between a small helper app
-  (recommended) and forking the three AGPL-3.0 apps is the user's. See `docs/PLAN_V2.md`.
+- **Pairing file = a module inside the apps (user decision, 2026-10-29):** fork SideStore, AltStore
+  Classic and LiveContainer+SideStore, add a pairing-file step to each start screen, rebuild on every
+  upstream release. All three are **AGPL-3.0**, so our patch is published under AGPL-3.0 in
+  `forks/<app>/`; the non-commercial `third_party/sideinstaller/` code may **not** be mixed into them —
+  the pairing call is reimplemented clean-room. Design, risks and order: `docs/FORK_PLAN.md`.
 
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
 - **AirDrop is the primary install route.** Private-HTTPS `itms-services` is a documented fallback only;

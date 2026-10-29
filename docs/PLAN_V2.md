@@ -31,28 +31,24 @@ trust switch, and it broke whenever the CA file was not carried over. The median
 shows a copy button, so the script just asks for the pasted value. The local route stays as
 `udid --local` for when median.co is unreachable; nothing else depends on it.
 
-## Pairing file — the open decision
+## Pairing file — decided: fork the three apps
 
-SideStore, AltStore and LiveContainer all need a **pairing file** (`ALTPairingFile.mobiledevicepairing`) to
-install and refresh apps. Facts, all checked 2026-10-29:
+**Decision (2026-10-29): fork.** The pairing module goes into the start screen of SideStore, of the
+SideStore inside LiveContainer+SideStore, and of AltStore Classic. `docs/FORK_PLAN.md` holds the design,
+the licence rules (clean-room reimplementation — the non-commercial SideInstaller code may not be mixed
+into AGPL forks) and the risks.
 
-- iOS **27** added **Settings → Privacy & Security → Developer Mode → "Pair with <app>"** (six-digit code).
-  That is the mechanism SideInstaller uses to pair with no computer.
-- SideStore, AltStore and LiveContainer all accept an **imported** pairing file from their own UI.
-- Licences: SideStore **AGPL-3.0**, AltStore **AGPL-3.0**, LiveContainer **AGPL-3.0**
-  (`FrizzleM/SideInstaller` is "Other"/non-commercial, already isolated in `third_party/sideinstaller/`).
+Facts that make it possible, checked 2026-10-29:
 
-So there are two ways to give the user the "generate the pairing file from the app" experience:
+- iOS **27** added **Settings → Privacy & Security → Developer Mode → "Pair with <app>"** with a six-digit
+  code. SideInstaller uses exactly this to pair with no computer.
+- SideStore, AltStore and LiveContainer also accept an **imported** pairing file, which is how the module's
+  output gets consumed.
+- Licences: SideStore **AGPL-3.0**, AltStore **AGPL-3.0**, LiveContainer **AGPL-3.0**; SideInstaller is
+  "Other"/non-commercial and stays isolated in `third_party/sideinstaller/`.
 
-| | A — helper app (recommended) | B — fork the three apps |
-|---|---|---|
-| How | our own small app triggers the iOS 27 pairing UI and exports the file; the user imports it once in SideStore / AltStore | add a pairing module to each app's start screen |
-| Licence | MIT, no AGPL obligations | AGPL-3.0 forks, source published, notices |
-| Maintenance | none beyond the pairing call | rebuild three AGPL projects on every upstream release, macOS CI, keep patches alive |
-| Risk | user sees two extra taps | fork rot; three moving targets |
-
-**Recommendation: A.** It reaches the same user-visible outcome on iOS 27 without owning three forks. The
-final call is the user's; nothing in stages 1–6 depends on it.
+Cost accepted with the decision: our patch to three AGPL projects, rebuilt on every upstream release, on
+GitHub-hosted macOS CI.
 
 ## Licence consequences (verified)
 
