@@ -43,13 +43,17 @@ this has to be known. It is not a password and it is not tied to your Apple ID.
 sh bin/barisign udid
 ```
 
-The easiest way, in short:
+It prints the steps, waits for you to **press Return**, and then **opens Safari by itself** at
+`https://median.co/udid`. In short:
 
-1. Open **Safari** on this device: **https://median.co/udid**
+1. Read the steps it prints, press **Return** — Safari opens.
 2. Install the profile it offers (Settings → General → VPN & Device Management → Downloaded Profile).
 3. Safari shows your UDID — tap **Copy UDID to Clipboard**.
-4. Back in a-Shell, paste it at the prompt (or: `sh bin/barisign udid 00008110-001a2c3e0e91801e`).
+4. Back in a-Shell, paste it at the prompt.
 5. Remove the profile again: Settings → General → VPN & Device Management → Remove Profile.
+
+In a hurry? `sh bin/barisign udid 00008110-001a2c3e0e91801e` stores a UDID you already have, and
+`--no-open` skips Safari entirely.
 
 Prefer not to use a third party? `docs/UDID_OPTIONS.md` shows how to **serve the profile yourself** — any
 HTTPS endpoint with a certificate iOS trusts will do, including a certificate authority you make. It is

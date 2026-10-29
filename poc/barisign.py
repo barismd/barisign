@@ -225,6 +225,8 @@ def cmd_forget(_argv):
     return 0
 
 
+UDID_URL = "https://median.co/udid"
+
 UDID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{24})$")
 
 
@@ -239,12 +241,35 @@ def normalise_udid(text):
     return "%s-%s" % (cleaned[:8], cleaned[8:])
 
 
+def _press_return(prompt):
+    """Wait for Return. a-Shell's own reader, so the terminal stays usable."""
+    entered, worked = poc_login._read_line(prompt, mask=False, idle_limit=600.0)
+    if not worked:
+        try:
+            input("")
+        except EOFError:
+            pass
+    return entered
+
+
+def _open_in_safari(url):
+    """`open <url>` is how a-Shell hands a link to Safari (it is documented for
+    shortcuts://). Returns True when the command reported success."""
+    if os.environ.get("BARISIGN_NO_OPEN"):
+        return None                    # suppressed on purpose, not a failure
+    try:
+        return os.system("open '%s' >/dev/null 2>&1" % url) == 0
+    except Exception:                                         # noqa: BLE001
+        return False
+
+
 def cmd_udid(argv):
     """Stage 1: the UDID of this device, pasted in.
 
     The median.co profile is installed with one tap and shows the UDID, so this stage
-    needs no server, no certificate and no second device. docs/UDID_OPTIONS.md lists
-    the alternatives (other sites, or your own HTTPS server).
+    needs no server, no certificate and no second device. The steps are printed first,
+    then Return opens Safari, then the pasted value is checked and remembered.
+    docs/UDID_OPTIONS.md lists the alternatives (other sites, your own HTTPS server).
     """
     _hr("stage 1 - read this device's UDID")
     typed = [item for item in argv if not item.startswith("-")]
@@ -259,6 +284,18 @@ def cmd_udid(argv):
         print(" Only the hardware ID is read, nothing is signed in, and the profile")
         print(" can be removed straight afterwards. Other options: docs/UDID_OPTIONS.md")
         print()
+        if "--no-open" not in argv:
+            _press_return(" Press Return to open Safari (Ctrl-C to stop) ")
+            opened = _open_in_safari(UDID_URL)
+            if opened is True:
+                print(" Safari opened. Come back here and paste the UDID.")
+            elif opened is False:
+                print(" Could not open Safari. Open this yourself:")
+                print("   %s" % UDID_URL)
+            else:
+                print(" Safari not opened (BARISIGN_NO_OPEN). The address is:")
+                print("   %s" % UDID_URL)
+            print()
         for _attempt in range(3):
             typed = _ask("Paste the UDID (blank = stop): ")
             udid = normalise_udid(typed)
@@ -431,7 +468,8 @@ def _usage():
     print("  barisign.py forget     clear the saved state")
     print()
     print("Common:  barisign.py check | udid | login | portal | status | forget")
-    print("UDID:    'udid <UDID>' stores a pasted one; docs/UDID_OPTIONS.md has the alternatives.")
+    print("UDID:    'udid' opens Safari, then takes the pasted value; 'udid <UDID>' stores")
+    print("         one directly; '--no-open' skips Safari. docs/UDID_OPTIONS.md has more.")
     print("The portal takes --bundle-id to skip the variant menu.")
 
 

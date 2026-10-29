@@ -68,6 +68,7 @@ one-tap profile, paste it into a-Shell, done:
 sh bin/barisign udid
 ```
 
+It prints the steps, waits for **Return**, then **opens Safari** at `median.co/udid` for you.
 `docs/UDID_OPTIONS.md` lists **three** ways to get it — median.co, other third-party sites (not affiliated
 with us), or **your own HTTPS server** — with the caveats of each. We run no server and receive nothing.
 
