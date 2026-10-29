@@ -27,6 +27,10 @@ It downloads the files and checks that they run. Afterwards, two commands are al
 ```
 sh bin/barisign status     # what is already saved
 sh bin/barisign            # guided run: one question at a time
+
+# one stage at a time, if you prefer:
+sh bin/login               # stage 2
+sh bin/portal              # stage 3
 ```
 
 The guided run does every stage below in order. You can also run one stage at a time — that is what the

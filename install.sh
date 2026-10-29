@@ -81,6 +81,8 @@ download_all() {
     fetch variants.json                       variants.json                    || fail=1
     fetch bin/barisign                        bin/barisign                     || fail=1
     fetch bin/update                          bin/update                       || fail=1
+    fetch bin/login                           bin/login                        || fail=1
+    fetch bin/portal                          bin/portal                       || fail=1
     chmod +x bin/* 2>/dev/null
     return $fail
 }
@@ -104,7 +106,7 @@ check_compiles() {
 works() {
     python3 poc/barisign.py --help >/dev/null 2>&1 \
         && python3 poc/poc_portal.py --help >/dev/null 2>&1 \
-        && sh -n bin/barisign && sh -n bin/update
+        && sh -n bin/barisign && sh -n bin/update && sh -n bin/login && sh -n bin/portal
 }
 
 attempt=1

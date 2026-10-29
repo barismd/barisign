@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.4.5"
+VERSION = "0.4.6"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")

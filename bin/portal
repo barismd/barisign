@@ -1,0 +1,5 @@
+#!/bin/sh
+# BariSign - developer portal: register the UDID, get a certificate + profile (stage 3).
+# Shortcut for: sh bin/barisign portal
+cd "$(dirname "$0")/.." || exit 1
+exec python3 -u poc/barisign.py portal "$@"

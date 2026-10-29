@@ -378,82 +378,101 @@ def _clipboard_text():
         return ""
 
 
-def _masked_line(prompt):
-    """Asterisks, the a-Shell way — opt-in only (BARISIGN_MASK_PASSWORD=1).
-
-    It disables ECHO and echoes '*' itself. It also has a habit of leaving the
-    terminal with echo off, which is why it is not the default.
-    """
+def _restore_terminal(fd, saved):
+    """Put the terminal back and check that it really is back."""
     import termios
-    fd = sys.stdin.fileno()
-    saved = termios.tcgetattr(fd)
-    buf = []
+    for mode in (termios.TCSANOW, termios.TCSAFLUSH):
+        try:
+            termios.tcsetattr(fd, mode, saved)
+        except Exception:                                     # noqa: BLE001
+            continue
+        try:
+            if termios.tcgetattr(fd)[3] & termios.ECHO:
+                return True
+        except Exception:                                     # noqa: BLE001
+            return False
+    print("WARNING: echo is still off after restoring the terminal.")
+    print("         Quit a-Shell from the app switcher and reopen it.")
+    return False
+
+
+def _masked_line(prompt):
+    """Read a password and show '*' for each character. The default.
+
+    Blocking, one byte at a time, with no idle timeout: the previous version gave
+    up after 20 seconds of silence, returned half a password and left the terminal
+    in pieces. Ctrl-C still works, Backspace edits, and the modes are restored and
+    verified in every exit path.
+    """
+    try:
+        import termios
+        fd = sys.stdin.fileno()
+        saved = termios.tcgetattr(fd)
+    except Exception:                                         # noqa: BLE001
+        try:
+            return input(prompt)
+        except EOFError:
+            return ""
+
+    buf = bytearray()
     try:
         changed = list(saved)
-        changed[3] = changed[3] & ~termios.ECHO
-        changed[3] = changed[3] & ~termios.ICANON
+        changed[3] = changed[3] & ~termios.ECHO          # no echo of the characters
+        changed[3] = changed[3] & ~termios.ICANON        # deliver bytes as typed
+        if hasattr(termios, "IEXTEN"):
+            changed[3] = changed[3] & ~termios.IEXTEN
+        changed[6] = list(changed[6])
+        changed[6][termios.VMIN] = 1                     # block until a byte arrives
+        changed[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, changed)
         sys.stdout.write(prompt)
         sys.stdout.flush()
+
         while True:
-            ch = os.read(fd, 1)
-            if not ch:
+            chunk = os.read(fd, 1)
+            if not chunk:
                 break
-            if ch in (b"\n", b"\r"):
+            byte = chunk[0]
+            if byte in (0x0A, 0x0D):                     # Return
                 break
-            if ch in (b"\x7f", b"\x08"):
+            if byte == 0x03:                             # Ctrl-C
+                raise KeyboardInterrupt
+            if byte in (0x7F, 0x08):                     # Backspace
                 if buf:
                     buf.pop()
                     sys.stdout.write("\b \b")
                     sys.stdout.flush()
                 continue
-            buf.append(ch)
+            if byte == 0x15:                             # Ctrl-U: start over
+                while buf:
+                    buf.pop()
+                    sys.stdout.write("\b \b")
+                sys.stdout.flush()
+                continue
+            buf.append(byte)
             sys.stdout.write("*")
             sys.stdout.flush()
         sys.stdout.write("\n")
         sys.stdout.flush()
-        return b"".join(buf).decode("utf-8", "replace")
+        return bytes(buf).decode("utf-8", "replace")
     finally:
-        try:
-            termios.tcsetattr(fd, termios.TCSANOW, saved)
-        except Exception:                                     # noqa: BLE001
-            pass
+        _restore_terminal(fd, saved)
 
 
 def _read_password(prompt):
-    """Get the password without ever changing the terminal's modes.
+    """The password prompt: '*' per character, with a way out if a terminal differs.
 
-    Two attempts at hiding typing made a-Shell unusable (echo stayed off, then
-    nothing could be typed and Return did nothing), so the order is now:
-
-      1. the clipboard, if it holds something — no keystrokes at all;
-      2. a normal visible line, erased from the screen straight after Return;
-      3. only if BARISIGN_MASK_PASSWORD=1: the asterisk reader, with a warning.
+    a-Shell shows what you type unless the terminal is switched to no-echo, so
+    these are the only two honest states: asterisks (default, what works) or
+    visible text. BARISIGN_SHOW_PASSWORD=1 picks the second; nothing else is
+    silent about it.
     """
-    if os.environ.get("BARISIGN_MASK_PASSWORD"):
-        print("(masked mode: if the terminal stops accepting input afterwards,")
-        print(" type 'newWindow' or reopen a-Shell — this is the mode that breaks it)")
-        return _masked_line(prompt)
-
-    clip = _clipboard_text().strip()
-    if clip and "\n" not in clip:
-        print("The clipboard holds %d characters. Use it as the password?" % len(clip))
+    if os.environ.get("BARISIGN_SHOW_PASSWORD") or not sys.stdin.isatty():
         try:
-            answer = input("Use it? [Y/n] ").strip().lower()
+            return input(prompt)
         except EOFError:
-            answer = "n"
-        if answer in ("", "y", "yes"):
-            return clip
-
-    try:
-        typed = input(prompt)
-    except EOFError:
-        return ""
-    # erase the line we just echoed: same width, then back to the start
-    width = len(prompt) + len(typed)
-    sys.stdout.write("\r" + " " * width + "\r(password entered, line cleared)\n")
-    sys.stdout.flush()
-    return typed
+            return ""
+    return _masked_line(prompt)
 
 
 def _password_diagnostics(password):

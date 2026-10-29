@@ -42,6 +42,9 @@ Then one command drives everything and remembers each result:
 sh bin/barisign          # guided: check -> variant -> UDID -> Apple -> portal
 sh bin/barisign status   # what is already known
 sh bin/barisign --help   # every stage on its own
+
+sh bin/login             # shortcut for barisign login
+sh bin/portal            # shortcut for barisign portal
 ```
 
 ---
