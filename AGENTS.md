@@ -7,10 +7,16 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 
 - **Audience = everyone, no computer.** Users are expected to sign in with their **main Apple ID**
   (2FA supported); the README must say plainly why that is safe.
-- **Two-device flow is the headline UX:** Device A signs and **AirDrops**; Device B receives and gets
-  SideStore. Single-device (AirDrop/Files to self) is also supported.
-- **Open item:** registering a *second* device's UDID with no computer is **unverified** on iOS 27.
-  Must stay called out in the README until resolved.
+- **Single-device flow (2026-10-29 pivot):** every step runs on the device that will get the app.
+  No signer device, no target device. The finished signed IPA is packaged in a **`.zip`**; the user sends
+  the zip to any second device, unzips it there and AirDrops the `.ipa` back — iOS installs an AirDropped
+  IPA by itself. The round trip exists only because iOS cannot AirDrop to itself.
+- **UDID = the median.co profile**, one install tap, then paste the value into a-Shell. `udid --local`
+  keeps the verified local-CA route as a fallback only.
+- **Shortcuts are suspended** (user decision). The interface is a plain text flow in a-Shell.
+- **Open item:** pairing file for SideStore / AltStore / LiveContainer. iOS 27's
+  "Developer Mode → Pair with <app>" makes it possible on-device; the choice between a small helper app
+  (recommended) and forking the three AGPL-3.0 apps is the user's. See `docs/PLAN_V2.md`.
 
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
 - **AirDrop is the primary install route.** Private-HTTPS `itms-services` is a documented fallback only;
@@ -30,24 +36,23 @@ on an iPhone/iPad **with no computer**, driven entirely by an **iOS Shortcut**.
 
 ## What we are building
 
-Four fixed variants, chosen by the user inside the Shortcut:
+Five fixed variants, chosen in the a-Shell menu:
 
 1. SideStore stable
 2. SideStore nightly
 3. LiveContainer + SideStore stable
 4. LiveContainer + SideStore nightly
+5. AltStore Classic stable
 
-One flow, four IPAs. **No generic IPA signer.**
+One flow, five IPAs. **No generic IPA signer.**
 
-The Shortcut:
+The a-Shell interface (no Shortcuts):
 - asks readiness questions (LocalDevVPN installed & connected? Developer Mode on? Apple ID ready?),
 - asks which variant,
-- points to a complete beginner README,
-- runs the heavy steps through the chosen on-device compute layer:
-  Apple login with anisette (retry with another anisette server on failure),
-  download + sign the chosen IPA, pairing file, install.
-- Prefers **AirDrop of the signed IPA** for install (iOS installs AirDropped IPAs on 17.1+,
-  but they only launch if validly signed). Other install routes only if demonstrably better.
+- points to a complete beginner GUIDE,
+- runs the heavy steps on the device itself: UDID (median.co profile), Apple login with anisette
+  (retry with another anisette server on failure), download + sign the chosen IPA, package it as a zip.
+- Ends with "AirDrop this zip to another device, unzip it, AirDrop the .ipa back, tap Install".
 
 ## Hard constraints
 
@@ -61,14 +66,12 @@ The Shortcut:
   tests and reports back. Label untested code **untested**; never claim something works without
   the user's on-device confirmation.
 - Code, comments, commit messages and the main README are in **English**.
-- **Localization**: all user-facing text (script messages, Shortcut prompts, README) lives in
+- **Localization**: all user-facing text (script messages, README) lives in
   per-language files so adding a language = adding a file. English first; translations only in
   the final phase, using the cheap model, after asking which languages.
-- The Shortcut itself: the user builds it by hand on the iPhone and shares via iCloud link.
-  **Do NOT generate a `.shortcut` file.** Instead research the web and write
-  `SHORTCUT_BUILD_GUIDE.md`: a numbered, action-by-action guide naming every Shortcuts action,
-  its settings, variables and branching, written for a first-time Shortcuts user. All
-  user-facing strings live in the i18n files and are referenced from the guide.
+- Interface: a plain text flow in a-Shell (`sh bin/barisign`), **no Shortcuts** and no generated
+  `.shortcut` files. Every prompt is one line and every answer is a number, `y`/`n` or a pasted value,
+  so a first-time user can follow it without help. All user-facing strings live in the i18n files.
 
 ## Variant rules
 
@@ -93,10 +96,8 @@ The Shortcut:
 
 - Budget ~5 USD total. Be token-frugal: grep/head/tail instead of dumping whole files.
 - If the same problem fails twice, **stop** and report so the user can switch to a stronger model.
-- Phase 0 (this): environment check + research table + feasibility verdicts. **STOP and wait.**
-- After the user's go: implement everything (scripts, English README, i18n structure,
-  SHORTCUT_BUILD_GUIDE.md) in one pass, mark what is untested, then iterate on test reports.
-- Translations come last.
+- Phases 0–3 are done (`docs/PHASE0_REPORT.md`); the current plan is `docs/PLAN_V2.md`.
+- Next: the signer (stage 4), then the pairing-file decision, then i18n + Turkish last.
 
 ## Verified / unverified convention
 

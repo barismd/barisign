@@ -11,15 +11,19 @@ computer**, driven entirely by an **iOS Shortcut**.
 
 ## What already works — verified on real devices (iPhone 13 + iPad, iOS 27)
 
+Everything happens **on the device the app will be installed on**. No second phone is needed to sign, and
+no computer is needed at any point.
+
 | Stage | State | How |
 |---|---|---|
-| **Get the target device's UDID** — no computer, no app on the target, no third party | ✅ **verified** | a temporary configuration profile over the local network (`poc/udid_share.py`) |
+| **Read the UDID** | ✅ **verified** (both routes) | one-tap profile from `median.co/udid`, then paste it; `udid --local` serves our own profile over the LAN |
 | **Sign in to Apple with a free Apple ID** (anisette + SRP-6a + 2FA) | ✅ **verified** (`LOGIN: PASS`) | on the device, in a-Shell (`poc/poc_login.py`) |
 | **Install a signed IPA** | ✅ **verified** | AirDrop: iOS installs it by itself, no extra tap |
 | Register the UDID, create the App ID, certificate and provisioning profile | ⚠️ **written, untested** | `poc/poc_portal.py` |
-| **Sign the IPA** (Mach-O + Apple CMS signature) | 🚧 **to build** | the last big piece |
+| **Sign the IPA** (Mach-O + Apple CMS signature) and package it as a `.zip` | 🚧 **to build** | the last big piece |
+| Pairing file for SideStore / AltStore, on-device | 🔎 **researched, not built** | see `docs/PLAN_V2.md` |
 
-Until the last row exists, BariSign cannot produce something your device will launch. Everything above it
+Until the signer exists, BariSign cannot produce something your device will launch. Everything above it
 is done.
 
 **Getting it** — no git needed, just `curl`:
@@ -47,9 +51,9 @@ sh bin/barisign status   # what is already known
 |---|---|
 | **iOS version** | **iOS 27 or newer** (hard requirement) |
 | Apple account | a **free** Apple ID is enough — no paid Developer Program membership |
-| On the device that signs | **a-Shell** (free, App Store) |
-| On the device that receives | **nothing.** Safari and Settings only |
-| Network | both devices on the **same Wi-Fi** for the UDID step |
+| The device that gets the app | **a-Shell** (free, App Store) — this is where every step runs |
+| A second device | only for the **AirDrop round trip** (any iPhone/iPad/Mac). iOS cannot AirDrop to itself, so the finished `.zip` goes out and comes back |
+| Network | internet; the same Wi-Fi as the second device for the AirDrop step |
 | Computer | **none** |
 | LocalDevVPN | not needed by BariSign's own steps; SideStore uses it afterwards to refresh itself |
 
@@ -60,27 +64,19 @@ install requires a pairing file made by a computer.
 
 ## How the UDID step works — and why it is private
 
-A free Apple ID signs apps for **specific devices**, so the device's **UDID** has to be known. Apple's
-over-the-air "Profile Service" mechanism reports it, but only over **HTTPS with a certificate iOS
-trusts**. The internet "get my UDID" sites achieve that with a public certificate — which means *their*
-server sees your UDID.
+A free Apple ID signs apps for **specific devices**, so the device's **UDID** has to be known. BariSign
+takes it from the profile **median.co** serves: you open `https://median.co/udid` **on the device that
+will get the app**, tap install, finish the install in Settings, and Safari shows the UDID with a copy
+button. Paste it into a-Shell and stage 1 is done.
 
-BariSign does it without any third party:
+- **Nothing is sent to us.** There is no BariSign server. The profile only reports a hardware ID.
+- **The Apple ID is not involved at this stage** — it is never given to median.co or to anyone else.
+- The profile can be **removed right afterwards**: Settings → General → VPN & Device Management.
+- If median.co is unreachable, `sh bin/barisign udid --local` still works: it serves an equivalent
+  profile from the device itself over the LAN with a certificate authority of our own (that route needs
+  one trust switch in Settings, and is the one we verified first).
 
-```
-iPad (a-Shell)                                  iPhone (nothing installed)
- serves HTTPS with a throwaway CA ─────────────► Safari opens the profile, taps Install
- iOS posts the UDID over the local Wi-Fi ◄──────┘  (the request never leaves your network)
- prints the UDID after you confirm the model
-```
-
-- **The CA is generated on the iPad and is persistent**: install it and switch its trust ON **once**, and
-  every later fetch is **a single profile**.
-- **Nothing leaves your Wi-Fi.** No Cloudflare, no tunnel, no DNS, no account anywhere.
-- iOS will call the profile **"empty"** — that is expected: a `Profile Service` profile configures nothing,
-  and the UDID has already been sent when you see that message.
-
-Step-by-step instructions, including the one-time trust switch, are in **`GUIDE.md`**.
+Step-by-step instructions are in **`GUIDE.md`**.
 
 ---
 

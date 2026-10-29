@@ -57,47 +57,37 @@ The individual scripts are still there (`poc/udid_share.py`, `poc/poc_login.py`,
 
 ---
 
-## Step 1 — Get the UDID (private, no third party) — **two short commands**
+## Step 1 — Read this device's UDID (one tap, then paste)
 
-A free Apple ID signs apps for a specific device, so the device's **UDID** must be known. iOS reports it
-from a `Profile Service` profile, but only over HTTPS with a certificate iOS trusts. The script serves
-exactly that from your own iPad over your own Wi-Fi.
-
-The certificate authority is a **one-time** step, so it is a command of its own. There is **nothing to
-press and no timeout** — each command finishes by itself.
-
-### 1a — the certificate authority (once per device)
+A free Apple ID signs apps for **specific devices**, so the device's **UDID** has to be known. You take
+it with a temporary profile and paste it in. No server of ours, no second device, no trust switch.
 
 ```
 cd ~/Documents/barisign
-sh bin/barisign udid --ca
-```
-
-It writes `BariSign-CA.mobileconfig` and tries to open a preview; share it to the other device with the
-preview's **top-right button → AirDrop** and install it. *(If no preview opens, run
-`view BariSign-CA.mobileconfig` yourself.)*
-
-Then, **on that device**: **Settings → General → About → Certificate Trust Settings → switch ON full
-trust** for the row named **"BariSign CA XX:XX"** (the script prints the exact name).
-
-### 1b — the UDID
-
-```
 sh bin/barisign udid
 ```
 
-Same again with `BariSign-UDID.mobileconfig`: share it, install it. iOS will say the profile is
-**empty** — expected; the UDID has already been sent at that point. a-Shell then shows the model, you
-answer `y`, and the **UDID is printed and remembered** for the portal stage.
+The command prints the steps; in short:
 
-You can confirm the trust at any point with the `…/tls-check` address the script prints: open it in
-**Safari** on the other device and look for a padlock and `TLS OK`.
+1. Open **Safari on this device** and go to **https://median.co/udid**.
+2. Tap the install button, **Allow** the profile download, then finish it:
+   **Settings → General → VPN & Device Management → Downloaded Profile → Median UDID Retrieval →
+   Install → passcode → Install**.
+3. Safari shows the UDID. Tap **Copy UDID to Clipboard**.
+4. Return to a-Shell and **paste it** at the prompt (or skip the prompt entirely:
+   `sh bin/barisign udid 00008110-001a2c3e0e91801e`).
 
-**From then on**, step 1b alone is enough — the CA is never needed again on that device.
+It is remembered for the portal. You can then delete the profile: **Settings → General → VPN & Device
+Management → Median UDID Retrieval → Remove Profile**.
 
-### Cleaning up
+**Privacy:** the profile only reports a hardware ID, your Apple ID is not involved at this stage, and no
+BariSign server exists to receive anything.
 
-On the target: **Settings → General → VPN & Device Management** → remove every *BariSign* entry.
+**If median.co is unreachable**, `sh bin/barisign udid --local` does the same job from this device: it
+serves our own profile over the LAN with a certificate authority we generate. That route needs one extra
+step — share `BariSign-CA.mobileconfig` to the device, install it, and switch its trust ON in
+**Settings → General → About → Certificate Trust Settings** — after which
+`sh bin/barisign udid --local` serves a single "empty" profile that reports the UDID.
 
 ## Step 2 — Sign in to Apple
 

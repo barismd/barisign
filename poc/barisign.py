@@ -4,20 +4,28 @@
 #  STATUS: stage 1 and 2 are verified on device; stage 3 (portal) is written but
 #          untested against Apple; stage 4 (the signer) does not exist yet.
 #
+#  Everything runs on the device the app will be installed on: no second phone
+#  and no computer. The UDID comes from a one-tap profile (median.co), so there is
+#  no local server and no certificate trust to set up.
+#
 #  Every stage shares its result with the next through a small state file, so you
 #  never retype a UDID or an Apple ID.
 #
 #      python3 -u poc/barisign.py            guided run, start to finish
 #      python3 -u poc/barisign.py check      runtime + anisette + Apple TLS
-#      python3 -u poc/barisign.py udid       stage 1 - read the UDID
+#      python3 -u poc/barisign.py udid       stage 1 - read this device's UDID
 #      python3 -u poc/barisign.py login      stage 2 - sign in to Apple
 #      python3 -u poc/barisign.py portal     stage 3 - UDID + certificate + profile
 #      python3 -u poc/barisign.py status     show what is already known
-#      python3 -u poc/barisign.py forget     clear the saved state (not the CA)
+#      python3 -u poc/barisign.py forget     clear the saved state
+#
+#  `udid --local` still works if median.co is unreachable: it serves the profile
+#  from this device over the LAN with a certificate authority of our own.
 # =============================================================================
 
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -193,14 +201,14 @@ def cmd_status(_argv):
     print("  bundle id       : %s" % (state.get("bundle_id") or "(not set)"))
     print("  team            : %s" % (state.get("team_id") or "(not set)"))
     print("  profile         : %s" % (state.get("profile") or "(not downloaded)"))
-    ca_cert, _ca_key = (None, None)
-    try:
-        ca_cert, _ca_key = udid_share.load_or_create_ca()
-        print("  local CA        : \"BariSign CA %s\" stored next to poc/udid_share.py"
-              % udid_share.ca_fingerprint(ca_cert)[:11])
-        print("                    (install and trust it ONCE on the other device)")
-    except Exception:                                         # noqa: BLE001
-        print("  local CA        : (not created yet)")
+    print("  UDID source     : %s" % (state.get("udid_from") or "(unset)"))
+    if os.path.isfile(os.path.join(_HERE, udid_share.CA_CERT_NAME)):
+        try:
+            cert, _key = udid_share.load_or_create_ca()
+            print("  local CA        : \"BariSign CA %s\" (only for 'udid --local')"
+                  % udid_share.ca_fingerprint(cert)[:11])
+        except Exception:                                     # noqa: BLE001
+            pass
     print()
     print("  state file      : %s" % STATE_FILE)
     return 0
@@ -212,29 +220,80 @@ def cmd_forget(_argv):
         print("Forgot the saved Apple ID, UDID, variant and paths.")
     else:
         print("Nothing to forget.")
-    print("The local CA is kept on purpose (so devices stay trusted).")
     return 0
 
 
-def cmd_udid(argv):
-    """Stage 1. `--ca` shares only the one-time certificate authority."""
-    if "--ca" in argv:
-        _hr("stage 1 of 2 - the certificate authority (one time per device)")
-        code = udid_share.main_with(["--ca"])
-        if code == 0:
-            update_state(ca_shared=True)
-        return code
+UDID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{24})$")
 
-    _hr("stage 2 of 2 - read the UDID")
-    code = udid_share.main_with([])
-    if code == 0 and getattr(udid_share, "LAST_UDID", None):
-        update_state(udid=udid_share.LAST_UDID, ca_trusted=True)
-        _hr("saved")
-        print("  UDID %s is now remembered; the portal will use it." % udid_share.LAST_UDID)
-        print("  The certificate authority is trusted on that device now, so future")
-        print("  runs are one profile only.")
-        return 0
-    return code or 1
+
+def normalise_udid(text):
+    """Accept what a UDID page copies: 40 hex characters, or the 8+16 form that
+    A12-and-later devices use, with or without the dash."""
+    cleaned = re.sub(r"[\s\-]", "", (text or "")).lower()
+    if not UDID_PATTERN.match(cleaned):
+        return ""
+    if len(cleaned) == 40:
+        return cleaned
+    return "%s-%s" % (cleaned[:8], cleaned[8:])
+
+
+def cmd_udid(argv):
+    """Stage 1: the UDID of this device.
+
+    The median.co profile is installed with one tap and displays the UDID, so this
+    stage needs no server, no certificate and no second device. `--local` keeps the
+    old path (a local certificate authority) for when median.co cannot be reached.
+    """
+    if "--local" in argv:
+        if "--ca" in argv:
+            _hr("stage 1 - the certificate authority (one time)")
+            code = udid_share.main_with(["--ca"])
+            if code == 0:
+                update_state(ca_shared=True)
+            return code
+        if not load_state().get("ca_shared"):
+            print(" First share the certificate authority, trust it on the device,")
+            print(" then run this again:")
+            print("     sh bin/barisign udid --local --ca")
+            return cmd_udid(["--local", "--ca"])
+        _hr("stage 1 - the UDID (served from this device)")
+        code = udid_share.main_with([])
+        if code == 0 and getattr(udid_share, "LAST_UDID", None):
+            update_state(udid=udid_share.LAST_UDID, udid_from="local")
+            _hr("saved")
+            print("  UDID %s is remembered." % udid_share.LAST_UDID)
+            return 0
+        return code or 1
+
+    _hr("stage 1 - read this device's UDID")
+    typed = [item for item in argv if not item.startswith("-")]
+    udid = normalise_udid(typed[0]) if typed else ""
+    if not udid:
+        print(" 1. Safari on THIS device:   https://median.co/udid")
+        print(" 2. Tap the install button, allow the profile, then finish installing it:")
+        print("      Settings > General > VPN & Device Management > Downloaded Profile")
+        print(" 3. Safari then shows the UDID. Tap 'Copy UDID to Clipboard'.")
+        print(" 4. Come back here and paste it (or:  sh bin/barisign udid <UDID>).")
+        print()
+        print(" Only the hardware ID is read, nothing is signed in, and the profile")
+        print(" can be removed straight afterwards.")
+        print()
+        for _attempt in range(3):
+            typed = _ask("Paste the UDID (blank = stop): ")
+            udid = normalise_udid(typed)
+            if udid:
+                break
+            if not typed:
+                print("Stopped. Nothing was saved.")
+                return 1
+            print("  That does not look like a UDID: 40 hex characters, or 24 with a dash.")
+    if not udid:
+        return 1
+    update_state(udid=udid, udid_from="median")
+    _hr("saved")
+    print("  UDID %s is remembered; the portal will register it." % udid)
+    print("  Remove the profile now if you like: Settings > General > VPN & Device Management.")
+    return 0
 
 
 def cmd_login(argv):
@@ -341,14 +400,10 @@ def cmd_guided(_argv):
     if state.get("udid") and _yes("Reuse the saved UDID %s?" % state["udid"], True):
         print("  reusing the UDID")
     else:
-        if not state.get("ca_shared"):
-            print()
-            print(" First the certificate authority, once per device. When its trust")
-            print(" switch is ON, run this command again and the run continues here.")
-            return cmd_udid(["--ca"])
         code = cmd_udid([])
         if code != 0:
             return code
+        state = load_state()
 
     email = state.get("email") or _ask("Apple ID (email): ")
     if not email:
@@ -384,14 +439,14 @@ def _usage():
     print()
     print("  barisign.py            guided run: check -> variant -> UDID -> Apple -> portal")
     print("  barisign.py check      runtime + crypto + anisette + Apple TLS, nothing else")
-    print("  barisign.py udid       stage 1: read another device's UDID")
+    print("  barisign.py udid       stage 1: this device's UDID (median.co profile)")
     print("  barisign.py login      stage 2: sign in to Apple with a free Apple ID")
     print("  barisign.py portal     stage 3: register the UDID + certificate + profile")
     print("  barisign.py status     what is already saved")
-    print("  barisign.py forget     clear the saved state (keeps the local CA)")
+    print("  barisign.py forget     clear the saved state")
     print()
     print("Common:  barisign.py check | udid | login | portal | status | forget")
-    print("Stage 1 also takes --udid-only (after the CA is trusted once).")
+    print("UDID:    'udid <UDID>' stores a pasted one, 'udid --local' serves it locally.")
     print("The portal takes --bundle-id to skip the variant menu.")
 
 
