@@ -44,7 +44,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -87,9 +87,34 @@ def load_variants():
 # small helpers
 # ---------------------------------------------------------------------------
 
-def _hr(label):
+CLEAR = "\033[2J\033[H"
+BAR_WIDTH = 10
+
+
+def _stage(title):
+    """Clean screen, then the stage title. One screen per stage."""
+    sys.stdout.write(CLEAR)
+    sys.stdout.flush()
+    print("BariSign %s" % VERSION)
     print()
-    print("== %s ==" % label.upper())
+    print("== %s ==" % title.upper())
+    print()
+
+
+def _step(index, total, label, keep=False):
+    """One progress line, rewritten in place as the stage advances."""
+    filled = int(BAR_WIDTH * index / total)
+    line = "  [%s%s] %s" % ("#" * filled, "." * (BAR_WIDTH - filled), label[:20])
+    sys.stdout.write("\r" + line.ljust(38))
+    sys.stdout.flush()
+    if keep:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
+def _result(label, text):
+    print()
+    print("%s  %s" % (label, text))
 
 
 def _ask(prompt, default=None):
@@ -149,11 +174,7 @@ def _preflight_apple(gs):
     Probing more identities would only add requests, not information.
     """
     status, note = _bag_probe(gs, signin.GSA_MAC_CLIENT_INFO, signin.GSA_USER_AGENT)
-    if status == 200:
-        print("  apple      reachable")
-        return True
-    print("  apple      HTTP %s%s" % (status, (" - " + note) if note else ""))
-    return False
+    return status == 200
 
 
 def _sign_in(email, preferred=None, use_clipboard=False):
@@ -166,7 +187,7 @@ def _sign_in(email, preferred=None, use_clipboard=False):
     refused the identity: forget it and try the next server. The password is asked
     once, after Apple has answered, and never stored.
     """
-    _hr("Apple sign-in")
+    _stage("Apple sign-in")
     state_path = os.path.join(STATE_DIR, "anisette.json")
     candidates = _anisette_order([preferred] if preferred else [])
     last_error = None
@@ -174,14 +195,20 @@ def _sign_in(email, preferred=None, use_clipboard=False):
     password = None
 
     def ask_code(label):
-        try:
-            entered = input("%s: " % label)
-        except EOFError:
-            entered = ""
+        """The 2FA code is not a secret: read it visibly, with our own echo, so it
+        works even when the terminal's echo was left off by the password prompt."""
+        prompt = "  %s: " % label
+        if sys.stdin.isatty():
+            entered = poc_login._masked_line(prompt, mask=False)
+        else:
+            try:
+                entered = input(prompt)
+            except EOFError:
+                entered = ""
         return "".join(ch for ch in entered if ch.isdigit())
 
     for index, url in enumerate(candidates, 1):
-        print("  anisette   %s" % url.replace("https://", ""))
+        _step(1, 3, "anisette: %s" % url.split("//")[-1].split(".")[0])
         try:
             anisette, gs = connect_anisette(url, state_path)
         except Fail as exc:
@@ -190,8 +217,10 @@ def _sign_in(email, preferred=None, use_clipboard=False):
             continue
 
 
-        if not _preflight_apple(gs):
-            print("  ! apple refuses this identity; next server")
+        if _preflight_apple(gs):
+            _step(2, 3, "apple reachable")
+        else:
+            _step(2, 3, "apple refused; next server")
             saw_503 = True
             last_error = Fail("HTTP 503 from Apple's edge")
             _forget_anisette(anisette, state_path)
@@ -203,18 +232,13 @@ def _sign_in(email, preferred=None, use_clipboard=False):
             if password is None and use_clipboard:
                 password = poc_login._clipboard_text().strip()
                 if not password:
-                    raise Fail("The clipboard is empty. Copy the password first, then run\n"
-                               "    this again (or drop --use-clipboard to type it).")
-                print("  password             : from the clipboard, %s"
-                      % poc_login._password_diagnostics(password))
+                    raise Fail("the clipboard is empty: copy the password first")
+                _step(3, 3, "sign in (password from the clipboard)", keep=True)
             if password is None:
-                password = poc_login._read_password("Password: ")
+                _step(3, 3, "sign in", keep=True)
+                password = poc_login._read_password("  Password: ")
                 if not password:
                     raise Fail("no password")
-                print("  password   %s" % poc_login._password_diagnostics(password))
-                if any(ch.isupper() for ch in email):
-                    print("  note: this path treats the Apple ID case-sensitively;")
-                    print("        it sent %r" % email)
             try:
                 account.login(password, ask_code)
                 break
@@ -229,7 +253,9 @@ def _sign_in(email, preferred=None, use_clipboard=False):
                     refused_identity = True
                     break          # keep the password: it was never the problem
                 if "-22406" in message or "correct password" in message.lower():
-                    print("  ! wrong password (-22406); apple ID was %r" % email)
+                    print("  ! wrong password (-22406)")
+                    print("    apple ID sent: %r" % email)
+                    print("    password: %s" % poc_login._password_diagnostics(password))
                     password = None
                     if attempt < 2:
                         print("  retry %d/3" % (attempt + 2))
@@ -238,6 +264,7 @@ def _sign_in(email, preferred=None, use_clipboard=False):
         if refused_identity:
             continue
         password = None
+        _step(3, 3, "signed in", keep=True)
         return account
 
     if not saw_503:
@@ -272,12 +299,13 @@ def _forget_anisette(anisette, state_path):
 
 def _portal(account, email, udid, bundle_id, device_name, app_name):
     """Register the device, get a certificate and a provisioning profile."""
-    _hr("developer portal")
     started = time.time()
     token, adsid = account.app_token("xcode.auth")
     session = DeveloperSession(account, token, adsid)
 
+    _step(1, 5, "team")
     team = pick_team(session)
+    _step(2, 5, "device")
     ensure_device(session, team, udid, device_name)
 
     if not bundle_id:
@@ -285,11 +313,14 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
     # state keeps the *full* identifier, so never append the team twice
     suffix = "." + team["teamId"]
     full_bundle_id = (bundle_id[:-len(suffix)] if bundle_id.endswith(suffix) else bundle_id) + suffix
+    _step(3, 5, "app id")
     app_id = ensure_app_id(session, team, full_bundle_id, app_name)
 
     key_path = ensure_private_key(email)
+    _step(4, 5, "certificate")
     cert_path, reused = obtain_certificate(session, team, key_path, STATE_DIR)
 
+    _step(5, 5, "profile", keep=True)
     profile = download_profile(session, team, app_id)
     profile_path = os.path.join(STATE_DIR, "profile.mobileprovision")
     with open(profile_path, "wb") as handle:
@@ -302,7 +333,6 @@ def _portal(account, email, udid, bundle_id, device_name, app_name):
         expires = parsed.get("ExpirationDate", "?")
     except Exception:                                         # noqa: BLE001
         pass
-    _hr("portal")
     print("  team      %s (%s)" % (team.get("name", "?"), team["teamId"]))
     print("  app id    %s" % full_bundle_id)
     print("  cert      %s" % ("reused" if reused else "created"))
@@ -331,8 +361,7 @@ def cmd_version(_argv):
     path = os.path.abspath(__file__)
     with open(path, "rb") as handle:
         digest = hashlib.sha256(handle.read()).hexdigest()[:12]
-    _hr("version")
-    print("  BariSign  %s" % VERSION)
+    _stage("Version")
     print("  file      %s" % path)
     print("  sha256    %s" % digest)
     return 0
@@ -348,7 +377,7 @@ def _have_command(name):
 
 def cmd_status(_argv):
     state = load_state()
-    _hr("status")
+    _stage("Status")
     rows = (("Apple ID", state.get("email")), ("UDID", state.get("udid")),
             ("variant", state.get("variant")), ("bundle", state.get("bundle_id")),
             ("team", state.get("team_id")), ("cert", state.get("cert")),
@@ -441,7 +470,7 @@ def _open_in_safari(url):
 
 def cmd_udid(argv):
     """This device's UDID: Safari opens, the value is pasted back."""
-    _hr("udid")
+    _stage("UDID")
     typed = [item for item in argv if not item.startswith("-")]
     udid = extract_udid(typed[0]) if typed else ""
     if not udid:
@@ -451,6 +480,7 @@ def cmd_udid(argv):
         print("  3  come back here")
         print()
         if "--no-open" not in argv:
+            _step(1, 3, "safari", keep=True)
             _press_return("  Return to open Safari: ")
             if _open_in_safari(UDID_URL) is not True:
                 print("  open it yourself: %s" % UDID_URL)
@@ -462,6 +492,7 @@ def cmd_udid(argv):
                 if _yes("  use it?", True):
                     udid = found
                     break
+            _step(2, 3, "read the UDID", keep=True)
             typed = _ask("  UDID: ")
             udid = extract_udid(typed)
             if udid:
@@ -473,8 +504,7 @@ def cmd_udid(argv):
     if not udid:
         return 1
     update_state(udid=udid)
-    print()
-    print("UDID  %s  saved" % udid)
+    _result("UDID", "%s saved" % udid)
     return 0
 
 
@@ -528,8 +558,7 @@ def cmd_login(argv):
         name = (account.spd or {}).get("fn", "") if getattr(account, "spd", None) else ""
     except Exception:                                         # noqa: BLE001
         name = ""
-    print()
-    print("LOGIN  ok%s" % (("  " + name) if name else ""))
+    _result("LOGIN", "ok%s" % (("  " + name) if name else ""))
     return 0
 
 
@@ -552,7 +581,7 @@ def cmd_portal(argv):
     if not bundle_id:
         variants = load_variants()
         if variants:
-            _hr("variant")
+            _stage("Variant")
             for index, item in enumerate(variants, 1):
                 print("  %d  %s" % (index, item["name"]))
             choice = _ask("  choose 1-%d: " % len(variants), "1")
@@ -571,12 +600,12 @@ def cmd_portal(argv):
         udid = load_state().get("udid", "")
 
     account = _sign_in(email)
+    _stage("Portal")
     result = _portal(account, email, udid, bundle_id, "BariSign device", "BariSign")
     update_state(email=email, udid=udid, variant=variant or state.get("variant", ""),
                  bundle_id=result["bundle_id"], team_id=result["team_id"],
                  profile=result["profile"], key=result["key"], cert=result["cert"])
-    print()
-    print("PORTAL  ok")
+    _result("PORTAL", "ok")
     return 0
 
 
@@ -591,7 +620,7 @@ def cmd_guided(_argv):
 
     variants = load_variants()
     if variants:
-        _hr("variant")
+        _stage("Variant")
         for index, item in enumerate(variants, 1):
             print("  %d  %s" % (index, item["name"]))
         choice = _ask("  choose 1-%d: " % len(variants), "1")
@@ -618,8 +647,7 @@ def cmd_guided(_argv):
                      "BariSign device", "BariSign")
     update_state(bundle_id=result["bundle_id"], team_id=result["team_id"],
                  profile=result["profile"], key=result["key"], cert=result["cert"])
-    print()
-    print("PORTAL  ok")
+    _result("PORTAL", "ok")
     return 0
 
 

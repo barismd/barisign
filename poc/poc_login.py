@@ -391,12 +391,11 @@ def _restore_terminal(fd, saved):
                 return True
         except Exception:                                     # noqa: BLE001
             return False
-    print("WARNING: echo is still off after restoring the terminal.")
-    print("         Quit a-Shell from the app switcher and reopen it.")
+    print("! terminal echo stayed off: reopen a-Shell when you are done")
     return False
 
 
-def _masked_line(prompt):
+def _masked_line(prompt, mask=True):
     """Read a password and show '*' for each character. The default.
 
     Blocking, one byte at a time, with no idle timeout: the previous version gave
@@ -450,7 +449,9 @@ def _masked_line(prompt):
                 sys.stdout.flush()
                 continue
             buf.append(byte)
-            sys.stdout.write("*")
+            # Echoing ourselves is the point: it works even when the terminal
+            # itself has echo switched off, which is what killed the 2FA prompt.
+            sys.stdout.write("*" if mask else bytes([byte]).decode("utf-8", "replace"))
             sys.stdout.flush()
         sys.stdout.write("\n")
         sys.stdout.flush()
