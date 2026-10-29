@@ -28,24 +28,29 @@ mkdir -p "$DIR/poc" "$DIR/bin" "$DIR/third_party/sideinstaller" \
 }
 cd "$DIR" || exit 1
 
-# The web (raw) URLs sit behind a CDN that can serve a stale copy for a few
-# minutes after an update, and the API is cached too, so every request carries a
-# cache-buster. A failed download falls back to the web URL.
+# GitHub caches both the web (raw) URLs and the API for a minute or two after a
+# push, and the unauthenticated API also rate-limits. Measure, not guess: the raw
+# host with a no-cache header is fresh in practice, so try it first and keep the
+# API as the fallback. Every request carries a cache-buster as well.
+RAW="https://raw.githubusercontent.com/barismd/barisign/main"
+
 fetch() {   # fetch <file-in-repo> <destination>
     printf '  %-40s' "$2"
-    tmp="$2.api.tmp"
-    if curl -sSL "$API/$1?ref=main&_=$STAMP" -o "$tmp" 2>/dev/null && [ -s "$tmp" ] \
-       && python3 -c "import base64,json;d=json.load(open('$tmp'));open('$2','wb').write(base64.b64decode(d['content']))" 2>/dev/null \
-       && [ -s "$2" ]; then
-        rm -f "$tmp"
+    if curl -sSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "$RAW/$1?cb=$STAMP" -o "$2" 2>/dev/null && [ -s "$2" ]; then
         echo "ok"
         return 0
     fi
-    rm -f "$tmp"
-    if curl -sSL "$BASE/$1?raw=true&_=$STAMP" -o "$2" 2>/dev/null && [ -s "$2" ]; then
-        echo "ok (web fallback)"
+    tmp="$2.api.tmp"
+    if curl -sSL -H 'Cache-Control: no-cache' "$API/$1?ref=main&cb=$STAMP" -o "$tmp" 2>/dev/null \
+       && [ -s "$tmp" ] \
+       && python3 -c "import base64,json;d=json.load(open('$tmp'));open('$2','wb').write(base64.b64decode(d['content']))" 2>/dev/null \
+       && [ -s "$2" ]; then
+        rm -f "$tmp"
+        echo "ok (API fallback)"
         return 0
     fi
+    rm -f "$tmp"
     echo "FAILED"
     return 1
 }
@@ -84,8 +89,11 @@ check_compiles() {
 }
 
 # Compiling is not enough: a half-stale set compiles and then fails on import.
+# The wrappers are shell, so check their syntax too.
 works() {
-    python3 poc/barisign.py --help >/dev/null 2>&1
+    python3 poc/barisign.py --help >/dev/null 2>&1 \
+        && python3 poc/poc_portal.py --help >/dev/null 2>&1 \
+        && sh -n bin/barisign && sh -n bin/login && sh -n bin/portal && sh -n bin/update
 }
 
 download_all
