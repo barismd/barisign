@@ -20,6 +20,7 @@ import json
 import os
 import threading
 import re
+import shlex
 import sys
 import time
 import traceback
@@ -54,7 +55,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -492,8 +493,9 @@ def cmd_status(_argv):
             ("variant", state.get("variant")), ("release", state.get("asset_version")),
             ("bundle", state.get("bundle_id")), ("team", state.get("team_id")),
             ("cert", state.get("cert")), ("profile", state.get("profile")),
-            ("ipa", state.get("ipa")), ("signed", state.get("signed_ipa")),
-            ("zip", state.get("zip")))
+            ("ipa", _display_path(state["ipa"]) if state.get("ipa") else None),
+            ("signed", _display_path(state["signed_ipa"]) if state.get("signed_ipa") else None),
+            ("zip", _display_path(state["zip"]) if state.get("zip") else None))
     for label, value in rows:
         print("  %-9s %s" % (label, value or "-"))
     return 0
@@ -734,6 +736,29 @@ def cmd_portal(argv):
     return 0
 
 
+def _display_path(path):
+    """The path as the Files app shows it, not the long container path."""
+    docs = os.path.join(os.path.expanduser("~"), "Documents")
+    full = os.path.abspath(path)
+    if full == docs or full.startswith(docs + os.sep):
+        return "Device/a-Shell/" + os.path.relpath(full, docs).replace(os.sep, "/")
+    return path
+
+
+def _open_zip_preview(path):
+    """Enter opens a-Shell's preview, which has the share sheet for AirDrop."""
+    if not sys.stdin.isatty():
+        return
+    _press_return("  return  open the zip preview: ")
+    # On other systems `view` is often vim; only a-Shell's preview is wanted.
+    a_shell = (sys.platform.startswith(("ios", "darwin"))
+               or os.environ.get("TERM_PROGRAM", "").lower().startswith("a-shell"))
+    if _have_command("view") and a_shell and not os.environ.get("BARISIGN_NO_VIEW"):
+        os.system("view %s" % shlex.quote(path))
+    else:
+        print("  view  %s" % _display_path(path))
+
+
 _SIGN_STEPS = {"read": (1, 5, "ipa"), "open": (2, 5, "unpack"),
                "prepare": (2, 5, "prepare"), "sign": (3, 5, "sign"),
                "check": (4, 5, "verify"), "write": (4, 5, "package"),
@@ -834,8 +859,10 @@ def _sign_now(ipa, saved, argv):
     update_state(ipa=ipa, signed_ipa=result["ipa"], zip=result["zip"])
     _result("SIGN", "ok  %s" % os.path.basename(result["ipa"]))
     if result["zip"]:
-        print("  zip   %s" % result["zip"])
-    print("  next  airDrop the zip, unzip it, airDrop the .ipa back")
+        print("  zip   %s" % _display_path(result["zip"]))
+    print("  next  airDrop the zip, unzip it, airDrop the .ipa back to this iPhone")
+    if result["zip"]:
+        _open_zip_preview(result["zip"])
     return result
 
 
@@ -914,6 +941,25 @@ COMMANDS = {
 }
 
 
+_OPTIONS = {
+    "login": (
+        ("--use-clipboard", "take the password from the clipboard, no typing"),
+        ("--server URL", "pin an anisette server"),
+    ),
+    "portal": (
+        ("--udid UDID", "register another device too, e.g. an iPad"),
+    ),
+    "sign": (
+        ("--ipa FILE", "sign this file instead of downloading"),
+        ("--out FILE", "write the signed IPA here"),
+        ("--no-zip", "do not package the .zip"),
+    ),
+    "udid": (
+        ("--no-open", "do not open Safari"),
+    ),
+}
+
+
 def _usage():
     print("BariSign %s" % VERSION)
     print()
@@ -927,10 +973,17 @@ def _usage():
     print("  sh bin/barisign version   which copy is running")
     print("  sh bin/barisign forget    clear the saved state")
     print()
-    print("  login:  --use-clipboard (no typing)   --server URL (pin anisette)")
-    print("  portal: --udid UDID (register another device, e.g. an iPad)")
-    print("  sign:   --ipa FILE (skip the download)   --out FILE   --no-zip")
-    print("  udid:   --no-open (do not open Safari)")
+    print("  options: sh bin/barisign <command> help")
+
+
+def _options(command):
+    print("BariSign %s" % VERSION)
+    print()
+    print("  sh bin/barisign %s" % command)
+    for flag, text in _OPTIONS[command]:
+        print()
+        print("    %s" % flag)
+        print("        %s" % text)
 
 
 def main(argv):
@@ -938,6 +991,9 @@ def main(argv):
         return cmd_guided([])
     if argv[0] in ("-h", "--help", "help"):
         _usage()
+        return 0
+    if len(argv) >= 2 and argv[1] == "help" and argv[0] in _OPTIONS:
+        _options(argv[0])
         return 0
 
     command = argv[0]

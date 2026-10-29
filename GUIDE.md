@@ -71,8 +71,16 @@ sh bin/barisign sign              # download (unless --ipa), sign, zip
 sh bin/barisign sign --ipa X.ipa  # sign a file you already have
 ```
 
-AirDrop that `.zip` to any second device, unzip it there, and AirDrop the `.ipa` back — iOS installs an
-AirDropped IPA by itself. Untested on a device: this is the next thing to try.
+After the last line, press **Return**: a-Shell opens the zip's preview, which has the share button, so
+the AirDrop is one tap. Send the `.zip` to any second device, unzip it there, and AirDrop the `.ipa` back —
+iOS installs an AirDropped IPA by itself.
+
+The app installs **only on the device whose UDID is in the profile** (the phone you ran this on): a
+development-signed app is refused elsewhere, with a different Apple ID or not. The second device is only
+a courier. To use the app on another device, register that UDID first (`sh bin/barisign portal --udid UDID`)
+and sign again.
+
+Untested on a device: this is the next thing to try.
 
 ---
 

@@ -49,7 +49,7 @@ sh bin/barisign --help   # every command
 | **iOS** | **27 or newer** (hard requirement) |
 | Apple account | a **free** Apple ID — no paid Developer Program membership |
 | The device that gets the app | **a-Shell** (free, App Store) — every step runs here |
-| A second device | only for the **AirDrop round trip** (any iPhone, iPad or Mac): iOS cannot AirDrop to itself, so the finished `.zip` goes out and comes back |
+| A second device | only for the **AirDrop round trip** (any iPhone, iPad or Mac): iOS cannot AirDrop to itself, so the finished `.zip` goes out and comes back. **It never installs the app** — the profile names the UDID of the phone you signed on, and iOS refuses development-signed apps on any other device |
 | Computer | **none** |
 | Network | internet |
 
