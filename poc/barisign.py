@@ -40,7 +40,13 @@ sys.path.insert(0, _HERE)
 
 import poc_login                                              # noqa: E402  (sets up TLS trust)
 import signin                                                 # noqa: E402
-import portal                                                 # noqa: E402
+try:
+    import portal                                             # noqa: E402
+except ImportError as exc:                                    # noqa: BLE001
+    print("Could not import the vendored developer-portal code: %s" % exc)
+    print("third_party/sideinstaller/portal.py is missing or incomplete.")
+    print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
+    sys.exit(2)
 from signin import AppleAccount, Fail, connect_anisette        # noqa: E402
 from portal import (DeveloperSession, ensure_app_id, ensure_device,               # noqa: E402
                     ensure_private_key, obtain_certificate, pick_team,

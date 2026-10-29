@@ -53,9 +53,10 @@ try:
     from signin import (Fail, SRP_N, SRP_g, AppleAccount, aes_cbc_decrypt,
                         ask, connect_anisette)
 except ImportError as exc:                                    # noqa: PERF203
-    print("Could not import signin.py: %s" % exc)
-    print("Download it next to this file (from the repository):")
-    print("  curl -sL <REPO>/third_party/sideinstaller/signin.py -o signin.py")
+    print("Could not import the vendored sign-in stack: %s" % exc)
+    print("third_party/sideinstaller/signin.py is missing or incomplete.")
+    print("Fix it by re-running the installer in the BariSign folder:")
+    print("  sh install.sh")
     sys.exit(2)
 
 # a-Shell only allows writes under ~/Documents, and we keep everything inside the
