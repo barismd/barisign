@@ -49,7 +49,10 @@ It prints the steps, waits for you to **press Return**, and then **opens Safari 
 1. Read the steps it prints, press **Return** — Safari opens.
 2. Install the profile it offers (Settings → General → VPN & Device Management → Downloaded Profile).
 3. Safari shows your UDID — tap **Copy UDID to Clipboard**.
-4. Back in a-Shell, paste it at the prompt.
+4. Back in a-Shell, just press **Return**: the command reads the UDID **from the clipboard**
+   by itself (that is what the *Copy UDID to Clipboard* button is for) and shows what it found.
+   If you prefer, paste it at the prompt instead — the checker is forgiving: escape codes,
+   labels, quotes and spaces are all handled.
 5. Remove the profile again: Settings → General → VPN & Device Management → Remove Profile.
 
 In a hurry? `sh bin/barisign udid 00008110-001a2c3e0e91801e` stores a UDID you already have, and

@@ -230,6 +230,45 @@ UDID_URL = "https://median.co/udid"
 UDID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{24})$")
 
 
+ANSI_ESCAPES = re.compile(r"\x1b\[[0-9;?]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]")
+
+
+def extract_udid(text):
+    """Find a UDID inside whatever arrived.
+
+    a-Shell may hand us a bracketed paste ("\x1b[200~…\x1b[201~"), a labelled line
+    ("UDID: …"), quotes, or plain text. Rather than rejecting all of that, strip the
+    terminal noise and pick the UDID out of it. Returns the canonical form or "".
+    """
+    cleaned = ANSI_ESCAPES.sub("", text or "")
+    cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch in "-_ ")
+    # "UDID: 00008110 001a …" — drop the label, then glue groups of hex together
+    unlabelled = re.sub(r"^\s*udid\s*[:=]?\s*", "", cleaned, flags=re.IGNORECASE)
+    squashed = unlabelled
+    while True:
+        tighter = re.sub(r"(?<=[0-9a-fA-F])[ \-_](?=[0-9a-fA-F])", "", squashed)
+        if tighter == squashed:
+            break
+        squashed = tighter
+    for candidate in (cleaned, unlabelled, squashed):
+        for pattern in (r"(?<![0-9a-fA-F])[0-9a-fA-F]{40}(?![0-9a-fA-F])",
+                        r"(?<![0-9a-fA-F])[0-9a-fA-F]{8}-[0-9a-fA-F]{16}(?![0-9a-fA-F])",
+                        r"(?<![0-9a-fA-F])[0-9a-fA-F]{24}(?![0-9a-fA-F])"):
+            found = re.search(pattern, candidate)
+            if found:
+                return normalise_udid(found.group(0))
+    return ""
+
+
+def _clipboard_text():
+    """What is on the iOS clipboard, if a-Shell exposes it (pbpaste)."""
+    try:
+        with os.popen("pbpaste 2>/dev/null") as handle:
+            return handle.read()
+    except Exception:                                         # noqa: BLE001
+        return ""
+
+
 def normalise_udid(text):
     """Accept what a UDID page copies: 40 hex characters, or the 8+16 form that
     A12-and-later devices use, with or without the dash."""
@@ -243,6 +282,8 @@ def normalise_udid(text):
 
 def _press_return(prompt):
     """Wait for Return. a-Shell's own reader, so the terminal stays usable."""
+    if not sys.stdin.isatty():
+        return ""            # piped input: do not swallow the next line
     entered, worked = poc_login._read_line(prompt, mask=False, idle_limit=600.0)
     if not worked:
         try:
@@ -273,7 +314,7 @@ def cmd_udid(argv):
     """
     _hr("stage 1 - read this device's UDID")
     typed = [item for item in argv if not item.startswith("-")]
-    udid = normalise_udid(typed[0]) if typed else ""
+    udid = extract_udid(typed[0]) if typed else ""
     if not udid:
         print(" 1. Safari on THIS device:   https://median.co/udid")
         print(" 2. Tap the install button, allow the profile, then finish installing it:")
@@ -296,15 +337,28 @@ def cmd_udid(argv):
                 print(" Safari not opened (BARISIGN_NO_OPEN). The address is:")
                 print("   %s" % UDID_URL)
             print()
-        for _attempt in range(3):
-            typed = _ask("Paste the UDID (blank = stop): ")
-            udid = normalise_udid(typed)
+        for attempt in range(3):
+            if attempt == 0:
+                from_clipboard = extract_udid(_clipboard_text())
+                if from_clipboard:
+                    print(" The clipboard already holds a UDID: %s" % from_clipboard)
+                    if _yes(" Use this one?", True):
+                        udid = from_clipboard
+                        break
+                    print(" Okay, type or paste the right one.")
+            try:
+                typed = input(" Paste the UDID (blank = stop): ")
+            except EOFError:
+                typed = ""
+            udid = extract_udid(typed)
             if udid:
+                print(" Read: %s" % udid)
                 break
-            if not typed:
+            if not typed.strip():
                 print("Stopped. Nothing was saved.")
                 return 1
-            print("  That does not look like a UDID: 40 hex characters, or 24 with a dash.")
+            print(" Could not find a UDID in: %r" % (typed[:120],))
+            print(" A UDID is 40 hex characters, or 24 like 00008110-001a2c3e0e91801e.")
     if not udid:
         return 1
     update_state(udid=udid)

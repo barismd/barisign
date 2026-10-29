@@ -487,7 +487,7 @@ def _read_password(prompt):
     if worked:
         return secret
 
-    print("(masking is not supported here — type it again, it will be visible)")
+    print("(this terminal cannot hide typing, so what you type will be visible)")
     try:
         return input("")
     except EOFError:
@@ -499,8 +499,7 @@ def _login(email, server):
     print("This PoC only writes inside: %s" % POC_STATE)
     print("Apple ID : %s" % email)
     print("SRP-6a: the password becomes a proof; it is never sent and never saved.")
-    print("Your typing is masked with '*' where a-Shell allows it. If masking is")
-    print("not supported you will be told, and it will be visible instead.")
+    print("What you type shows as * — the password is not stored or sent.")
     print()
     print("If this account uses two-factor authentication, Apple will ask for a")
     print("code and a prompt will appear here.")
