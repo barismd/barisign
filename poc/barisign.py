@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.4.4"
+VERSION = "0.4.5"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -165,7 +165,7 @@ def _preflight_apple(gs):
     return False
 
 
-def _sign_in(email, preferred=None):
+def _sign_in(email, preferred=None, use_clipboard=False):
     """Anisette, then Apple, then the password — never the other way round.
 
     Apple's October 2026 rules (verified against release notes, issue trackers and
@@ -210,6 +210,13 @@ def _sign_in(email, preferred=None):
         account = AppleAccount(email, gs, anisette)
         refused_identity = False
         for attempt in range(3):
+            if password is None and use_clipboard:
+                password = poc_login._clipboard_text().strip()
+                if not password:
+                    raise Fail("The clipboard is empty. Copy the password first, then run\n"
+                               "    this again (or drop --use-clipboard to type it).")
+                print("  password             : from the clipboard, %s"
+                      % poc_login._password_diagnostics(password))
             if password is None:
                 password = poc_login._read_password("Password: ")
                 if not password:
@@ -616,6 +623,7 @@ def cmd_login(argv):
     anisette server instead of the built-in Mac-first order.
     """
     preferred = argv_get(argv, "--server")
+    use_clipboard = "--use-clipboard" in argv
     if "--probe" in argv:
         return _probe_apple(preferred)
     positional = [item for item in argv if not item.startswith("-")
@@ -624,7 +632,7 @@ def cmd_login(argv):
     if not email:
         print("No Apple ID given.")
         return 2
-    account = _sign_in(email, preferred)
+    account = _sign_in(email, preferred, use_clipboard)
     _hr("result")
     print("LOGIN: ok. Nothing was registered and nothing was installed.")
     update_state(email=email)
@@ -770,6 +778,7 @@ def _usage():
     print("  barisign.py login      stage 2: sign in to Apple with a free Apple ID")
     print("  barisign.py login --probe   anisette + Apple only (no password, no account)")
     print("  login --server URL          pin an anisette server (default: Mac-first order)")
+    print("  login --use-clipboard       take the password from the clipboard: no typing at all")
     print("  barisign.py portal     stage 3: register the UDID + certificate + profile")
     print("  barisign.py status     what is already saved")
     print("  barisign.py version    which copy is running (version + fingerprint)")

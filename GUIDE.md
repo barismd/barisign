@@ -79,8 +79,10 @@ BariSign never changes terminal modes:
 1. **The clipboard first.** Copy the password (password manager, Notes) and press Return when asked — no
    keystrokes at all, and nothing is echoed anywhere.
 2. Otherwise a **normal line**, erased from the screen immediately after Return.
-3. `BARISIGN_MASK_PASSWORD=1 sh bin/barisign login` brings back the asterisk reader for anyone who wants
-   it, with the warning that it is the mode that can leave the terminal stuck (recover with `newWindow`).
+3. `sh bin/barisign login --use-clipboard` skips even the questions: copy the password, run it, done.
+4. `BARISIGN_MASK_PASSWORD=1 sh bin/barisign login` brings back the asterisk reader for anyone who wants
+   it, with the warning that it is the mode that can leave the terminal stuck (recover with `newWindow`,
+   or quit a-Shell from the app switcher if the screen is already garbled).
 
 The order matters: it first proves an **anisette** server works and that **Apple's edge
 answers**, and only then asks for the password:
