@@ -96,22 +96,27 @@ works() {
         && sh -n bin/barisign && sh -n bin/login && sh -n bin/portal && sh -n bin/update
 }
 
-download_all
-check_compiles
-
-if [ "$fail" -ne 0 ] || ! works; then
-    echo
-    echo "The download looked stale or incomplete (GitHub caches for a minute)."
-    echo "Retrying once..."
-    sleep 10
+attempt=1
+while [ "$attempt" -le 3 ]; do
     download_all
     check_compiles
-fi
+    if [ "$fail" -eq 0 ] && works; then
+        break
+    fi
+    if [ "$attempt" -lt 3 ]; then
+        echo
+        echo "GitHub is still handing out the previous copy (its cache lags a"
+        echo "minute or two after a release). Retrying in 20 seconds..."
+        sleep 20
+    fi
+    attempt=$((attempt + 1))
+done
 
 echo
 if [ "$fail" -ne 0 ] || ! works; then
-    echo "Something did not download correctly. Check the network and run this"
-    echo "script again; nothing here is destructive."
+    echo "The download did not come out right. Nothing here is destructive, so"
+    echo "just run this script again in a minute. If it keeps failing, check the"
+    echo "network (Safari should open github.com)."
     exit 1
 fi
 
