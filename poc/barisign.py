@@ -53,7 +53,7 @@ from portal import (DeveloperSession, ensure_app_id, ensure_device,             
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist)
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -207,23 +207,40 @@ def _sign_in(email, preferred=None):
             _forget_anisette(anisette, state_path)
             continue
 
-        if password is None:
-            password = poc_login._read_password("Password (not shown, not stored): ")
-            if not password:
-                raise Fail("No password entered.")
-
         account = AppleAccount(email, gs, anisette)
-        try:
-            account.login(password, ask_code)
-        except Fail as exc:
-            last_error = exc
-            print("    %s" % exc)
-            if not _identity_refused(str(exc)):
+        refused_identity = False
+        for attempt in range(3):
+            if password is None:
+                password = poc_login._read_password("Password (not shown, not stored): ")
+                if not password:
+                    raise Fail("No password entered.")
+                print("  password             : %s" % poc_login._password_diagnostics(password))
+                if any(ch.isupper() for ch in email):
+                    print("  note: this path treats the Apple ID case-sensitively;")
+                    print("        it sent %r" % email)
+            try:
+                account.login(password, ask_code)
+                break
+            except Fail as exc:
+                last_error = exc
+                message = str(exc)
+                print("    %s" % message)
+                if _identity_refused(message):
+                    print("    Apple refused this identity (-80045/-80046/503). Forgetting")
+                    print("    it and trying the next anisette server…")
+                    saw_503 = True
+                    _forget_anisette(anisette, state_path)
+                    refused_identity = True
+                    break          # keep the password: it was never the problem
+                if "-22406" in message or "correct password" in message.lower():
+                    print("    Apple rejected the password (-22406). It saw the Apple ID as %r."
+                          % email)
+                    password = None
+                    if attempt < 2:
+                        print("    Try again (%d of 3)." % (attempt + 2))
+                        continue
                 raise
-            print("    Apple refused this identity (-80045/-80046/503). Forgetting")
-            print("    it and trying the next anisette server…")
-            saw_503 = True
-            _forget_anisette(anisette, state_path)
+        if refused_identity:
             continue
         password = None
         print("  signed in via %s" % url)

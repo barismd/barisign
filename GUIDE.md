@@ -72,9 +72,9 @@ Either way it ends with the UDID saved; `sh bin/barisign status` shows it.
 sh bin/barisign login
 ```
 
-No prompt in this project changes the terminal's modes any more — that is what used to leave a-Shell
-with echo off (unable to type, unable to press Return). The one price: **the password is visible while
-you type it.** It is never stored.
+The password is masked: only the terminal's ECHO bit is switched off, canonical mode is left alone, and
+the setting is restored **and verified** immediately afterwards. If a terminal still misbehaves, run
+`BARISIGN_SHOW_PASSWORD=1 sh bin/barisign login` to type it visibly instead.
 
 The order matters: it first proves an **anisette** server works and that **Apple's edge
 answers**, and only then asks for the password:
@@ -154,6 +154,7 @@ the finished app travels:
 | What you see | What it means |
 |---|---|
 | `PASS - safe to continue` | runtime, crypto, anisette and Apple's TLS all work |
+| login: `-22406` — *"Enter the correct password"* | Apple thinks the password is wrong, not the identity. BariSign prints the Apple ID exactly as it sent it (case matters) and the password's length, stray spaces and non-ASCII characters, then lets you retry twice. Check the keyboard's autocorrect and the Apple ID's capitalisation |
 | login: `-80045` / `-80046` / `HTTP 503` on every server | Apple is refusing the *identity*, not the password. BariSign already forgets it and tries the next Mac server; if all fail, wait and retry, or pin one: `sh bin/barisign login --server https://ani.jkcoxson.com` |
 | login: `HTTP 503 … Service Temporarily Unavailable` | Apple's edge is refusing before it reads the account. Nothing about the password. Wait 10–15 minutes without retrying, turn off any VPN (LocalDevVPN/StosVPN) first, then check with `sh bin/barisign login --probe` (no password) and run `login` once it passes |
 | anisette: one server fails, the next works | normal; the working one is remembered |

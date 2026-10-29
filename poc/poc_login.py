@@ -370,20 +370,60 @@ def _selftest():
 
 
 def _read_password(prompt):
-    """Hidden when possible, visible when not, and never wedged.
+    """Read a password with echo off, and put the terminal back in every path.
 
-    (1) a pipe means another program is driving -> read it; (2) masked cbreak read;
-    (3) plain `input()` as a last resort.
+    a-Shell used to end up with echo off after a masked read, so the previous
+    version stopped masking. That was the wrong trade. The rule now: change
+    exactly one bit (ECHO), keep canonical mode, let the line driver do the
+    editing, restore immediately — and *verify* the restore, saying so if it
+    failed. BARISIGN_SHOW_PASSWORD=1 skips masking for a terminal that still
+    misbehaves.
     """
-    # CHANGED BY BARISIGN. This used to put the terminal in cbreak/no-echo mode.
-    # In a-Shell that does not always come back: echo stays off and later prompts
-    # stop accepting input. Nothing here touches terminal modes any more; the
-    # password is shown as you type it, which is the price of a terminal that
-    # keeps working.
+    if os.environ.get("BARISIGN_SHOW_PASSWORD") or not sys.stdin.isatty():
+        try:
+            return sys.stdin.readline().rstrip("\r\n") if not sys.stdin.isatty() else input(prompt)
+        except EOFError:
+            return ""
+
     try:
-        return input(prompt)
-    except EOFError:
-        return ""
+        import termios
+        fd = sys.stdin.fileno()
+        saved = termios.tcgetattr(fd)
+    except Exception:                                          # noqa: BLE001
+        try:
+            return input(prompt)
+        except EOFError:
+            return ""
+
+    try:
+        changed = list(saved)
+        changed[3] = changed[3] & ~termios.ECHO      # lflag: ECHO off, nothing else
+        termios.tcsetattr(fd, termios.TCSANOW, changed)
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        line = sys.stdin.readline()
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        return line.rstrip("\r\n")
+    finally:
+        try:
+            termios.tcsetattr(fd, termios.TCSANOW, saved)
+            now = termios.tcgetattr(fd)
+            if not (now[3] & termios.ECHO):
+                print("WARNING: this terminal still has echo off after restoring it.")
+                print("         Open a new a-Shell window (type: newWindow) and rerun.")
+        except Exception:                                      # noqa: BLE001
+            pass
+
+
+def _password_diagnostics(password):
+    """Say enough about the password to spot the usual mistakes, without printing it."""
+    notes = []
+    if password != password.strip():
+        notes.append("has leading/trailing spaces")
+    if any(ord(ch) > 127 for ch in password):
+        notes.append("contains non-ASCII characters")
+    return "%d characters%s" % (len(password), (", " + "; ".join(notes)) if notes else ", plain ASCII, no stray spaces")
 
 
 def _login(email, server):
