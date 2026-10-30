@@ -9,8 +9,8 @@ Either device can be an **iPhone or an iPad** (iOS/iPadOS 27+). They must be on 
 a-Shell and BariSign are installed on the **signer only**.
 
 **Status:** Apple sign-in, the developer portal, signing and the USB install are verified on a real
-device. The target **UDID page** and the **signer → target pairing install** are written but not yet
-verified on a device.
+device. The pair-first **UDID from pairing**, the fallback **UDID page** and the **signer → target
+pairing install** are written but not yet verified on a device.
 
 ---
 
@@ -31,27 +31,32 @@ sh bin/barisign status     # what is saved
 
 ---
 
-## UDID (target)
+## UDID (pairing first)
+
+The normal flow takes the target's UDID **from the pairing**, so no median profile is needed:
+
+```
+sh bin/barisign udid --pair
+```
+
+1. The signer advertises as **BariSign** and prints a code.
+2. On the **target**: **Settings → Privacy & Security → Developer Mode → Paired Macs** (or
+   **Settings → Developer → Paired Macs**) → **BariSign** → code.
+3. The signer reads the UDID from the pairing/tunnel and saves it.
+
+If the target has never had Developer Mode, download the original IPA on the signer and share it to
+the target first: install it once; the Developer Mode switch appears after the failed launch attempt.
+That IPA is only the trigger; the app BariSign signs is a different, signed build.
+
+If pairing cannot provide a UDID, fall back to the page:
 
 ```
 sh bin/barisign udid
 ```
 
-The **signer** starts a temporary page and prints an address like:
-
-```
-http://192.168.1.23:54321/
-```
-
-On the **target**, open that address in **Safari**:
-
-1. Tap the `median.co/udid` link on the page.
-2. Install the profile; copy the UDID it shows.
-3. Return to the page, paste the UDID into the box, tap **Submit**.
-
-The signer receives it and continues automatically. Both devices must be on the same Wi-Fi; allow
-**Local Network** if iOS asks. `--manual` keeps a paste-on-the-signer fallback for testing. Other UDID
-sources: `docs/UDID_OPTIONS.md`.
+The signer prints `http://<signer-ip>:<port>/`; on the target open it in Safari, install the
+`median.co/udid` profile, copy the UDID, paste it into the box and submit. `--manual` keeps a
+paste-on-the-signer fallback. Other UDID sources: `docs/UDID_OPTIONS.md`.
 
 ---
 

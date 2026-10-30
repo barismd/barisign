@@ -20,6 +20,7 @@ import hashlib
 import html
 import json
 import os
+import shlex
 import shutil
 import socket
 import threading
@@ -67,7 +68,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -967,6 +968,18 @@ def cmd_udid(argv):
     typed = [item for item in argv if not item.startswith("-")]
     udid = extract_udid(typed[0]) if typed else ""
     manual = "--manual" in argv or "--no-open" in argv
+    if not udid and "--pair" in argv:
+        print("  First pair the TARGET; the pairing gives its UDID.")
+        print("  If Paired Macs is not available, install the original IPA on")
+        print("  the target first (it makes Developer Mode appear), then retry.")
+        print()
+        pair = os.path.join(_HERE, "pair_install.py")
+        code = subprocess.call([sys.executable, "-u", pair, "--pair-only",
+                                "--timeout", "120"])
+        udid = extract_udid(load_state().get("udid", ""))
+        if code != 0 or not udid:
+            print("  pairing did not return a UDID; falling back to the page")
+            udid = ""
     if not udid and manual:
         print("  On this signer device, install the profile from:")
         print("    %s" % UDID_URL)
@@ -1110,6 +1123,18 @@ def cmd_portal(argv):
                  profile=result["profile"], key=result["key"], cert=result["cert"])
     _result("PORTAL", "ok")
     return 0
+
+
+def _share_file(path):
+    """Open a-Shell's preview so the share sheet can AirDrop the file."""
+    print("  sharing   %s" % _display_path(path))
+    marker = os.environ.get("TERM_PROGRAM", "").lower()
+    a_shell = (sys.platform.startswith(("ios", "darwin"))
+               or "a-shell" in marker or "ashell" in marker)
+    if a_shell and sys.stdin.isatty():
+        os.system("view %s" % shlex.quote(path))
+    else:
+        print("  path      %s" % path)
 
 
 def _display_path(path):
@@ -1262,9 +1287,19 @@ def cmd_guided(argv):
         _choose_variant(state, variants)
         state = load_state()
 
+    _stage("Download")
+    ipa, _info = _obtain_ipa(state, argv)
+    if not ipa:
+        return 1
+    print("  original  %s" % _display_path(ipa))
+    print("  if the target has no Developer Mode, share this IPA to it and")
+    print("  tap it once; the Developer Mode switch appears after the attempt.")
+    if _yes("  share the original IPA to the target now?", False):
+        _share_file(ipa)
+
     if state.get("udid") and _yes("  keep UDID %s?" % state["udid"], True):
         pass
-    elif cmd_udid([]) != 0:
+    elif cmd_udid(["--pair"]) != 0:
         return 1
     state = load_state()
 
@@ -1287,16 +1322,17 @@ def cmd_guided(argv):
 
     state = load_state()
     _stage("Sign")
-    ipa, _info = _obtain_ipa(state, argv)
-    if not ipa:
-        return 1
     saved = signer.find_saved_paths(STATE_DIR)
     result = _sign_now(ipa, saved, argv)
     if result is None:
         return 1
     if "--no-install" not in argv and _yes("  install on the target now?", True):
         pair = os.path.join(_HERE, "pair_install.py")
-        return subprocess.call([sys.executable, "-u", pair, "--ipa", result["ipa"]])
+        command = [sys.executable, "-u", pair, "--ipa", result["ipa"]]
+        paired = load_state()
+        if paired.get("paired") and paired.get("udid"):
+            command += ["--udid", paired["udid"]]
+        return subprocess.call(command)
     return 0
 
 
@@ -1332,6 +1368,7 @@ _OPTIONS = {
         ("--no-extensions", "drop PlugIns (an app extension needs its own App ID)"),
     ),
     "udid": (
+        ("--pair", "pair the target first and take its UDID from the pairing"),
         ("--manual", "paste the UDID on the signer instead of serving the page"),
     ),
 }

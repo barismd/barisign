@@ -30,6 +30,10 @@ the missing pieces:
   top of either QUIC (`qh3`, pure Python) or TCP.
 - `pymobiledevice3 install <ipa>` then installs through `installation_proxy` over that tunnel — the
   developer source, so the free-profile restriction that blocks AirDrop does not apply.
+- The pairing result also carries the target's **UDID** (peer info, and the RSD tunnel reports it).
+  `sh bin/pair --pair-only` prints both and saves the hardware UDID into `state/barisign.json`. If that
+  works, the median/UDID page is unnecessary; the signer pairs first, registers the UDID, signs, and
+  installs over the same record.
 
 So: the **signer** runs a-Shell (foreground, advertisement + tunnel + install); the **target** only
 opens Settings and pairs. The signed IPA is already on the signer; no file transfer is needed. No PC,
@@ -61,6 +65,7 @@ If gate 2 is clean, this is the project's answer and no native helper is needed.
 sh bin/pair            # first run installs the engine into state/pymd3, then pairs + installs
 sh bin/pair --check    # python, cryptography and engine import only
 sh bin/pair --setup    # install the engine only
+sh bin/pair --pair-only --timeout 120   # pair, print peer/tunnel UDID, save it
 ```
 
 It finds the newest `*-signed.ipa` in the BariSign folder (or `--ipa FILE`), advertises as

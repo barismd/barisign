@@ -11,13 +11,16 @@ shape is **two roles**, not two specific devices:
 
 ```
 SIGNER (a-Shell)                              TARGET (Safari / Settings)
-  1. UDID     serve http://<signer-ip>:<port>/  -->  open the page, install median.co/udid,
-                                                     copy the UDID, paste + submit
+  0. download the original IPA, offer it as a trigger if Developer Mode is off
+  1. pair     advertise as BariSign + code  -->  Settings -> Developer -> Paired Macs -> BariSign
+              read the UDID from the pairing/tunnel
   2. Apple ID anisette + SRP-6a + 2FA         (verified)
   3. portal   UDID -> App ID -> cert -> profile (verified)
-  4. download + sign + verify the chosen IPA   (verified over USB)
-  5. sh bin/pair  <-- pairing host + code -->  Settings -> Developer -> Paired Macs -> BariSign
-                  installation_proxy over Wi-Fi  (target installs, Trust Developer, opens the app)
+  4. sign the chosen IPA                       (verified over USB)
+  5. install over the same pairing             installation_proxy over Wi-Fi
+                                              (target Trust Developer, opens the app)
+  fallback: signer serves http://<signer-ip>:<port>/; target installs median.co/udid,
+            copies the UDID and submits it (only if pairing cannot provide one)
 ```
 
 a-Shell is installed **only on the signer**. The target installs nothing from BariSign. The program stays
@@ -39,12 +42,11 @@ and is not available with a free certificate. Both are out.
 
 ## Why the UDID is a page, not a paste into a-Shell
 
-The target is the device that needs the UDID, and it does not run a-Shell. At the UDID step the signer
-starts a short-lived HTTP server on its Wi-Fi address; the target opens it in Safari, installs the
-`median.co/udid` profile, copies the value and submits it in the page's box. The signer receives the value
-and continues. No third-party server of ours; the page lives only for that step.
-
-`sh bin/barisign udid --manual` keeps the paste-on-the-signer fallback for development.
+The target is the device that needs the UDID, and it does not run a-Shell. The normal route is the pairing: the signer pairs the target, reads the target's UDID from the
+pairing/tunnel, and uses it for the profile. If that is unavailable, the signer starts a short-lived
+HTTP server on its Wi-Fi address; the target opens it in Safari, installs the `median.co/udid` profile,
+copies the value and submits it. `sh bin/barisign udid --manual` keeps a paste-on-the-signer fallback
+for development.
 
 ## Pairing file — decided: fork the three apps
 
@@ -71,5 +73,6 @@ the `bin/pair` engine on the signer.
 ## Status
 
 - Verified on the signer (iPhone 13, iOS 27): Apple sign-in, portal, signing, USB install, AltStore launch.
-- Written, not yet device-verified: the target UDID page and the signer→target pairing install.
+- Written, not yet device-verified: the pair-first UDID, the fallback UDID page and the signer→target
+  pairing install.
 - The target page's HTTP handler is tested on Linux; the tunnel and mDNS path need a device run.

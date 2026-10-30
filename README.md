@@ -13,27 +13,32 @@ They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSig
 
 > **Status:** the signer path is verified on a real device (iPhone 13, iOS 27): Apple sign-in, the
 > developer portal, signing, and installing the IPA over USB with `ideviceinstaller` (AltStore then
-> launches). The new **target UDID page** and the **signer → target pairing install** are written but
-> not yet verified on a device.
+> launches). The new **pair-first UDID**, the fallback **UDID page** and the **signer → target
+> pairing install** are written but not yet verified on a device.
 
 ---
 
 ## How the flow works
 
 1. On the **signer**, install a-Shell and BariSign, then run `sh bin/barisign`.
-2. At the UDID step the signer serves a short-lived page on its Wi-Fi address:
-   `http://<signer-ip>:<port>/`.
-3. On the **target**, open that address in Safari. The page links to `median.co/udid`; install the
-   profile, copy the UDID, paste it into the page and submit.
-4. The signer receives the UDID and continues: Apple sign-in, developer portal (device + App ID +
-   certificate + profile), download + sign the chosen IPA.
-5. Install from the signer: `sh bin/pair`. The signer advertises as a pairing host; on the target open
-   **Settings → Privacy & Security → Developer Mode → Paired Macs**, pick **BariSign**, enter the
-   code. The signer installs over Wi-Fi with `installation_proxy`.
+2. The signer downloads the chosen variant's **original** IPA and offers to share it to the target.
+   If the target has never had Developer Mode, install that IPA once; the Developer Mode switch
+   appears after the failed launch attempt. (This is only a trigger; it is not the app we sign.)
+3. Pair the target: on the **target** open **Settings → Privacy & Security → Developer Mode →
+   Paired Macs**, pick **BariSign**, enter the code. The signer takes the target's **UDID from the
+   pairing** and continues; the median page is not needed.
+4. Signer: Apple sign-in, developer portal (device + App ID + certificate + profile), sign.
+5. Install with the same pairing record: `sh bin/pair`. The signer advertises again, the target
+   enters the code, and the signer installs over Wi-Fi with `installation_proxy`.
 6. On the target, trust the developer and open the app.
 
-**AirDrop and OTA are not used.** iOS 27 refuses a free-profile app from those sources
-(`MIInstallerErrorDomain` 111); the pairing tunnel is the developer source that works.
+If pairing cannot produce a UDID (old target, Developer Mode not available), the signer falls back to
+a short-lived page on its Wi-Fi address: the target opens `http://<signer-ip>:<port>/`, installs the
+**median.co/udid** profile, copies the UDID and submits it.
+
+**AirDrop and OTA are not used for installing our app.** iOS 27 refuses a free-profile app from those
+sources (`MIInstallerErrorDomain` 111); the pairing tunnel is the developer source that works. Sharing
+the original IPA in step 2 is a file transfer/trigger, not our install.
 
 ---
 
@@ -45,7 +50,8 @@ They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSig
 | **Device, certificate, profile** (developer portal) | ✅ verified |
 | **Download + sign + verify** | ✅ verified — the signed IPA installs over USB |
 | **USB install** (`ideviceinstaller`) | ✅ verified — Trust Developer, AltStore launches |
-| **UDID page** served by the signer | ⚠️ written, untested on a device |
+| **UDID from pairing** (pair-first) | ⚠️ written, untested on a device |
+| **UDID page** fallback served by the signer | ⚠️ written, untested on a device |
 | **Signer → target pairing install** (`sh bin/pair`) | ⚠️ written, untested on a device |
 | **AirDrop / OTA install** | ❌ refused by iOS for free profiles |
 
@@ -64,7 +70,7 @@ sh install.sh
 Run `sh install.sh` again (or `sh bin/update`) any time to update. Your saved state in `state/` is kept.
 
 ```
-sh bin/barisign          # guided: check -> variant -> UDID page -> Apple -> portal -> download -> sign
+sh bin/barisign          # guided: check -> variant -> download -> pair/UDID -> Apple -> portal -> sign -> install
 sh bin/pair              # pair the target and install over Wi-Fi
 sh bin/barisign status   # what is already known
 sh bin/barisign --help   # every command
@@ -88,12 +94,13 @@ sh bin/barisign --help   # every command
 
 ## The UDID, in one paragraph
 
-A free Apple ID signs apps for **specific devices**, so the **target's UDID** must be known. At the UDID
-step the signer serves a page on its Wi-Fi address. On the target, open it in Safari, install the
-`median.co/udid` profile, copy the UDID, and paste it into the page's box. The signer receives it and
-continues; no manual terminal paste is needed.
+A free Apple ID signs apps for **specific devices**, so the **target's UDID** must be known. The **pairing gives the UDID**: the signer runs the pairing host, the target pairs from Settings, and
+the signer reads the target's UDID from the pairing/tunnel. No median profile is needed in the normal
+flow.
 
-`sh bin/barisign udid --manual` keeps a paste-on-the-signer fallback for testing.
+If pairing cannot provide it, `sh bin/barisign udid` serves a fallback page on the signer's Wi-Fi
+address: the target opens it in Safari, installs the `median.co/udid` profile, copies the UDID and
+submits it. `sh bin/barisign udid --manual` keeps a paste-on-the-signer fallback for testing.
 `docs/UDID_OPTIONS.md` lists other UDID sites (not affiliated with us) and self-hosting.
 
 ---

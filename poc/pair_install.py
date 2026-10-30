@@ -24,7 +24,9 @@
 
 import asyncio
 import glob
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +36,34 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 STATE_DIR = os.environ.get("BARISIGN_STATE_DIR") or os.path.join(ROOT, "state")
 PIP_TARGET = os.path.join(STATE_DIR, "pymd3")
+
+UDID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{8}-[0-9a-f]{16})$")
+
+
+def normalise_udid(value):
+    cleaned = re.sub(r"[\s\-]", "", (value or "")).lower()
+    if len(cleaned) == 40 and re.fullmatch(r"[0-9a-f]{40}", cleaned):
+        return cleaned
+    if len(cleaned) == 24 and re.fullmatch(r"[0-9a-f]{24}", cleaned):
+        return cleaned[:8] + "-" + cleaned[8:]
+    return ""
+
+
+def save_udid(udid, record=""):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    path = os.path.join(STATE_DIR, "barisign.json")
+    try:
+        with open(path) as handle:
+            state = json.load(handle)
+    except Exception:                                         # noqa: BLE001
+        state = {}
+    state["udid"] = udid
+    state["paired"] = True
+    if record:
+        state["pair_record"] = str(record)
+    with open(path, "w") as handle:
+        json.dump(state, handle, indent=2)
+
 
 PURE_DEPS = [
     "qh3<2",
@@ -189,7 +219,7 @@ def _patch_bonjour():
         return False
 
 
-async def _run(ipa, pair_only=False, udid=""):
+async def _run(ipa, pair_only=False, udid="", timeout=None):
     engine = _import_engine()
     if engine is None:
         return 2
@@ -202,7 +232,8 @@ async def _run(ipa, pair_only=False, udid=""):
         _say("    or pass --ipa FILE.")
         return 2
 
-    found_udid = udid
+    found_udid = normalise_udid(udid) or udid
+    rsd = None
     if udid and not pair_only:
         _say("  using        already paired %s" % udid)
     else:
@@ -223,17 +254,34 @@ async def _run(ipa, pair_only=False, udid=""):
         _say("")
         try:
             result = await serve_pairable_host(host, pin_callback=pin,
-                                               waiting_callback=waiting)
+                                               waiting_callback=waiting,
+                                               timeout=timeout)
+        except asyncio.TimeoutError:
+            _say("  ! timed out: the target never paired")
+            return 2
         except Exception as exc:                                # noqa: BLE001
             _say("  ! pairing failed: %s" % exc)
             return 2
 
         device = getattr(result, "peer_device", None)
         name = getattr(device, "name", "device")
-        found_udid = getattr(device, "udid", "") or udid
-        _say("  paired       %s  %s" % (name, found_udid))
+        peer_udid = normalise_udid(getattr(device, "udid", ""))
+        _say("  paired       %s" % name)
+        _say("  peer UDID    %s" % (peer_udid or getattr(device, "udid", "") or "(empty)"))
         record = getattr(result, "record_path", "")
         _say("  record       %s" % (record or "?"))
+        rsd = None
+        tunnel_udid = ""
+        try:
+            rsd = await establish_userspace_rsd(serial=peer_udid or None)
+            tunnel_udid = normalise_udid(getattr(rsd, "udid", ""))
+            _say("  tunnel UDID  %s" % (tunnel_udid or getattr(rsd, "udid", "") or "(empty)"))
+        except Exception as exc:                                # noqa: BLE001
+            _say("  ! tunnel/UDID query failed: %s" % exc)
+        found_udid = peer_udid or tunnel_udid or normalise_udid(udid)
+        if found_udid:
+            save_udid(found_udid, record)
+            _say("  UDID saved   %s" % found_udid)
         if record and os.path.isfile(record):
             # Same record under the names AltStore and SideStore read. The user
             # can import the SideStore one, or copy the AltStore one with AFC.
@@ -253,7 +301,8 @@ async def _run(ipa, pair_only=False, udid=""):
 
     _say("  installing   %s" % ipa)
     try:
-        rsd = await establish_userspace_rsd(serial=found_udid or None)
+        if rsd is None:
+            rsd = await establish_userspace_rsd(serial=found_udid or None)
     except Exception as exc:                                    # noqa: BLE001
         _say("  ! tunnel failed: %s" % exc)
         return 3
@@ -281,7 +330,8 @@ def main(argv):
     if "--help" in argv or "-h" in argv:
         _say("sh bin/pair                 pair the target and install the newest -signed.ipa")
         _say("sh bin/pair --ipa FILE      use a specific signed IPA")
-        _say("sh bin/pair --pair-only     pair only; print the pairing record")
+        _say("sh bin/pair --pair-only     pair only; print UDID + record")
+        _say("sh bin/pair --pair-only --timeout 120")
         _say("sh bin/pair --udid UDID     install to an already paired device")
         _say("sh bin/pair --check         check python, cryptography and the engine")
         _say("sh bin/pair --setup         install the engine only")
@@ -296,6 +346,14 @@ def main(argv):
             udid = argv[position]
     pair_only = "--pair-only" in argv
     debug = "--debug" in argv
+    timeout = None
+    if "--timeout" in argv:
+        position = argv.index("--timeout") + 1
+        if position < len(argv):
+            try:
+                timeout = max(10, int(argv[position]))
+            except ValueError:
+                timeout = None
 
     if "--check" in argv:
         return check()
@@ -311,7 +369,7 @@ def main(argv):
 
     ipa = find_ipa(explicit_ipa)
     try:
-        return asyncio.run(_run(ipa, pair_only=pair_only, udid=udid))
+        return asyncio.run(_run(ipa, pair_only=pair_only, udid=udid, timeout=timeout))
     except KeyboardInterrupt:
         _say("")
         return 130

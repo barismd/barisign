@@ -12,10 +12,11 @@ Both may be an iPhone or an iPad; only the role matters. Same Wi-Fi required.
 - **Two-role flow (2026-10-31 pivot):** a-Shell runs **only on the signer**. The signer does
   login, portal, signing, packaging and the install. The **target** only uses Safari and Settings.
   Both devices may be iOS or iPadOS; they must be on the same Wi-Fi. No computer, no AirDrop, no OTA.
-- **UDID = a page served by the signer.** At the UDID step the signer runs a short-lived HTTP server on
-  its Wi-Fi IP. On the target, Safari opens `http://<signer-ip>:<port>/`, installs the **median.co/udid**
-  profile, copies the UDID and submits it in the page's box. The signer receives it and continues.
-  No server of ours beyond that temporary LAN page; `docs/UDID_OPTIONS.md` lists other sites.
+- **UDID = pairing first.** The signer pairs the target; the pairing/tunnel reports the target's UDID,
+  which the signer saves and registers. No median profile in the normal path. If pairing cannot provide
+  it, fall back to a short-lived HTTP page served by the signer: the target opens
+  `http://<signer-ip>:<port>/`, installs the **median.co/udid** profile, copies the UDID and submits it.
+  `docs/UDID_OPTIONS.md` lists other sites; no permanent server of ours.
 - **Shortcuts are suspended** (user decision). The interface is a plain text flow in a-Shell.
 - **Pairing file = a module inside the apps (user decision, 2026-10-29):** fork SideStore, AltStore
   Classic and LiveContainer+SideStore, add a pairing-file step to each start screen, rebuild on every
@@ -33,8 +34,8 @@ Both may be an iPhone or an iPad; only the role matters. Same Wi-Fi required.
 - Test devices (roles, not hardware): **iPhone 13 (iOS 27)** and **iPad (A16)**; either can be the
   signer or the target. The role is chosen at run time; a-Shell is installed only on the signer.
 - On device and verified: UDID, Apple sign-in, the **developer portal**, the signer's signed IPA
-  over USB (`ideviceinstaller`), and AltStore launching after the app-group fix. The signer→target
-  pairing install and the new UDID HTTP page are written but not yet device-verified.
+  over USB (`ideviceinstaller`), and AltStore launching after the app-group fix. The pair-first UDID,
+  the fallback UDID page and the signer→target pairing install are written but not yet device-verified.
 - Sign-in requires **Mac-emulating anisette** and the server's own client_info (Apple's Oct 2026
   -80045/-80046/503 rules). `mac-ani.jkcoxson.com` and `ani.jkcoxson.com` come first. Details:
   `docs/ANISETTE.md`, `docs/RESULTS.md`.
@@ -70,8 +71,9 @@ The a-Shell interface (no Shortcuts):
 - asks readiness questions (LocalDevVPN installed & connected? Developer Mode on? Apple ID ready?),
 - asks which variant,
 - points to a complete beginner GUIDE,
-- runs the heavy steps on the **signer**: UDID page served to the target, Apple login with anisette
-  (retry with another anisette server on failure), download + sign the chosen IPA, package it as a zip.
+- runs the heavy steps on the **signer**: download the original (optional Developer Mode trigger),
+  pair the target and take its UDID, Apple login with anisette (retry with another anisette server on
+  failure), sign the chosen IPA.
 - Ends with `sh bin/pair`: the signer advertises as a pairable host, the **target** opens
   Settings → Developer → Paired Macs, enters the code, and the signer installs over Wi-Fi.
 
@@ -119,7 +121,7 @@ The a-Shell interface (no Shortcuts):
 - If the same problem fails twice, **stop** and report so the user can switch to a stronger model.
 - Stages 1–2 are verified on device, 3 is written; the plan is `docs/PLAN_V2.md`, the verified facts
   are in `docs/RESULTS.md`.
-- Next: the signer on a device (written and Linux-checked), then the forks, then i18n + Turkish last.
+- Next: the pair-first UDID and `bin/pair` on a device, then the forks, then i18n + Turkish last.
 
 ## Verified / unverified convention
 
