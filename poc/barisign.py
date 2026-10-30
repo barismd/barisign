@@ -61,7 +61,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.4"
+VERSION = "0.6.5"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -151,12 +151,24 @@ def load_variants():
 # small helpers
 # ---------------------------------------------------------------------------
 
-# H homes first, then 2J clears the screen. 3J (clear the scrollback too) is not
-# used: in a-Shell it leaves the cursor where the previous command ended, so on a
-# screen with output every line printed below it scrolled the stage header out of
-# view and the user had to scroll back up. Clearing the scrollback is not worth
-# that.
-CLEAR = "\033[H\033[2J"
+# a-Shell runs SwiftTerm. 2J clears the visible page, 1;1H puts the cursor at the
+# top: the same pair the app itself sends for Ctrl-L. 3J then drops the
+# scrollback, because a-Shell restores the buffer on relaunch and the previous
+# stage (the UDID instructions, for example) otherwise comes back. After a 3J the
+# view's scroll offset can be stale, so a full page of newlines is printed first:
+# that scrolls the buffer, lets the view follow to the bottom, and only then is
+# the page cleared.
+CLEAR = "\033[2J\033[1;1H"
+
+
+def _clear_screen():
+    try:
+        import shutil
+        rows = max(1, shutil.get_terminal_size((40, 24)).lines)
+    except Exception:                                         # noqa: BLE001
+        rows = 24
+    sys.stdout.write("\033[0m\033[3J" + "\n" * rows + CLEAR)
+    sys.stdout.flush()
 
 
 def _columns():
@@ -232,8 +244,7 @@ def _stage(title, note=""):
     _STAGE["title"] = title
     _STAGE["note"] = note
     _SPINNER.stop()
-    sys.stdout.write(CLEAR)
-    sys.stdout.flush()
+    _clear_screen()
     print("BariSign %s" % VERSION)
     print()
     print("== %s ==" % title.upper())
@@ -247,8 +258,7 @@ def _refresh_stage():
     if _STAGE["title"]:
         _stage(_STAGE["title"], _STAGE["note"])
     else:
-        sys.stdout.write(CLEAR)
-        sys.stdout.flush()
+        _clear_screen()
 
 
 def _step(index, total, label):
