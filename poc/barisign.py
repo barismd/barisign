@@ -63,7 +63,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.7"
+VERSION = "0.6.8"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -1073,7 +1073,8 @@ def _sign_now(ipa, saved, argv):
                                  output_ipa=argv_get(argv, "--out") or None,
                                  udid=saved.get("udid") or None,
                                  progress=_sign_progress,
-                                 make_zip="--no-zip" not in argv)
+                                 make_zip="--no-zip" not in argv,
+                                 drop_extensions="--no-extensions" in argv)
     except signer.SigningError as exc:
         _line_clear()
         print()
@@ -1178,6 +1179,7 @@ _OPTIONS = {
         ("--ipa FILE", "sign this file instead of downloading"),
         ("--out FILE", "write the signed IPA here"),
         ("--no-zip", "do not package the .zip"),
+        ("--no-extensions", "drop PlugIns (an app extension needs its own App ID)"),
     ),
     "udid": (
         ("--no-open", "do not open Safari"),

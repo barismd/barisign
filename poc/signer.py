@@ -1952,7 +1952,8 @@ def _prepare_config(profile_path, key_path, cert_path, udid=None):
 
 
 def sign_ipa(ipa_path, profile_path, key_path, cert_path, output_ipa=None,
-             output_zip=None, udid=None, progress=None, make_zip=True):
+             output_zip=None, udid=None, progress=None, make_zip=True,
+             drop_extensions=False):
     """Sign one IPA. Returns a summary dictionary. Raises SigningError."""
     progress = progress or _say
     for label, path in (("IPA", ipa_path), ("profile", profile_path),
@@ -1982,6 +1983,14 @@ def sign_ipa(ipa_path, profile_path, key_path, cert_path, output_ipa=None,
         progress("open")
         extract_ipa(ipa_path, work_dir)
         app_dir = find_payload_app(work_dir)
+        if drop_extensions:
+            # Diagnostic / fallback: an app extension needs an App ID and a
+            # profile of its own. Without one, installd refuses the whole app
+            # ("cannot be installed"). Dropping PlugIns proves whether that is
+            # what is happening; the widget is lost, the app is not.
+            plugins = os.path.join(app_dir, "PlugIns")
+            if os.path.isdir(plugins):
+                shutil.rmtree(plugins)
         app_info, _raw, _exe, _name = _bundle_info(app_dir)
         if app_info is None:
             raise SigningError("the app has no usable Info.plist")
@@ -2066,7 +2075,8 @@ def _cli(argv):
     try:
         result = sign_ipa(ipa, profile, key, cert, output_ipa=value("--out") or None,
                           udid=saved.get("udid") or None, progress=report,
-                          make_zip="--no-zip" not in argv)
+                          make_zip="--no-zip" not in argv,
+                          drop_extensions="--no-extensions" in argv)
     except SigningError as exc:
         sys.stdout.write("\r\033[2K")
         print("! %s" % exc)
