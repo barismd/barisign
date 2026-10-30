@@ -16,6 +16,7 @@
 import ctypes
 import os
 import socket
+import sys
 
 SERVICE_TYPE = "_remotepairing-pairable-host._tcp"
 
@@ -39,7 +40,8 @@ REPLY = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int32,
 def is_ashell():
     """True on the a-Shell app (the only place the Bonjour shim is needed)."""
     return (os.environ.get("TERM_PROGRAM", "") == "a-Shell"
-            or os.environ.get("BARISIGN_ASHELL") == "1")
+            or os.environ.get("BARISIGN_ASHELL") == "1"
+            or sys.platform == "ios")
 
 
 def _load_dnssd():
