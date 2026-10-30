@@ -15,9 +15,11 @@
 #      python3 -u poc/barisign.py forget     clear the saved state
 # =============================================================================
 
+import glob
 import hashlib
 import json
 import os
+import shutil
 import threading
 import re
 import shlex
@@ -61,7 +63,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.5"
+VERSION = "0.6.6"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -652,6 +654,57 @@ def cmd_forget(_argv):
     return 0
 
 
+def cmd_reset(_argv):
+    """Remove everything this tool created; leave the installed program alone."""
+    _stage("Reset")
+    folder = os.path.dirname(STATE_DIR)
+    folders = []
+    files = []
+    if os.path.isdir(STATE_DIR) and os.listdir(STATE_DIR):
+        folders.append(STATE_DIR)
+    folders.extend(sorted(glob.glob(os.path.join(folder, ".barisign-sign-*"))))
+    for variant in load_variants():
+        identifier = variant.get("id")
+        if identifier:
+            path = os.path.join(folder, identifier + ".ipa")
+            if os.path.isfile(path):
+                files.append(path)
+    for pattern in ("*-signed.ipa", "*-signed.zip", "*.ipa.part", "*.zip.part"):
+        files.extend(sorted(glob.glob(os.path.join(folder, pattern))))
+    files = sorted(set(files))
+
+    if not folders and not files:
+        _result("RESET", "nothing to remove")
+        return 0
+
+    _line_clear()
+    if os.path.isdir(STATE_DIR):
+        print("  state     Apple ID, UDID, key, certificate, profile")
+    if files:
+        print("  files     %d downloaded or signed file%s"
+              % (len(files), "" if len(files) == 1 else "s"))
+    if len(folders) > 1:
+        print("  temp      %d working folder%s"
+              % (len(folders) - 1, "" if len(folders) == 2 else "s"))
+    print()
+    if not _yes("  delete these?", False):
+        print("  nothing removed")
+        return 0
+
+    removed = 0
+    for path in folders:
+        shutil.rmtree(path, ignore_errors=True)
+        removed += 1
+    for path in files:
+        try:
+            os.remove(path)
+            removed += 1
+        except OSError:
+            pass
+    _result("RESET", "ok  %d removed" % removed)
+    return 0
+
+
 UDID_URL = "https://median.co/udid"
 
 UDID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{24})$")
@@ -906,7 +959,8 @@ def _open_zip_preview(path):
     """
     if not sys.stdin.isatty():
         return
-    _press_return("  return  open the zip preview: ")
+    # Reverse video: the one line the user must act on, after two plain lines.
+    _press_return("\033[1;7m  return  open the zip preview  \033[0m ")
     marker = os.environ.get("TERM_PROGRAM", "").lower()
     a_shell = (sys.platform.startswith(("ios", "darwin"))
                or "a-shell" in marker or "ashell" in marker)
@@ -1076,6 +1130,7 @@ def cmd_guided(argv):
     _result("PORTAL", "ok")
 
     state = load_state()
+    _stage("Sign")
     ipa, _info = _obtain_ipa(state, argv)
     if not ipa:
         return 1
@@ -1090,6 +1145,7 @@ COMMANDS = {
     "check": cmd_check,
     "status": cmd_status,
     "forget": cmd_forget,
+    "reset": cmd_reset,
     "udid": cmd_udid,
     "login": cmd_login,
     "portal": cmd_portal,
@@ -1129,6 +1185,7 @@ def _usage():
     print("  sh bin/barisign check     diagnostics only")
     print("  sh bin/barisign version   which copy is running")
     print("  sh bin/barisign forget    clear the saved state")
+    print("  sh bin/barisign reset      remove saved state, IPAs and zips")
     print()
     print("  options: sh bin/barisign <command> help")
 
