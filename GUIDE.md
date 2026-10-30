@@ -72,15 +72,22 @@ sh bin/barisign sign --ipa X.ipa  # sign a file you already have
 ```
 
 After the last line, press **Return**: a-Shell opens the zip's preview, which has the share button, so
-the AirDrop is one tap. Send the `.zip` to any second device, unzip it there, and AirDrop the `.ipa` back —
-iOS installs an AirDropped IPA by itself.
+the `.zip` is one tap to AirDrop. **AirDropping the `.ipa` itself does not install it**: iOS 27 refuses
+a free-profile app from the AirDrop source (`MIInstallerErrorDomain` 111). Send the `.zip`/`.ipa` to the
+second device as a **file**, then install it there with one of the two working sources:
+
+- **iPad + a-Shell (no computer):** put the signed `.ipa` in the BariSign folder on the iPad and run
+  `sh bin/pair`. The iPad advertises as a pairing host; on the iPhone open
+  **Settings → Privacy & Security → Developer Mode → Paired Macs**, pick **BariSign**, enter the code.
+  The iPad installs over Wi-Fi with `installation_proxy`. The first run installs the engine once.
+- **Computer:** `ideviceinstaller -i <name>-signed.ipa`.
 
 The app installs **only on the device whose UDID is in the profile** (the phone you ran this on): a
-development-signed app is refused elsewhere, with a different Apple ID or not. The second device is only
-a courier. To use the app on another device, register that UDID first (`sh bin/barisign portal --udid UDID`)
-and sign again.
+development-signed app is refused elsewhere, with a different Apple ID or not. To use the app on
+another device, register that UDID first (`sh bin/barisign portal --udid UDID`) and sign again.
 
-Untested on a device: this is the next thing to try.
+The signer has been installed from over USB and the app starts; the `bin/pair` iPad path is written but
+not yet verified on a device.
 
 ---
 

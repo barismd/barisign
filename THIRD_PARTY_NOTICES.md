@@ -66,7 +66,7 @@ as-is; no code is copied from them here.
 | isideload (`nab138/isideload`) | MIT | protocol reference; **preferred source** for reimplementation |
 | idevice (`jkcoxson/idevice`) | MIT | protocol reference; **preferred source** for reimplementation |
 | zsign (`zhlynn/zsign`) | MIT | reference for the Apple CMS layout |
-| pymobiledevice3 (`doronz88/pymobiledevice3`) | GPL-3.0 | protocol reference only |
+| pymobiledevice3 (`doronz88/pymobiledevice3`) | GPL-3.0 | runtime dependency for `bin/pair`; installed **separately** on the device into `state/pymd3` and imported there. No code is copied into this repository and it is not redistributed by it. |
 | a-Shell (`holzschu/a-Shell`) | BSD-3-Clause | the on-device runtime (user installs it) |
 | LocalDevVPN / StosVPN | see upstream | runtime dependency (user installs it) |
 | anisette servers | see upstream | network service at runtime |

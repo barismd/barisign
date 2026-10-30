@@ -52,6 +52,27 @@ Gates, in order:
 If gate 2 is clean, this is the project's answer and no native helper is needed. If gate 2 fails on
 3.4.8, the choice is a compatibility port or a native helper.
 
+### One command
+
+`bin/pair` wires the gates together. On the iPad:
+
+```sh
+sh bin/pair            # first run installs the engine into state/pymd3, then pairs + installs
+sh bin/pair --check    # python, cryptography and engine import only
+sh bin/pair --setup    # install the engine only
+```
+
+It finds the newest `*-signed.ipa` in the BariSign folder (or `--ipa FILE`), advertises as
+`BariSign`, prints the 6-digit code, then installs with `--userspace` `installation_proxy`.
+The first run needs the network; later runs are local. `poc/ashell_bonjour.py` replaces
+pymobiledevice3's raw-multicast responder with `DNSServiceRegister` when `TERM_PROGRAM=a-Shell`.
+
+**Do not try to vendor a newer `cryptography`.** It is a compiled native extension (OpenSSL/Rust),
+not pure Python; a-Shell cannot build or load a different build. The only options are the shipped
+3.4.8, a compatibility shim for any missing API, or a reimplementation of the calls. `pymobiledevice3`
+itself is GPL-3.0 and is not vendored either: `bin/pair` installs it separately, so the repository
+does not distribute it.
+
 ## 1. Why AirDrop and OTA are out
 
 Device log from the iPhone (iOS 27, 0.6.10 IPA, AirDrop):

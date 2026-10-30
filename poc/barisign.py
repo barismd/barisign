@@ -63,7 +63,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.12"
+VERSION = "0.7.0"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -1226,6 +1226,7 @@ def _usage():
     print("  sh bin/barisign login     Apple sign-in")
     print("  sh bin/barisign portal    UDID + certificate + profile")
     print("  sh bin/barisign sign      download, sign and zip the chosen variant")
+    print("  sh bin/pair               (iPad) pair the iPhone and install over Wi-Fi")
     print("  sh bin/barisign status    what is saved")
     print("  sh bin/barisign check     diagnostics only")
     print("  sh bin/barisign version   which copy is running")

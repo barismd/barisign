@@ -1,0 +1,5 @@
+#!/bin/sh
+# BariSign — pair + install from a second iOS device (iPad).
+# Run this in a-Shell on the iPad while the iPhone is on the same Wi-Fi.
+cd "$(dirname "$0")/.." || exit 1
+exec python3 -u poc/pair_install.py "$@"

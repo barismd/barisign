@@ -67,12 +67,15 @@ download_all() {
     fetch poc/signer.py                       poc/signer.py                    || fail=1
     fetch poc/download.py                     poc/download.py                  || fail=1
     fetch poc/pair_probe.py                   poc/pair_probe.py                || fail=1
+    fetch poc/pair_install.py                 poc/pair_install.py              || fail=1
+    fetch poc/ashell_bonjour.py               poc/ashell_bonjour.py            || fail=1
     fetch third_party/sideinstaller/signin.py third_party/sideinstaller/signin.py || fail=1
     fetch third_party/sideinstaller/portal.py third_party/sideinstaller/portal.py || fail=1
     fetch third_party/apple-roots/apple-roots.pem third_party/apple-roots/apple-roots.pem || fail=1
     fetch third_party/ca-bundle/cacert.pem    third_party/ca-bundle/cacert.pem || fail=1
     fetch variants.json                       variants.json                    || fail=1
     fetch bin/barisign                        bin/barisign                     || fail=1
+    fetch bin/pair                            bin/pair                         || fail=1
     fetch bin/update                          bin/update                       || fail=1
     chmod +x bin/* 2>/dev/null
     return $fail
@@ -82,7 +85,8 @@ download_all() {
 check_compiles() {
     bad=""
     for f in poc/poc_login.py poc/poc_portal.py poc/barisign.py poc/signer.py \
-             poc/download.py poc/pair_probe.py third_party/sideinstaller/signin.py \
+             poc/download.py poc/pair_probe.py poc/pair_install.py \
+             poc/ashell_bonjour.py third_party/sideinstaller/signin.py \
              third_party/sideinstaller/portal.py; do
         if ! python3 -c "compile(open('$f').read(), 'x', 'exec')" 2>/dev/null; then
             bad="$bad $f"
@@ -98,7 +102,7 @@ check_compiles() {
 works() {
     python3 poc/barisign.py --help >/dev/null 2>&1 \
         && python3 poc/poc_portal.py --help >/dev/null 2>&1 \
-        && sh -n bin/barisign && sh -n bin/update
+        && sh -n bin/barisign && sh -n bin/pair && sh -n bin/update
 }
 
 attempt=1
