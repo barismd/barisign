@@ -9,7 +9,7 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 |---|---|
 | Apple sign-in: anisette v3 + SRP-6a + 2FA, free Apple ID | works (`LOGIN: PASS`) |
 | Installing an **AirDropped distribution-signed** IPA (the notarized AltStore) | iOS installs it by itself; no extra "Install" tap |
-| Installing an **AirDropped development-signed** IPA (our output) | **refused** on iOS 27: "the app cannot be installed", and no Trust Developer prompt (0.6.10). The same IPA installs over USB with `ideviceinstaller` and starts after Trust Developer |
+| Installing an **AirDropped free-profile** IPA (our output) | **refused by policy** on iOS 27 (0.6.10): `MIInstallerErrorDomain` 111, *"authorized by a free provisioning profile, but apps validated by those are not allowed to be installed from this source"* (`ApplicationVerificationFailed`, no Trust Developer prompt). The same IPA installs over USB with `ideviceinstaller` and starts after Trust Developer |
 | Our signer's IPA over USB (`ideviceinstaller`) | 0.6.10: install accepted, Trust Developer offered, AltStore started; it then hit its app-group fallback bug (512/EINVAL), fixed in 0.6.12 (source-verified, not yet device-tested) |
 | a-Shell running our Python stack (`cryptography` 3.4.8, stdlib only) | works; no native binaries, no `openssl`/`unzip` |
 
