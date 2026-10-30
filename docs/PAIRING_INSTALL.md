@@ -1,16 +1,56 @@
 # Pairing + `installation_proxy` on iOS 27 — what is possible
 
-Status: **research, verified against source and device logs on 2026-10-30/31.** No code in
-this document is written yet.
+Status: **research, verified against source and device logs on 2026-10-30/31; the pure-Python
+path in section 0 is the current candidate and is not yet tested on a device.** No code in this
+document is written yet.
 
 The question: can BariSign install its signed IPA on the iPhone with **no computer**, using
 pairing plus `installation_proxy`, and generate pairing files that AltStore and SideStore can
 use?
 
-Short answer: **yes, but not from a-Shell alone.** The install engine has to be a native app.
-SideInstaller already proves the whole pipeline on iOS 27; the clean path for BariSign is a
-native helper built from the MIT `jkcoxson/idevice` stack. Pure Python on the iPhone cannot run
-the RPPairing tunnel.
+Short answer: **the only all-constraints path worth testing is a second iOS device (the iPad) running
+a-Shell with `pymobiledevice3`.** Its iOS 27 `remote pair-host` accepts device-initiated pairing and
+its **pure-Python userspace tunnel** needs no root, no TUN, no native app and no certificate. The
+iPad stays in the foreground while the iPhone pairs from Settings, so a-Shell is not suspended.
+The blockers to test are a-Shell's old `cryptography` (3.4.8), the extra pure-Python dependencies,
+and raw mDNS vs. the Bonjour API. A native app (SideInstaller or a helper) is the fallback, not the
+first choice.
+
+## 0. The pure-Python route (test this first)
+
+`pymobiledevice3` (GPL-3.0, separate tool — not vendored, no app, no certificate) implements exactly
+the missing pieces:
+
+- `pymobiledevice3 remote pair-host` — advertises `_remotepairing-pairable-host._tcp`, accepts the
+  iOS 27 **device-initiated** pairing and prints the 6-digit code. On the iPhone:
+  **Settings → Developer → Paired Macs** (Developer Mode on), pick the host, enter the code.
+- The remote pairing record it writes is reused by `remote start-tunnel`.
+- The tunnel has a **userspace backend** (`pmd-pytcp`, pure Python asyncio; no `utun`, no root) on
+  top of either QUIC (`qh3`, pure Python) or TCP.
+- `pymobiledevice3 install <ipa>` then installs through `installation_proxy` over that tunnel — the
+  developer source, so the free-profile restriction that blocks AirDrop does not apply.
+
+So: iPad runs a-Shell (foreground, advertisement + tunnel + install), iPhone only opens Settings and
+pairs. The signed IPA goes iPhone → iPad by AirDrop **as a file** (file transfer is allowed); the
+iPad installs it. No PC, no SideInstaller, no enterprise certificate.
+
+Gates, in order:
+
+1. **Bonjour from a-Shell on the iPad.** Run `python3 -u poc/pair_probe.py --seconds 600`, then on the
+   iPhone open Settings → Developer → Paired Macs. If the host appears and the probe prints an
+   `RPPairing` connection, the advertisement and Local Network permission are fine.
+2. **`pymobiledevice3` imports on a-Shell.** The package metadata asks for `cryptography>=43` and
+   many dependencies; a-Shell ships 3.4.8. Install with `--no-deps` and add only the pure-Python
+   dependencies, then import `pymobiledevice3.remote.userspace_tunnel`. If the used APIs are older
+   than the metadata floor, it works; if not, a small compatibility patch/vendored subset is needed.
+   `pymobiledevice3`'s `MDNSResponder` uses raw multicast; if iOS refuses it, replace it with the
+   `DNSServiceRegister` call the probe already uses.
+3. **Pair, tunnel, install.** `remote pair-host` → record; `remote start-tunnel` → RSD;
+   `pymobiledevice3 install`. The tunnel is pure Python and the iPad is foreground, so neither
+   suspension nor a TUN device is involved.
+
+If gate 2 is clean, this is the project's answer and no native helper is needed. If gate 2 fails on
+3.4.8, the choice is a compatibility port or a native helper.
 
 ## 1. Why AirDrop and OTA are out
 
@@ -108,14 +148,15 @@ getting that file onto the device without a PC.
 
 ## 4. The hard boundary
 
-A native helper is required. The options, easiest first:
+The pure-Python route may remove the need for a native helper; if it fails, the fallback is one. The
+options, easiest first:
 
 | Option | No PC? | Own Apple ID? | Work | Notes |
 |---|---|---|---|---|
 | **A. SideInstaller as bootstrap** | yes (app from its official page) | yes for installed apps; SideInstaller itself is a shared-cert build | none | Proven on iOS 27. LocalDevVPN. Then SideStore/AltStore run; SideInstaller can install a custom IPA. |
 | **B. Fork SideInstaller into a BariSign installer** | yes, if distributed the same way | yes | medium | Non-commercial code, isolated from the AGPL forks. Bootstrap of the fork has the same problem as A. |
 | **C. Clean native helper from MIT `idevice`/`isideload`** | yes, once installed | yes | large | AGPL-compatible. RPPairing host + tunnel + installation_proxy + AFC pairing-file writer. Still needs a bootstrap (PC once, or a shared-cert web install). |
-| **D. Pure a-Shell/Python** | no | yes | — | Bonjour host is possible; the RPPairing tunnel needs a userspace TCP stack and the host is suspended by Settings. Not a viable installer. |
+| **D. a-Shell/Python on the iPad, `pymobiledevice3`** | **maybe** | yes | test first | `remote pair-host` + pure-Python userspace tunnel; no native app, no cert. Open risks: cryptography 3.4.8, deps, raw mDNS. This is the only all-constraints path; test gates above. |
 | **E. USB `ideviceinstaller`** | no | yes | none | Works today (0.6.12 verified). |
 
 There is **no** pure own-cert + no-PC + no-third-party-app path on iOS 27: a free-profile app
@@ -140,24 +181,23 @@ is written over AFC/house_arrest, exactly as AltServer and SideInstaller do.
 
 ## 6. Recommended order
 
-1. **Unblock the user now:** install SideInstaller from its official page on the iPhone (or on
-   the iPad and use Side by Side), connect LocalDevVPN, sign in, install SideStore. This proves
-   the no-PC pipeline on the actual device. Keep BariSign for signing and refreshes.
-2. **Decide the product direction:**
-   - A/B: depend on SideInstaller (fast, proven, non-commercial bootstrap).
-   - C: build a BariSign native helper from MIT `idevice`/`isideload` (own, larger).
-3. **Pairing-file writer:** once a native tunnel exists, add the RPPairing record writer for
-   AltStore/SideStore. Without the native tunnel, only the import path (AirDrop the file and let
-   the app import it) is realistic.
-4. **Do not** spend more time on AirDrop/OTA for free profiles.
+1. **Test the pure-Python route on the iPad** (section 0). `pair_probe.py` is in the repo and needs no
+   new dependency. If the iPhone's Paired Macs screen shows the host, the Bonjour half is proven.
+2. **Test `pymobiledevice3` on a-Shell** with `--no-deps` and the pure dependencies. If it imports
+   and `remote pair-host` runs, pair the iPhone and try `remote start-tunnel` + `install`.
+3. If that works: BariSign keeps signing on the iPhone, the iPad installs, and the same tool writes
+   the RPPairing record into AltStore/SideStore over AFC (section 5). No PC, no SideInstaller, no
+   certificate.
+4. If a-Shell's 3.4.8 blocks it: either port the needed subset or fall back to a native helper.
+5. **Do not** spend more time on AirDrop/OTA for free profiles.
 
 ## 7. Unverified / risks
 
 - SideInstaller's iOS 27 no-PC claim is the author's and is consistent with the source, but this
   project has not independently run it on the iPhone yet.
-- A pure-Python RPPairing **host** might work on the iPad, where a-Shell stays in the foreground;
-  the **tunnel/installation_proxy** side still needs the native TCP stack, so it does not remove
-  the native helper.
+- The pure-Python tunnel is the open question: `pymobiledevice3` advertises a userspace backend, but
+  it has not been run under a-Shell's `cryptography` 3.4.8 and Python build. If it imports and pairs,
+  the native helper is unnecessary; if not, the fallback is a compatibility port or a native helper.
 - AltStore 2.3's Remote AltServer is a separate feature; it is not the same as on-device
   RPPairing and still points at a server.
 - Pairing-file compatibility across AltStore/SideStore versions changes quickly; test each
