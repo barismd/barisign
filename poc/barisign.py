@@ -63,7 +63,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.6"
+VERSION = "0.6.7"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -164,12 +164,24 @@ CLEAR = "\033[2J\033[1;1H"
 
 
 def _clear_screen():
+    """Clear the page and every saved line, and leave the view at the new page.
+
+    Order matters. The previous stage is on the visible page; a page of newlines
+    scrolls it into the saved lines, and only then does 3J drop them. 3J used to
+    run first, so the stage that was just scrolled away was saved *after* the
+    clear and stayed in the scrollback (sometimes, depending on what the buffer
+    already held). A second page of newlines lets the view settle after 3J's
+    buffer trim, then the page is cleared and the cursor homed.
+    """
     try:
         import shutil
         rows = max(1, shutil.get_terminal_size((40, 24)).lines)
     except Exception:                                         # noqa: BLE001
         rows = 24
-    sys.stdout.write("\033[0m\033[3J" + "\n" * rows + CLEAR)
+    # Two pages before 3J: the cursor can be anywhere on the page, so one page of
+    # newlines does not always scroll a full screen (that is why the old stage
+    # only sometimes ended up in the scrollback).
+    sys.stdout.write("\033[0m" + "\n" * (2 * rows) + "\033[3J" + "\n" * rows + CLEAR)
     sys.stdout.flush()
 
 
