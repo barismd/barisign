@@ -61,7 +61,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.3"
+VERSION = "0.6.4"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -95,6 +95,20 @@ def _wire_progress():
         # vendored code kept losing the typed number to the moving line.
         module.ask = lambda prompt, default=None: _portal_ask(prompt, default)
         module.confirm = lambda prompt, default=False: _portal_confirm(prompt, default)
+        original_revoke = module.revoke_to_make_room
+
+        def portal_revoke(session, team):
+            text = _SPINNER.text
+            revoked = original_revoke(session, team)
+            if revoked:
+                # The certificate list and the prompt leave the screen full;
+                # redraw the stage instead of continuing underneath them.
+                _refresh_stage()
+                if text:
+                    _SPINNER.set(text)
+            return revoked
+
+        module.revoke_to_make_room = portal_revoke
 
 
 _wire_progress()
@@ -209,9 +223,14 @@ class _Spinner:
 _SPINNER = _Spinner()
 
 
+_STAGE = {"title": "", "note": ""}
+
+
 def _stage(title, note=""):
     """Clean screen, then the stage header. The note restores what the clear
     would otherwise wipe (the Apple ID, for example)."""
+    _STAGE["title"] = title
+    _STAGE["note"] = note
     _SPINNER.stop()
     sys.stdout.write(CLEAR)
     sys.stdout.flush()
@@ -221,6 +240,15 @@ def _stage(title, note=""):
     if note:
         print("  %s" % note)
     print()
+
+
+def _refresh_stage():
+    """Redraw the current stage after something scrolls a lot (a revoke)."""
+    if _STAGE["title"]:
+        _stage(_STAGE["title"], _STAGE["note"])
+    else:
+        sys.stdout.write(CLEAR)
+        sys.stdout.flush()
 
 
 def _step(index, total, label):
@@ -233,12 +261,14 @@ def _activity(message):
 
 
 def _portal_line(message, prefix="  "):
-    """A portal line that would otherwise be written over the spinner."""
-    text = _SPINNER.text
+    """A portal line that would otherwise be written over the spinner.
+
+    The spinner is left stopped: restarting it after every line of a burst (the
+    certificate list) put a spinner frame between the lines and made the block
+    look twice as long. The next _step, or the end of a prompt, resumes it.
+    """
     _SPINNER.stop()
     print("%s%s" % (prefix, message))
-    if text:
-        _SPINNER.set(text)
 
 
 def _portal_step(message):
@@ -497,6 +527,8 @@ def _forget_anisette(anisette, state_path):
 
 def _portal(account, email, udid, bundle_id, device_name, app_name):
     """Register the device, get a certificate and a provisioning profile."""
+    # Also gives the revoke path a stage to redraw, with the Apple ID restored.
+    _stage("Portal", "Apple ID  %s" % email)
     started = time.time()
     token, adsid = account.app_token("xcode.auth")
     session = DeveloperSession(account, token, adsid)
@@ -662,13 +694,24 @@ def normalise_udid(text):
 
 
 def _press_return(prompt):
-    """Wait for Return with plain input(): no terminal modes are changed."""
+    """Wait for Return with the same byte reader as the 2FA code.
+
+    input() stops working after a masked read in a-Shell (the terminal's line
+    discipline is left where _masked_line found it), which is exactly the state
+    this prompt runs in: the sign-in already used that reader. The byte reader
+    echoes the keypress and restores the modes on every exit path.
+    """
     if not sys.stdin.isatty():
         return ""            # piped input: do not swallow the next line
     try:
-        return input(prompt)
-    except EOFError:
-        return ""
+        return poc_login._masked_line(prompt, mask=False)
+    except KeyboardInterrupt:
+        raise
+    except Exception:                                         # noqa: BLE001
+        try:
+            return input(prompt)
+        except EOFError:
+            return ""
 
 
 def _open_in_safari(url):
@@ -827,7 +870,6 @@ def cmd_portal(argv):
         udid = load_state().get("udid", "")
 
     account = _sign_in(email)
-    _stage("Portal")
     result = _portal(account, email, udid, bundle_id, "BariSign device", "BariSign")
     update_state(email=email, udid=udid, variant=variant or state.get("variant", ""),
                  bundle_id=result["bundle_id"], team_id=result["team_id"],
