@@ -63,7 +63,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.10"
+VERSION = "0.6.11"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -437,7 +437,7 @@ def _preflight_apple(gs):
     return status == 200
 
 
-def _sign_in(email, preferred=None, use_clipboard=False):
+def _sign_in(email, preferred=None, use_clipboard=False, staged=False):
     """Anisette, then Apple, then the password — never the other way round.
 
     Apple's October 2026 rules (verified against release notes, issue trackers and
@@ -446,8 +446,13 @@ def _sign_in(email, preferred=None, use_clipboard=False):
     first and their own client_info is what we send. A 503 or -80046 means the edge
     refused the identity: forget it and try the next server. The password is asked
     once, after Apple has answered, and never stored.
+
+    `staged` says the caller already put up the Apple sign-in screen and asked for
+    the address there; without it the address would be asked before the screen
+    exists, which is what the UDID stage used to do.
     """
-    _stage("Apple sign-in", "Apple ID  %s" % email)
+    if not staged:
+        _stage("Apple sign-in", "Apple ID  %s" % email)
     state_path = os.path.join(STATE_DIR, "anisette.json")
     candidates = _anisette_order([preferred] if preferred else [])
     last_error = None
@@ -897,11 +902,17 @@ def cmd_login(argv):
     preferred = argv_get(argv, "--server")
     use_clipboard = "--use-clipboard" in argv
     positional = [item for item in argv if not item.startswith("-") and item != preferred]
-    email = positional[0] if positional else _ask("  Apple ID: ")
+    given = bool(positional)
+    email = positional[0] if given else ""
     if not email:
-        print("no Apple ID")
-        return 2
-    account = _sign_in(email, preferred, use_clipboard)
+        # The address belongs on the sign-in screen, not on whatever screen was
+        # showing when `login` started.
+        _stage("Apple sign-in")
+        email = _ask("  Apple ID: ").strip()
+        if not email:
+            print("no Apple ID")
+            return 2
+    account = _sign_in(email, preferred, use_clipboard, staged=not given)
     update_state(email=email)
     name = ""
     try:
@@ -1145,11 +1156,15 @@ def cmd_guided(argv):
         return 1
     state = load_state()
 
-    email = state.get("email") or _ask("  Apple ID: ")
+    email = state.get("email") or ""
     if not email:
-        print("no Apple ID")
-        return 2
-    account = _sign_in(email)
+        # Same rule as `login`: the stage comes first, the address is asked on it.
+        _stage("Apple sign-in")
+        email = _ask("  Apple ID: ").strip()
+        if not email:
+            print("no Apple ID")
+            return 2
+    account = _sign_in(email, staged=not state.get("email"))
     update_state(email=email)
 
     result = _portal(account, email, state.get("udid", ""), state.get("bundle_id", ""),
