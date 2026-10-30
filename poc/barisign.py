@@ -63,7 +63,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.9"
+VERSION = "0.6.10"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -367,14 +367,24 @@ def _result(label, text):
     print("%s  %s" % (label, text))
 
 
-def _ask(prompt, default=None):
-    # Plain input(): a-Shell echoes it normally, and nothing touches termios, so a
-    # later prompt cannot end up with echo switched off (that bit us once).
+def _read_line(prompt):
+    """One line, read with our own byte reader on a TTY.
+
+    input() stops working in a-Shell once _masked_line has touched the terminal's
+    line discipline, and the UDID prompt runs right after the "Return to open
+    Safari" prompt (which uses that reader). So every visible prompt reads bytes
+    itself; non-TTY runs still use input() so piped input keeps working.
+    """
+    if sys.stdin.isatty():
+        return poc_login._masked_line(prompt, mask=False)
     try:
-        entered = input(prompt)
+        return input(prompt)
     except EOFError:
-        entered = ""
-    entered = (entered or "").strip()
+        return ""
+
+
+def _ask(prompt, default=None):
+    entered = (_read_line(prompt) or "").strip()
     return entered or (default or "")
 
 
@@ -778,15 +788,7 @@ def _press_return(prompt):
     """
     if not sys.stdin.isatty():
         return ""            # piped input: do not swallow the next line
-    try:
-        return poc_login._masked_line(prompt, mask=False)
-    except KeyboardInterrupt:
-        raise
-    except Exception:                                         # noqa: BLE001
-        try:
-            return input(prompt)
-        except EOFError:
-            return ""
+    return _read_line(prompt)
 
 
 def _open_in_safari(url):
@@ -800,22 +802,36 @@ def _open_in_safari(url):
         return False
 
 
+def _udid_instructions():
+    print("  Safari opens median.co/udid")
+    print("  1  install the profile")
+    print("  2  copy the UDID")
+    print("  3  come back here")
+    print()
+
+
 def cmd_udid(argv):
     """This device's UDID: Safari opens, the value is pasted back."""
     _stage("UDID")
     typed = [item for item in argv if not item.startswith("-")]
     udid = extract_udid(typed[0]) if typed else ""
     if not udid:
-        print("  Safari opens median.co/udid")
-        print("  1  install the profile")
-        print("  2  copy the UDID")
-        print("  3  come back here")
-        print()
+        _udid_instructions()
         if "--no-open" not in argv:
             _step(1, 3, "safari")
             _pause_for_input()
             _press_return("  Return to open Safari: ")
-            if _open_in_safari(UDID_URL) is not True:
+            opened = _open_in_safari(UDID_URL)
+            if opened is not None:
+                # a-Shell comes back from Safari with the view scrolled a few
+                # lines, even though nothing was printed. Let the activation (and
+                # any keyboard/viewport change) settle, then redraw the stage (and
+                # its instructions) so the page starts at the top again. A failed
+                # `open` scrolls too, so it gets the same treatment.
+                time.sleep(0.25)
+                _refresh_stage()
+                _udid_instructions()
+            if opened is not True:
                 print("  open it yourself: %s" % UDID_URL)
                 print()
         for attempt in range(3):
