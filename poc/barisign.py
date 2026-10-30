@@ -46,6 +46,12 @@ from signin import AppleAccount, Fail, connect_anisette        # noqa: E402
 from portal import (DeveloperSession, ensure_app_id, ensure_device,               # noqa: E402
                     ensure_private_key, obtain_certificate, pick_team,
                     download_profile, profile_plist, list_devices)
+
+# portal.py imported MACHINE_NAME by name, so both modules need it. It is what
+# Apple shows next to a development certificate, and what lets a later run reuse
+# the certificate this tool created instead of burning another slot.
+signin.MACHINE_NAME = "BariSign"
+portal.MACHINE_NAME = "BariSign"
 try:
     import signer                                              # noqa: E402
     import download                                            # noqa: E402
@@ -55,7 +61,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.2"
+VERSION = "0.6.3"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -85,17 +91,10 @@ def _wire_progress():
         module.ok = lambda message="", *a, **k: _portal_line(message)
         module.warn = lambda message="", *a, **k: _portal_line(message, "  ! ")
         module.step = lambda message="", *a, **k: _portal_step(message)
-        original_ask = module.ask
-        original_confirm = module.confirm
-
-        def portal_ask(prompt, default=None):
-            return _portal_question(original_ask, prompt, default)
-
-        def portal_confirm(prompt, default=False):
-            return _portal_question(original_confirm, prompt, default)
-
-        module.ask = portal_ask
-        module.confirm = portal_confirm
+        # Replace portal's ask/confirm with our own reader: input() inside the
+        # vendored code kept losing the typed number to the moving line.
+        module.ask = lambda prompt, default=None: _portal_ask(prompt, default)
+        module.confirm = lambda prompt, default=False: _portal_confirm(prompt, default)
 
 
 _wire_progress()
@@ -138,9 +137,12 @@ def load_variants():
 # small helpers
 # ---------------------------------------------------------------------------
 
-# 2J clears the screen, 3J clears the scrollback too (xterm extension; terminals
-# that do not know it ignore it), H puts the cursor back at the top.
-CLEAR = "\033[2J\033[3J\033[H"
+# H homes first, then 2J clears the screen. 3J (clear the scrollback too) is not
+# used: in a-Shell it leaves the cursor where the previous command ended, so on a
+# screen with output every line printed below it scrolled the stage header out of
+# view and the user had to scroll back up. Clearing the scrollback is not worth
+# that.
+CLEAR = "\033[H\033[2J"
 
 
 def _columns():
@@ -185,10 +187,19 @@ class _Spinner:
                 sys.stdout.flush()
                 with self._lock:
                     self.dots = (self.dots + 1) % 4
-            time.sleep(0.4)
+            # Wake every 50 ms so stop() can join without waiting a full tick.
+            for _ in range(8):
+                if self._stop.wait(0.05):
+                    return
 
     def stop(self):
         self._stop.set()
+        thread = self._thread
+        if (thread is not None and thread.is_alive()
+                and thread is not threading.current_thread()):
+            # Join, not just signal: a thread woken mid-write could otherwise
+            # erase the first characters of a prompt that follows.
+            thread.join(0.7)
         with self._lock:
             self.text = ""
         sys.stdout.write("\r\033[2K")
@@ -239,15 +250,53 @@ def _portal_step(message):
     _SPINNER.set(prefix + message)
 
 
-def _portal_question(reader, prompt, default):
-    """portal.ask/confirm run input(); the spinner must be off while it waits."""
+def _portal_read(prompt, default=None):
+    """One line, read with the same byte reader as the 2FA code.
+
+    input() here went through the vendored ask() while the spinner was running;
+    the typed digits were wiped and the choice came back empty. This reads on a
+    TTY byte by byte (visible, modes restored), and falls back to input() only
+    when stdin is not a terminal.
+    """
+    if sys.stdin.isatty():
+        answer = poc_login._masked_line(prompt, mask=False)
+    else:
+        try:
+            answer = input(prompt)
+        except EOFError:
+            answer = ""
+    answer = (answer or "").strip()
+    if not answer and default is not None:
+        return default
+    return answer
+
+
+def _portal_question(reader):
+    """Stop the spinner, read with `reader`, then put the spinner back."""
     text = _SPINNER.text
     _SPINNER.stop()
     try:
-        return reader(prompt, default)
+        return reader()
     finally:
         if text:
             _SPINNER.set(text)
+
+
+def _portal_ask(prompt, default=None):
+    suffix = " [%s]: " % default if default else ": "
+    return _portal_question(lambda: _portal_read(prompt + suffix, default))
+
+
+def _portal_confirm(prompt, default=False):
+    suffix = " [%s] " % ("Y/n" if default else "y/N")
+
+    def read():
+        answer = _portal_read(prompt + suffix, "").lower()
+        if not answer:
+            return default
+        return answer in ("y", "yes")
+
+    return _portal_question(read)
 
 
 def _pause_for_input():
