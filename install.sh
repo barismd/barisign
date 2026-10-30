@@ -14,16 +14,13 @@
 set -u
 
 BASE="https://github.com/barismd/barisign/blob/main"
-API="https://api.github.com/repos/barismd/barisign/contents"
 DIR="${BARISIGN_DIR:-$HOME/Documents/barisign}"
 
-echo "BariSign installer"
-echo "  installing into: $DIR"
-echo
+printf 'BariSign installer\n\n'
 
 mkdir -p "$DIR/poc" "$DIR/bin" "$DIR/third_party/sideinstaller" \
          "$DIR/third_party/apple-roots" "$DIR/third_party/ca-bundle" || {
-    echo "Could not create $DIR - in a-Shell only ~/Documents is writable."
+    printf '  ! cannot create %s (a-Shell only writes inside ~/Documents)\n' "$DIR"
     exit 1
 }
 cd "$DIR" || exit 1
@@ -37,35 +34,28 @@ ATOM="https://github.com/barismd/barisign/commits/main.atom"
 # a-Shell has no rev/cut/head, so the commit id is read with python3 alone.
 SHA=$(curl -sSL --max-time 25 "$ATOM" 2>/dev/null | python3 -c "
 import re, sys
-found = re.search(r'barisign/commit/([0-9a-f]{40})', sys.stdin.read())
+found = re.search(r'barismd/barisign/commit/([0-9a-f]{40})', sys.stdin.read())
 print(found.group(1) if found else '')
 " 2>/dev/null)
 if [ -n "${SHA:-}" ]; then
     RAW="https://raw.githubusercontent.com/barismd/barisign/$SHA"
-    REVISION="$SHA"
+    printf '  revision  %.7s\n' "$SHA"
 else
     RAW="https://raw.githubusercontent.com/barismd/barisign/main"
-    REVISION="main (NOT pinned)"
-    echo "  WARNING: the newest commit id could not be read, so the downloads"
-    echo "           are not pinned to it. GitHub can then serve an older copy."
-    echo "           If anything looks old, run this script again in a minute."
+    printf '  revision  main (not pinned)\n'
+    printf '  ! the commit id could not be read; GitHub can serve an older copy\n'
 fi
-echo "  revision: $REVISION"
-echo
 
 fetch() {   # fetch <file-in-repo> <destination>
-    printf '  %-40s' "$2"
     if curl -sSL -H 'Cache-Control: no-cache' "$RAW/$1" -o "$2" 2>/dev/null && [ -s "$2" ]; then
-        echo "ok"
         return 0
     fi
     if curl -sSL -H 'Cache-Control: no-cache' \
             "https://raw.githubusercontent.com/barismd/barisign/main/$1" -o "$2" 2>/dev/null \
        && [ -s "$2" ]; then
-        echo "ok (unpinned fallback)"
         return 0
     fi
-    echo "FAILED"
+    FAILED="${FAILED:-} $1"
     return 1
 }
 
@@ -88,19 +78,19 @@ download_all() {
     return $fail
 }
 
+# Prints the files that do not compile, and fails when there is one.
 check_compiles() {
-    echo
-    echo "Checking that the scripts compile:"
+    bad=""
     for f in poc/poc_login.py poc/poc_portal.py poc/barisign.py poc/signer.py \
              poc/download.py poc/pair_probe.py third_party/sideinstaller/signin.py \
              third_party/sideinstaller/portal.py; do
-        if python3 -c "compile(open('$f').read(), 'x', 'exec')" 2>/dev/null; then
-            echo "  $f  ok"
-        else
-            echo "  $f  FAILED"
-            fail=1
+        if ! python3 -c "compile(open('$f').read(), 'x', 'exec')" 2>/dev/null; then
+            bad="$bad $f"
         fi
     done
+    [ -z "$bad" ] && return 0
+    printf '%s\n' "$bad"
+    return 1
 }
 
 # Compiling is not enough: a half-stale set compiles and then fails on import.
@@ -113,31 +103,37 @@ works() {
 
 attempt=1
 while [ "$attempt" -le 2 ]; do
+    FAILED=""
+    printf '  files     ...'
     download_all
-    check_compiles
-    if [ "$fail" -eq 0 ] && works; then
+    if [ "$fail" -eq 0 ]; then
+        printf '\r\033[2K  files     ok\n'
+    else
+        printf '\r\033[2K  files     failed\n'
+        printf '  ! could not fetch:%s\n' "$FAILED"
+    fi
+
+    printf '  check     ...'
+    COMPILE_BAD=""
+    if [ "$fail" -eq 0 ] && COMPILE_BAD=$(check_compiles) && works; then
+        printf '\r\033[2K  check     ok\n'
         break
     fi
+    printf '\r\033[2K  check     failed\n'
+    if [ -n "${COMPILE_BAD:-}" ]; then
+        printf '  ! does not compile:%s\n' "$COMPILE_BAD"
+    fi
     if [ "$attempt" -lt 2 ]; then
-        echo
-        echo "A download failed or the set did not check out. Retrying in 5 seconds..."
+        printf '  ! retrying in 5 s\n'
         sleep 5
     fi
     attempt=$((attempt + 1))
 done
 
-echo
+printf '\n'
 if [ "$fail" -ne 0 ] || ! works; then
-    echo "The download did not come out right. Nothing here is destructive, so"
-    echo "just run this script again. If it keeps failing, check the network"
-    echo "(Safari should open github.com)."
+    printf '  ! install failed; nothing was changed outside the program files.\n'
+    printf '    check the network (Safari should open github.com) and run sh install.sh again.\n'
     exit 1
 fi
-
-echo "Ready. From $DIR run:"
-echo
-echo "  sh bin/barisign          guided run: check -> variant -> UDID -> Apple -> portal"
-echo "  sh bin/barisign check    runtime + anisette + Apple TLS only"
-echo
-echo "Installed revision: $REVISION"
-echo "To update later, run this script again (or: sh bin/update)."
+printf '  ready     sh bin/barisign\n'

@@ -55,7 +55,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -69,11 +69,33 @@ signin.STORAGE = STATE_DIR
 
 
 def _wire_progress():
-    """The vendored stack narrates every step; it all goes through one line."""
+    """The vendored stack narrates every step; it all goes through one line.
+
+    portal.py imported info/step/warn/ask by name, so rebinding them in signin
+    is not enough: its own references still printed straight to stdout and
+    landed on top of the moving line.
+    """
     for name in ("info", "ok", "step", "warn"):
         if hasattr(signin, name):
             setattr(signin, name, lambda message="", *a, **k: _activity(message))
     signin.PROGRESS = lambda message="": _activity(message)
+    if "portal" in sys.modules:
+        module = sys.modules["portal"]
+        module.info = lambda message="", *a, **k: _portal_line(message)
+        module.ok = lambda message="", *a, **k: _portal_line(message)
+        module.warn = lambda message="", *a, **k: _portal_line(message, "  ! ")
+        module.step = lambda message="", *a, **k: _portal_step(message)
+        original_ask = module.ask
+        original_confirm = module.confirm
+
+        def portal_ask(prompt, default=None):
+            return _portal_question(original_ask, prompt, default)
+
+        def portal_confirm(prompt, default=False):
+            return _portal_question(original_confirm, prompt, default)
+
+        module.ask = portal_ask
+        module.confirm = portal_confirm
 
 
 _wire_progress()
@@ -197,6 +219,35 @@ def _step(index, total, label):
 def _activity(message):
     """Vendored narration would fight the spinner, so it is not shown."""
     return
+
+
+def _portal_line(message, prefix="  "):
+    """A portal line that would otherwise be written over the spinner."""
+    text = _SPINNER.text
+    _SPINNER.stop()
+    print("%s%s" % (prefix, message))
+    if text:
+        _SPINNER.set(text)
+
+
+def _portal_step(message):
+    """Keep the stage number, replace the label: '(4/5) generating a key'."""
+    text = _SPINNER.text
+    prefix = ""
+    if text.startswith("(") and ") " in text:
+        prefix = text.split(") ", 1)[0] + ") "
+    _SPINNER.set(prefix + message)
+
+
+def _portal_question(reader, prompt, default):
+    """portal.ask/confirm run input(); the spinner must be off while it waits."""
+    text = _SPINNER.text
+    _SPINNER.stop()
+    try:
+        return reader(prompt, default)
+    finally:
+        if text:
+            _SPINNER.set(text)
 
 
 def _pause_for_input():
@@ -746,17 +797,22 @@ def _display_path(path):
 
 
 def _open_zip_preview(path):
-    """Enter opens a-Shell's preview, which has the share sheet for AirDrop."""
+    """Enter opens a-Shell's preview, which has the share sheet for AirDrop.
+
+    `view` is one of a-Shell's own commands, not a file in PATH, so searching
+    the PATH for it finds nothing. On iOS it is simply run; anywhere else the
+    path is printed (on a Mac `view` is vim).
+    """
     if not sys.stdin.isatty():
         return
     _press_return("  return  open the zip preview: ")
-    # On other systems `view` is often vim; only a-Shell's preview is wanted.
+    marker = os.environ.get("TERM_PROGRAM", "").lower()
     a_shell = (sys.platform.startswith(("ios", "darwin"))
-               or os.environ.get("TERM_PROGRAM", "").lower().startswith("a-shell"))
-    if _have_command("view") and a_shell and not os.environ.get("BARISIGN_NO_VIEW"):
-        os.system("view %s" % shlex.quote(path))
-    else:
-        print("  view  %s" % _display_path(path))
+               or "a-shell" in marker or "ashell" in marker)
+    if a_shell and not os.environ.get("BARISIGN_NO_VIEW"):
+        if os.system("view %s" % shlex.quote(path)) == 0:
+            return
+    print("  view  %s" % _display_path(path))
 
 
 _SIGN_STEPS = {"read": (1, 5, "ipa"), "open": (2, 5, "unpack"),
