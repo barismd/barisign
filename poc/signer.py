@@ -70,10 +70,12 @@ STATE_DIR = os.path.join(os.path.dirname(_HERE), "state")
 
 VERSION = "0.1.0"
 
-# Page size used for the code hashes. 4 KB is what Apple's own tool emits for
-# most binaries and what the reference implementation (apple-codesign) uses; the
-# device accepts any power of two from 4 KB to 64 KB.
-PAGE_SIZE = 4096
+# Page size used for the code hashes. Apple's codesign emits 16 KB pages for
+# these arm64/iOS binaries (its own AltStore and framework signatures do), so we
+# match it rather than the 4 KB default some re-signers use. The device accepts
+# both, but the system installer's validation is the one judge we cannot run.
+PAGE_SIZE = 16384
+PAGE_SHIFT = 14
 
 # Mach-O
 MH_MAGIC = 0xFEEDFACE
@@ -712,7 +714,7 @@ def build_code_directory(identifier, team, code_limit, specials, page_hashes,
     data = bytearray()
     data += struct.pack(">IIIIIIIII", CSMAGIC_CODEDIRECTORY, total_size, 0x20400, 0,
                         digest_offset, ident_offset, highest, len(page_hashes), code_limit)
-    data += struct.pack(">BBBB", 32, 2, 0, 12)               # hashSize, SHA-256, platform, page shift
+    data += struct.pack(">BBBB", 32, 2, 0, PAGE_SHIFT)       # hashSize, SHA-256, platform, page shift
     data += struct.pack(">IIII", 0, 0, team_offset, 0)       # spare2, scatter, team, spare3
     data += struct.pack(">QQQ", 0, exec_base, exec_limit)    # codeLimit64, execSegBase, execSegLimit
     data += struct.pack(">Q", exec_flags)
@@ -978,6 +980,9 @@ def _sign_thin(data, identifier, team, entitlements, code_resources, info_plist,
         blobs.append((CSSLOT_SIGNATURESLOT, _blob(CSMAGIC_BLOBWRAPPER,
                                                   build_cms(code_directory, leaf, chain, key))))
         superblob = build_superblob(blobs)
+        # Apple's signatures end on a 16-byte boundary. The zeros are outside the
+        # SuperBlob's own length field and only pad LC_CODE_SIGNATURE.datasize.
+        superblob += b"\x00" * ((16 - len(superblob) % 16) % 16)
         if len(superblob) == predicted:
             break
         predicted = len(superblob)
@@ -1704,8 +1709,9 @@ def _check_macho_bytes(data, relative, expected_ident, leaf, failures,
                 raise SigningError("unexpected CodeDirectory version %#x" % cd["version"])
             if cd["hash_type"] != 2 or cd["hash_size"] != 32:
                 raise SigningError("the CodeDirectory is not SHA-256")
-            if cd["page_shift"] != 12:
-                raise SigningError("the CodeDirectory page size is not 4 KB")
+            if cd["page_shift"] != PAGE_SHIFT:
+                raise SigningError("the CodeDirectory page size is not %d KB"
+                                   % (PAGE_SIZE // 1024))
             if cd["code_limit"] != dataoff:
                 raise SigningError("codeLimit does not point at the signature")
             hashes = page_digests(part[:dataoff], dataoff)
@@ -1924,6 +1930,32 @@ def _prepare_config(profile_path, key_path, cert_path, udid=None):
 
     leaf = load_certificate(cert_path)
     key = load_private_key(key_path)
+
+    # A certificate that expired (or is not valid yet) makes installd reject the
+    # app with a generic "cannot be installed"; catch it here, where the message
+    # can say why. Revocation is the one thing that cannot be checked offline:
+    # only Apple knows, so `portal` must be run after a revoke.
+    now = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        not_after = leaf.not_valid_after_utc
+        not_before = leaf.not_valid_before_utc
+    except AttributeError:                  # cryptography < 42
+        not_after = leaf.not_valid_after
+        not_before = leaf.not_valid_before
+    if not_after.tzinfo is None:
+        not_after = not_after.replace(tzinfo=datetime.timezone.utc)
+    if not_before.tzinfo is None:
+        not_before = not_before.replace(tzinfo=datetime.timezone.utc)
+    if not_after < now:
+        raise SigningError("the signing certificate expired on %s; run portal again"
+                           % not_after.date())
+    if not_before > now:
+        raise SigningError("the signing certificate is not valid until %s"
+                           % not_before.date())
+    units = leaf.subject.get_attributes_for_oid(NameOID.ORGANIZATIONAL_UNIT_NAME)
+    if units and units[0].value != team:
+        raise SigningError("the certificate belongs to team %s, the profile to %s"
+                           % (units[0].value, team))
     numbers = getattr(key, "private_numbers", lambda: None)()
     public = getattr(numbers, "public_numbers", None)
     cert_public = leaf.public_key()
