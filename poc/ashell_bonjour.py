@@ -9,7 +9,7 @@
 #  pymobiledevice3.bonjour.MDNSResponder, but registration goes through
 #  libsystem_dnssd, exactly like poc/pair_probe.py already does.
 #
-#  It is used by poc/pair_install.py on the iPad. On a normal Linux/macOS
+#  It is used by poc/pair_install.py on the signer. On a normal Linux/macOS
 #  machine the original responder is left alone.
 # =============================================================================
 

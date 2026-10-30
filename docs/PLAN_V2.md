@@ -1,35 +1,50 @@
-# BariSign — plan v2 (single device, no Shortcuts)
+# BariSign — plan v2 (two roles, no computer, no Shortcuts)
 
-Written 2026-10-29 after the user's decision to rebuild the flow around one device; it replaces the
-older two-device plan, which is gone.
+Written 2026-10-29, rewritten 2026-10-31 after the AirDrop install was refused by iOS 27. The current
+shape is **two roles**, not two specific devices:
+
+- **Signer** — runs a-Shell + BariSign: UDID page, Apple ID, portal, signing, install.
+- **Target** — the device that gets the app: Safari and Settings only.
+- Either role may be an **iPhone or an iPad** (iOS/iPadOS 27+); they must share the same Wi-Fi.
 
 ## The shape of it
 
-Everything runs **on the device that will get the app**, inside a-Shell Python. There is no "signer"
-device and no "target" device, and no Apple ID ever touches a server we do not control.
-
 ```
-a-Shell on the iPhone/iPad
-  1. UDID        median.co profile -> paste 40/24 hex characters
-  2. Apple ID    anisette + SRP-6a + 2FA                        (verified)
-  3. portal      register UDID, App ID, certificate, profile    (written, untested)
-  4. download    the chosen variant's IPA, resolved at runtime
-  5. sign        Mach-O + entitlements + CodeResources + CMS    (written, untested)
-  6. package     signed .ipa inside a .zip
-       |
-       +--> AirDrop the zip to any second device, unzip, AirDrop the .ipa back
-            iOS installs it on arrival (verified with a hand-made test IPA)
+SIGNER (a-Shell)                              TARGET (Safari / Settings)
+  1. UDID     serve http://<signer-ip>:<port>/  -->  open the page, install median.co/udid,
+                                                     copy the UDID, paste + submit
+  2. Apple ID anisette + SRP-6a + 2FA         (verified)
+  3. portal   UDID -> App ID -> cert -> profile (verified)
+  4. download + sign + verify the chosen IPA   (verified over USB)
+  5. sh bin/pair  <-- pairing host + code -->  Settings -> Developer -> Paired Macs -> BariSign
+                  installation_proxy over Wi-Fi  (target installs, Trust Developer, opens the app)
 ```
 
-The zip round trip exists only because iOS cannot AirDrop a file to itself. Any second device works; a Mac
-or another iPad is enough.
+a-Shell is installed **only on the signer**. The target installs nothing from BariSign. The program stays
+one integrated flow on the signer.
 
-## Why the UDID is just a pasted value
+## Why not AirDrop or OTA
 
-A profile service does the whole job: one tap, a copy button, and no endpoint of ours. The local
-certificate authority we built first also worked, but it cost a second install, a trust switch and a CA file
-to carry, and it broke whenever that file was not. So the code is gone and the script only takes the pasted
-value; `docs/UDID_OPTIONS.md` keeps the self-hosting instructions for anyone who wants no third party.
+iOS 27 refuses a **free provisioning profile** from the AirDrop/MobileInstallation source:
+
+```
+MIInstallerErrorDomain 111
+"authorized by a free provisioning profile, but apps validated by those are not allowed
+to be installed from this source."
+```
+
+The same IPA installs through `installation_proxy` (the developer source), which is what `ideviceinstaller`
+does over USB and what the signer→target pairing tunnel does over Wi-Fi. OTA is enterprise/ad-hoc territory
+and is not available with a free certificate. Both are out.
+
+## Why the UDID is a page, not a paste into a-Shell
+
+The target is the device that needs the UDID, and it does not run a-Shell. At the UDID step the signer
+starts a short-lived HTTP server on its Wi-Fi address; the target opens it in Safari, installs the
+`median.co/udid` profile, copies the value and submits it in the page's box. The signer receives the value
+and continues. No third-party server of ours; the page lives only for that step.
+
+`sh bin/barisign udid --manual` keeps the paste-on-the-signer fallback for development.
 
 ## Pairing file — decided: fork the three apps
 
@@ -38,38 +53,23 @@ SideStore inside LiveContainer+SideStore, and of AltStore Classic. `docs/FORK_PL
 the licence rules (clean-room reimplementation — the non-commercial SideInstaller code may not be mixed
 into AGPL forks) and the risks.
 
-Facts that make it possible, checked 2026-10-29:
+Facts that make it possible, checked 2026-10-29/31:
 
-- iOS **27** added **Settings → Privacy & Security → Developer Mode → "Pair with <app>"** with a six-digit
-  code. SideInstaller uses exactly this to pair with no computer.
+- iOS **27** added **Settings → Privacy & Security → Developer Mode → "Paired Macs"** with a six-digit
+  code. SideInstaller uses this to pair with no computer.
 - SideStore, AltStore and LiveContainer also accept an **imported** pairing file, which is how the module's
   output gets consumed.
+- `pymobiledevice3` implements the device-initiated pairing host and a **pure-Python userspace tunnel**
+  (no root/TUN) plus `installation_proxy`; `bin/pair` is the first implementation of that route.
 - Licences: SideStore **AGPL-3.0**, AltStore **AGPL-3.0**, LiveContainer **AGPL-3.0**; SideInstaller is
-  "Other"/non-commercial and stays isolated in `third_party/sideinstaller/`.
+  "Other"/non-commercial and stays isolated in `third_party/sideinstaller/`. `pymobiledevice3` is GPL-3.0
+  and is installed separately, not vendored.
 
-Cost accepted with the decision: our patch to three AGPL projects, rebuilt on every upstream release, on
-GitHub-hosted macOS CI.
+Cost accepted with the decision: our patch to three AGPL projects, rebuilt on every upstream release, plus
+the `bin/pair` engine on the signer.
 
-## Licence consequences (verified)
+## Status
 
-Forks would force AGPL-3.0 on those parts and make "keep up with every release" a permanent job; that is
-the main reason A is recommended. Whatever is chosen, `third_party/sideinstaller/` stays isolated under
-its non-commercial licence, so the repo as a whole stays **non-commercial**.
-
-## Order of work
-
-1. UDID via median.co + single-device wording — **done** (untested on device).
-2. Portal against Apple — first run will show what breaks.
-3. **Signer** — Mach-O signature injection, entitlements, CodeResources, CMS SignedData with Apple's
-   `1.2.840.113635.100.9.1`/`.9.2` OIDs; then zip packaging. **Written, self-checked and compared with
-   Apple's own output on Linux; the device install is the open question.**
-4. Pairing: pick A or B, then build it.
-5. Turkish translation of every user-facing string, last.
-
-## Explicitly dropped
-
-- Shortcut management: suspended at the user's request (the a-Shell flow replaces it).
-- Cloudflare Worker / SSH tunnel / DuckDNS fallbacks: deleted earlier, still unnecessary.
-- `itms-services` loopback: rejected by iOS, see `docs/RESULTS.md`.
-- Our own UDID server and certificate authority: it existed and worked; deleted with the two-device
-  flow, since a pasted UDID needs no endpoint of ours.
+- Verified on the signer (iPhone 13, iOS 27): Apple sign-in, portal, signing, USB install, AltStore launch.
+- Written, not yet device-verified: the target UDID page and the signer→target pairing install.
+- The target page's HTTP handler is tested on Linux; the tunnel and mDNS path need a device run.

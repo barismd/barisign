@@ -1,19 +1,21 @@
 # AGENTS.md — BariSign
 
 Project goal: a public GitHub repo that installs **SideStore** (and LiveContainer+SideStore)
-on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that same device.
+on an iPhone/iPad **with no computer**, using two devices with roles:
+the **signer** (runs a-Shell + BariSign) and the **target** (the device that gets the app).
+Both may be an iPhone or an iPad; only the role matters. Same Wi-Fi required.
 
 ## Confirmed decisions (user)
 
 - **Audience = everyone, no computer.** Users are expected to sign in with their **main Apple ID**
   (2FA supported); the README must say plainly why that is safe.
-- **Single-device flow (2026-10-29 pivot):** every step runs on the device that will get the app.
-  No signer device, no target device. The finished signed IPA is packaged in a **`.zip`**; the user sends
-  the zip to any second device, unzips it there and AirDrops the `.ipa` back — iOS installs an AirDropped
-  IPA by itself. The round trip exists only because iOS cannot AirDrop to itself.
-- **UDID = the median.co profile**, one install tap, then paste the value into a-Shell. No server of ours:
-  the local-CA/HTTPS route was deleted; `docs/UDID_OPTIONS.md` documents other sites (unaffiliated) and
-  self-hosting for anyone who wants it.
+- **Two-role flow (2026-10-31 pivot):** a-Shell runs **only on the signer**. The signer does
+  login, portal, signing, packaging and the install. The **target** only uses Safari and Settings.
+  Both devices may be iOS or iPadOS; they must be on the same Wi-Fi. No computer, no AirDrop, no OTA.
+- **UDID = a page served by the signer.** At the UDID step the signer runs a short-lived HTTP server on
+  its Wi-Fi IP. On the target, Safari opens `http://<signer-ip>:<port>/`, installs the **median.co/udid**
+  profile, copies the UDID and submits it in the page's box. The signer receives it and continues.
+  No server of ours beyond that temporary LAN page; `docs/UDID_OPTIONS.md` lists other sites.
 - **Shortcuts are suspended** (user decision). The interface is a plain text flow in a-Shell.
 - **Pairing file = a module inside the apps (user decision, 2026-10-29):** fork SideStore, AltStore
   Classic and LiveContainer+SideStore, add a pairing-file step to each start screen, rebuild on every
@@ -22,13 +24,17 @@ on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that
   the pairing call is reimplemented clean-room. Design, risks and order: `docs/FORK_PLAN.md`.
 
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
-- **AirDrop is the primary install route.** Private-HTTPS `itms-services` is a documented fallback only;
-  loopback `itms-services` is rejected (see `docs/RESULTS.md`).
+- **Install = pairing + `installation_proxy` from the signer.** AirDrop and OTA are dead for
+  free-profile apps on iOS 27: `MIInstallerErrorDomain` 111, *"free provisioning profile ... not
+  allowed to be installed from this source"*. The signer runs `sh bin/pair`; the target picks
+  **BariSign** under Settings → Developer → Paired Macs and enters the code. See
+  `docs/PAIRING_INSTALL.md` and `docs/RESULTS.md`.
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
-- Test devices: **iPhone 13 (iOS 27)** = the device that gets the app; **iPad (A16)** = the second
-  device used only for the AirDrop round trip.
-- On device (iPhone 13, iOS 27) and verified: UDID, Apple sign-in, and the **developer portal**
-  (team → device → App ID → certificate → profile; the profile lists this device). Next: the signer.
+- Test devices (roles, not hardware): **iPhone 13 (iOS 27)** and **iPad (A16)**; either can be the
+  signer or the target. The role is chosen at run time; a-Shell is installed only on the signer.
+- On device and verified: UDID, Apple sign-in, the **developer portal**, the signer's signed IPA
+  over USB (`ideviceinstaller`), and AltStore launching after the app-group fix. The signer→target
+  pairing install and the new UDID HTTP page are written but not yet device-verified.
 - Sign-in requires **Mac-emulating anisette** and the server's own client_info (Apple's Oct 2026
   -80045/-80046/503 rules). `mac-ani.jkcoxson.com` and `ani.jkcoxson.com` come first. Details:
   `docs/ANISETTE.md`, `docs/RESULTS.md`.
@@ -43,6 +49,9 @@ on an iPhone/iPad **with no computer**, driven entirely from **a-Shell** on that
   licence text, attribution and a list of our changes), so the repo as a whole cannot be MIT or
   commercial. Never copy that code into MIT files; prefer reimplementing from MIT sources
   (`nab138/isideload`, `jkcoxson/idevice`). See `THIRD_PARTY_NOTICES.md`.
+- **pymobiledevice3** (GPL-3.0) is installed **separately** on the signer by `bin/pair`; it is not
+  vendored and no code from it is copied into this repository. The wrapper is MIT; if redistributed
+  with the library, treat that combination as GPL-3.0.
 - Step 1 PoC: `poc/poc_login.py` (MIT) + `third_party/sideinstaller/signin.py` (non-MIT).
 
 ## What we are building
@@ -61,13 +70,14 @@ The a-Shell interface (no Shortcuts):
 - asks readiness questions (LocalDevVPN installed & connected? Developer Mode on? Apple ID ready?),
 - asks which variant,
 - points to a complete beginner GUIDE,
-- runs the heavy steps on the device itself: UDID (median.co profile), Apple login with anisette
+- runs the heavy steps on the **signer**: UDID page served to the target, Apple login with anisette
   (retry with another anisette server on failure), download + sign the chosen IPA, package it as a zip.
-- Ends with "AirDrop this zip to another device, unzip it, AirDrop the .ipa back, tap Install".
+- Ends with `sh bin/pair`: the signer advertises as a pairable host, the **target** opens
+  Settings → Developer → Paired Macs, enters the code, and the signer installs over Wi-Fi.
 
 ## Hard constraints
 
-- Everything must be drivable from a-Shell and run **on-device, no computer**.
+- Everything on the **signer** must run in a-Shell, no computer. The **target** needs only Safari and Settings.
   - Compute layer: **a-Shell (full)** — stdlib-only Python plus the `cryptography` that ships with it;
     no native binaries, no `openssl`, no `unzip`.
   - Evaluate alternatives (other free on-device runtimes) and justify.

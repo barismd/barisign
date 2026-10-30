@@ -1,7 +1,7 @@
 # What is verified — and what we learned the hard way
 
-Replaces the old phase-0 report (the two-device plan it described no longer exists; see `PLAN_V2.md`).
-Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked otherwise.
+Replaces the old phase-0 report. The current plan is the two-role flow in `AGENTS.md` and
+`PLAN_V2.md`; everything here was confirmed on a real **iPhone 13, iOS 27** unless marked otherwise.
 
 ## Verified on device
 
@@ -10,19 +10,14 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 | Apple sign-in: anisette v3 + SRP-6a + 2FA, free Apple ID | works (`LOGIN: PASS`) |
 | Installing an **AirDropped distribution-signed** IPA (the notarized AltStore) | iOS installs it by itself; no extra "Install" tap |
 | Installing an **AirDropped free-profile** IPA (our output) | **refused by policy** on iOS 27 (0.6.10): `MIInstallerErrorDomain` 111, *"authorized by a free provisioning profile, but apps validated by those are not allowed to be installed from this source"* (`ApplicationVerificationFailed`, no Trust Developer prompt). The same IPA installs over USB with `ideviceinstaller` and starts after Trust Developer |
-| Our signer's IPA over USB (`ideviceinstaller`) | 0.6.10: install accepted, Trust Developer offered, AltStore started; it then hit its app-group fallback bug (512/EINVAL), fixed in 0.6.12 (source-verified, not yet device-tested) |
+| Our signer's IPA over USB (`ideviceinstaller`) | install accepted, Trust Developer offered; after the 0.6.12 app-group fix AltStore **launches** (device-confirmed) |
 | a-Shell running our Python stack (`cryptography` 3.4.8, stdlib only) | works; no native binaries, no `openssl`/`unzip` |
 
 ## Written but **never tested on a device**
 
-- `portal`: register UDID → App ID → certificate → provisioning profile.
-- `strip_ungranted_app_groups` (0.6.12): removes the AltStore app-group key when the
-  free profile grants no group. The 512/EINVAL cause is source-verified in AltStore
-  Classic 2.3, but the launch itself has not been retested on a device yet.
-- The signer has now been installed from over USB (0.6.10, `ideviceinstaller`); on Linux
-  every signature verifies with an independent codesign implementation (apple-codesign
-  0.29) and every CMS with openssl. The remaining unknown is the **AirDrop** install
-  of a development-signed IPA, not the signature itself.
+- The **target UDID page** served by the signer (`sh bin/barisign udid`) and the
+  **signer → target pairing install** (`sh bin/pair`). The code is written and the HTTP
+  handler is tested on Linux, but no device has run the page or the tunnel yet.
 
 ## Not built
 

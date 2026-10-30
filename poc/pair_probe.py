@@ -12,7 +12,7 @@
 #  the green light for implementing the pairing responder (SRP-6a accessory).
 #  No pairing is performed and nothing is written to disk.
 #
-#  Run it on the device that stays in front of you (an iPad or a second iPhone
+#  Run it on the signer device (either an iPhone or an iPad, whichever stays in front
 #  with a-Shell), on the same Wi-Fi as the phone whose Developer Mode is off.
 #  Then, on that phone:
 #      Settings > Privacy & Security > Developer Mode > "Pair with <name>"
@@ -247,7 +247,7 @@ def main(argv):
     print("  port           %d" % SERVICE_PORT)
     print("  waiting        %ds for the phone to connect" % seconds)
     print()
-    print("  on the iPhone: Settings > Privacy & Security > Developer Mode")
+    print("  on the target: Settings > Privacy & Security > Developer Mode")
     print("                 then \"Pair with %s\"" % name)
     print()
     print("  Ctrl-C stops.")

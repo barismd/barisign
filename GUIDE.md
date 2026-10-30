@@ -1,13 +1,20 @@
 # BariSign
 
-Runs in **a-Shell** on the device that gets the app. No computer, no second device.
+Two devices, two roles, no computer:
 
-**Status:** UDID and Apple sign-in work. The signer and the downloader are written and were checked on
-Linux against real IPAs, but no install from this flow has happened on a device yet.
+- **Signer** — runs **a-Shell** and BariSign; signs and installs.
+- **Target** — gets the app; uses only Safari and Settings.
+
+Either device can be an **iPhone or an iPad** (iOS/iPadOS 27+). They must be on the **same Wi-Fi**.
+a-Shell and BariSign are installed on the **signer only**.
+
+**Status:** Apple sign-in, the developer portal, signing and the USB install are verified on a real
+device. The target **UDID page** and the **signer → target pairing install** are written but not yet
+verified on a device.
 
 ---
 
-## Install
+## Install (on the signer)
 
 ```
 mkdir -p ~/Documents/barisign && cd ~/Documents/barisign
@@ -24,21 +31,31 @@ sh bin/barisign status     # what is saved
 
 ---
 
-## UDID
+## UDID (target)
 
 ```
 sh bin/barisign udid
 ```
 
-1. Safari opens `median.co/udid`
-2. install the profile, then copy the UDID
-3. come back; the UDID is read from the clipboard (or paste it at the `UDID:` prompt)
+The **signer** starts a temporary page and prints an address like:
 
-`--no-open` skips Safari. Other ways to get a UDID: `docs/UDID_OPTIONS.md`.
+```
+http://192.168.1.23:54321/
+```
+
+On the **target**, open that address in **Safari**:
+
+1. Tap the `median.co/udid` link on the page.
+2. Install the profile; copy the UDID it shows.
+3. Return to the page, paste the UDID into the box, tap **Submit**.
+
+The signer receives it and continues automatically. Both devices must be on the same Wi-Fi; allow
+**Local Network** if iOS asks. `--manual` keeps a paste-on-the-signer fallback for testing. Other UDID
+sources: `docs/UDID_OPTIONS.md`.
 
 ---
 
-## LOGIN
+## LOGIN (signer)
 
 ```
 sh bin/barisign login
@@ -50,44 +67,48 @@ server. A free Apple ID is enough.
 
 ---
 
-## PORTAL
+## PORTAL (signer)
 
 ```
 sh bin/barisign portal
 ```
 
-Registers the UDID, issues a certificate, downloads a provisioning profile. Untested against Apple.
+Registers the target's UDID, issues a certificate and downloads a provisioning profile. Verified on a
+device: team → device → App ID → certificate → profile, with the target's UDID in the profile.
 
 ---
 
-## SIGN and INSTALL
+## SIGN (signer)
 
 The guided run does this for you: it resolves the chosen variant's current `.ipa` from the project's own
 releases, checks the SHA-256 GitHub publishes, signs it with the key, certificate and profile from the
-portal, verifies the result, and writes `<name>-signed.zip`.
+portal, verifies the result, and writes `<name>-signed.ipa` (plus a `.zip`).
 
 ```
 sh bin/barisign sign              # download (unless --ipa), sign, zip
 sh bin/barisign sign --ipa X.ipa  # sign a file you already have
 ```
 
-After the last line, press **Return**: a-Shell opens the zip's preview, which has the share button, so
-the `.zip` is one tap to AirDrop. **AirDropping the `.ipa` itself does not install it**: iOS 27 refuses
-a free-profile app from the AirDrop source (`MIInstallerErrorDomain` 111). Send the `.zip`/`.ipa` to the
-second device as a **file**, then install it there with one of the two working sources:
+---
 
-- **iPad + a-Shell (no computer):** put the signed `.ipa` in the BariSign folder on the iPad and run
-  `sh bin/pair`. The iPad advertises as a pairing host; on the iPhone open
-  **Settings → Privacy & Security → Developer Mode → Paired Macs**, pick **BariSign**, enter the code.
-  The iPad installs over Wi-Fi with `installation_proxy`. The first run installs the engine once.
-- **Computer:** `ideviceinstaller -i <name>-signed.ipa`.
+## INSTALL on the target (signer + target)
 
-The app installs **only on the device whose UDID is in the profile** (the phone you ran this on): a
-development-signed app is refused elsewhere, with a different Apple ID or not. To use the app on
-another device, register that UDID first (`sh bin/barisign portal --udid UDID`) and sign again.
+```
+sh bin/pair
+```
 
-The signer has been installed from over USB and the app starts; the `bin/pair` iPad path is written but
-not yet verified on a device.
+1. The signer advertises as **BariSign** and prints a 6-digit code.
+2. On the **target**, open **Settings → Privacy & Security → Developer Mode → Paired Macs**
+   (or **Settings → Developer → Paired Macs**), pick **BariSign**, and enter the code.
+3. The signer installs the newest `*-signed.ipa` over Wi-Fi with `installation_proxy`.
+4. On the target, tap **Trust** for the developer and open the app.
+
+The first `sh bin/pair` installs its engine once. **AirDrop and OTA are not used**: iOS 27 refuses a
+free-profile app from those sources (`MIInstallerErrorDomain` 111). A computer with
+`ideviceinstaller -i <name>-signed.ipa` remains a development-only fallback.
+
+The app installs **only on the target whose UDID is in the profile**: a development-signed app is
+refused on any other device or Apple ID. To use another target, register its UDID and sign again.
 
 ---
 
@@ -107,4 +128,7 @@ not yet verified on a device.
 | login `-22406` | Apple says the password is wrong. The Apple ID is case-sensitive here; watch the keyboard's autocorrect. BariSign retries twice and shows the ID it sent |
 | login `-80045` / `-80046` / `503` | Apple refused the identity, not the password. It moves to the next anisette server; if all fail, wait 10–15 minutes without retrying |
 | UDID not recognised | `40` hex characters, or `24` like `00008110-001a2c3e0e91801e` |
+| target cannot open the page | same Wi-Fi? Allow **Local Network** for a-Shell; the address has the signer's Wi-Fi IP |
+| `bin/pair` finds no IPA | sign on the signer first, or pass `--ipa FILE` |
+| BariSign does not appear in Paired Macs | both devices on the same Wi-Fi; press `sh bin/pair` again; allow Local Network for a-Shell |
 | terminal stops taking input | quit a-Shell from the app switcher and reopen it |

@@ -32,9 +32,10 @@
 #    * No third-party code: the encoding is written from the published formats
 #      and checked against real Apple-signed IPAs (see docs/RESULTS.md).
 #
-#  STATUS: UNTESTED ON DEVICE. Written 2026-10-29 in a Linux Codespace and
-#          verified there against real IPAs (structure, hashes, CMS), but the
-#          first install on the iPhone 13 / iOS 27 has not happened yet.
+#  STATUS: VERIFIED ON DEVICE (0.6.10/0.6.12): the signed IPA installed over
+#          USB with ideviceinstaller, Trust Developer was offered, and AltStore
+#          launched after the app-group fix. The signer -> target Wi-Fi install
+#          (bin/pair) is the remaining untested path.
 #
 #  RUN IT
 #  ------
@@ -1454,7 +1455,7 @@ def write_ipa(work_dir, output_path):
 
 
 def package_zip(ipa_path, zip_path, progress=None):
-    """Put the signed IPA inside a .zip; the zip is what AirDrop carries."""
+    """Archive the signed IPA; the Wi-Fi install does not need the zip."""
     if progress:
         progress("zip")
     temporary = zip_path + ".part"

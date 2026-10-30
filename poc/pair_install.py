@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # =============================================================================
-#  BariSign — pair + install from a second iOS device (MIT wrapper)
+#  BariSign — pair + install from the signer device (MIT wrapper)
 #
-#  Run on the iPad's a-Shell, with the iPhone (the target) on the same Wi-Fi:
+#  Run on the SIGNER device's a-Shell, with the TARGET device on the same Wi-Fi:
 #
 #      sh bin/pair
 #
-#  The iPad advertises itself as a pairable host; on the iPhone open
+#  The signer advertises itself as a pairable host; on the target open
 #  Settings > Privacy & Security > Developer Mode > Paired Macs (or
 #  Settings > Developer > Paired Macs), pick "BariSign", and enter the code
-#  printed here. The iPad then opens the userspace tunnel and installs the
+#  printed here. The signer then opens the userspace tunnel and installs the
 #  signed IPA with installation_proxy. No PC, no SideInstaller, no certificate.
+#  Either device may be an iPhone or an iPad.
 #
 #  pymobiledevice3 is GPL-3.0-or-later and is NOT part of this repository: the
 #  first run installs it into state/pymd3 on the device. This wrapper contains
@@ -197,8 +198,8 @@ async def _run(ipa, pair_only=False, udid=""):
 
     if not pair_only and not udid and not ipa:
         _say("  ! no signed IPA found")
-        _say("    sign on the iPhone (sh bin/barisign sign), AirDrop the .ipa")
-        _say("    to the iPad, save it in this folder, then run again.")
+        _say("    sign on the signer first (sh bin/barisign sign),")
+        _say("    or pass --ipa FILE.")
         return 2
 
     found_udid = udid
@@ -209,15 +210,15 @@ async def _run(ipa, pair_only=False, udid=""):
 
         def pin(code):
             _say("")
-            _say("  iPhone pairing code:  %s" % code)
+            _say("  target pairing code:  %s" % code)
             _say("")
 
         def waiting(seconds):
-            _say("  waiting for the iPhone to pair (%ds)" % int(seconds))
+            _say("  waiting for the target to pair (%ds)" % int(seconds))
 
         _say("")
-        _say("  iPad:  advertising as BariSign")
-        _say("  iPhone: Settings > Privacy & Security > Developer Mode > Paired Macs")
+        _say("  signer: advertising as BariSign")
+        _say("  target: Settings > Privacy & Security > Developer Mode > Paired Macs")
         _say("          (or Settings > Developer > Paired Macs) -> BariSign -> Pair")
         _say("")
         try:
@@ -278,7 +279,7 @@ def main(argv):
     pair_only = False
     udid = ""
     if "--help" in argv or "-h" in argv:
-        _say("sh bin/pair                 pair the iPhone and install the newest -signed.ipa")
+        _say("sh bin/pair                 pair the target and install the newest -signed.ipa")
         _say("sh bin/pair --ipa FILE      use a specific signed IPA")
         _say("sh bin/pair --pair-only     pair only; print the pairing record")
         _say("sh bin/pair --udid UDID     install to an already paired device")

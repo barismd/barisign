@@ -19,8 +19,8 @@
 #  helper and its TLS context (a-Shell's Python ships an empty trust store, so the
 #  shipped CA bundle is always loaded explicitly).
 #
-#  STATUS: UNTESTED ON DEVICE. Written and exercised in a Linux codespace against
-#          the live GitHub API; no download has been run from the iPhone yet.
+#  STATUS: exercised on the signer; the download and signing flow has run on
+#          iOS 27 and the signed IPA installed over USB. See docs/RESULTS.md.
 # =============================================================================
 
 import hashlib

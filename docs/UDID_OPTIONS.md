@@ -15,15 +15,16 @@ endpoint. Pick one:
 
 One tap, no trust switch, works on any iOS 27 device.
 
-1. Open **Safari** (not Chrome, not an in-app browser) on the device that will get the app:
-   **https://median.co/udid**
-2. Tap the install button → **Allow** the profile download → then finish it:
+1. On the **signer**, run `sh bin/barisign udid`; it prints a `http://<signer-ip>:<port>/` address.
+2. On the **target** (the device that will get the app), open that address in **Safari** (not Chrome,
+   not an in-app browser). Tap the **median.co/udid** link on the page.
+3. Tap the install button → **Allow** the profile download → then finish it:
    **Settings → General → VPN & Device Management → Downloaded Profile → Median UDID Retrieval →
    Install → passcode → Install**.
-3. Safari comes back showing the UDID. Tap **Copy UDID to Clipboard**.
-4. In a-Shell: `sh bin/barisign udid` and paste it (or `sh bin/barisign udid 00008110-001a2c3e0e91801e`).
-5. Remove the profile: **Settings → General → VPN & Device Management → Median UDID Retrieval →
-   Remove Profile**.
+4. Safari comes back showing the UDID. Tap **Copy UDID to Clipboard**, return to the BariSign page,
+   paste it into the box and tap **Submit**.
+5. Remove the profile on the target: **Settings → General → VPN & Device Management → Median UDID
+   Retrieval → Remove Profile**.
 
 **Privacy:** median.co sees your UDID and the device model — nothing else. Your Apple ID is not involved.
 **We are not affiliated with median.co** and we do not control what it logs; if you would rather not use a

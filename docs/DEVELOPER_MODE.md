@@ -38,7 +38,7 @@ the parts we could not confirm are marked **unverified**.
 | **LocalDevVPN** (App Store, free, jkcoxson) | Loopback packet tunnel so an app reaches the phone's own tunnel/RSD services at `10.7.0.1` | Developer Mode; needs Wi-Fi (its loopback does not work over cellular) |
 | **AMFI** (over a working link) | Can reveal the Developer Mode option or turn it on; turning it on refuses while a passcode is set | Cannot run without a link, i.e. not a cold bootstrap on iOS 27 |
 | **Ad Hoc / enterprise certificate** | Install without Developer Mode | Needs a paid account (a free Apple ID cannot issue one) |
-| **AirDrop** (our current route) | Normal install path; needs the UDID in the profile and Developer Mode on | Not a way to enable Developer Mode |
+| **AirDrop** | **Refused for free profiles** on iOS 27 (`MIInstallerErrorDomain` 111); it is not a route any more | Not a way to enable Developer Mode |
 
 ## How SideInstaller does it (read from its source)
 
@@ -60,6 +60,11 @@ the parts we could not confirm are marked **unverified**.
 
 Other projects confirm the same pairing UI: StikPair (iOS 27+, "Pair with StikPair", PIN in a Live
 Activity), Husk ("Pair with Husk", code in a notification), Madeira ("Pair with Madeira").
+
+> **Update 2026-10-31:** the AirDrop experiment below is history. AirDrop refuses free-profile IPAs
+> (`MIInstallerErrorDomain` 111). The current install route is `sh bin/pair`: the **signer** runs a-Shell
+> and the pairing host in the foreground, while the **target** only opens Settings and pairs. See
+> `docs/PAIRING_INSTALL.md` and `AGENTS.md`.
 
 ## Two experiments before any pairing code
 
@@ -88,18 +93,17 @@ StikPair, Husk and Madeira all use an app extension for exactly this.
 
 ## What this means for BariSign
 
-- **The phone we sign on (iPhone 13) needs nothing new.** Developer Mode is already on, the UDID is in
-  the profile, and AirDrop installs the app. LocalDevVPN plays no part.
-- **A second iPhone** needs *its* UDID registered (`portal --udid`) **and** Developer Mode on. If it
-  has never paired, the switch may not exist; the computer-free trigger is the iOS 27 pairing above,
-  which needs a pairable-host app on that phone — and installing that app needs either a non-free
-  certificate or a computer once. A VPN cannot stand in for it.
+- **Signer and target are roles, not models.** The signer runs a-Shell; the target runs only Safari
+  and Settings. Either can be an iPhone or an iPad, and they share the Wi-Fi.
+- **The target** needs *its* UDID registered (`bin/barisign udid` serves the page; the target submits it)
+  **and** Developer Mode on. The pairing host runs on the **signer**, in a-Shell, while the user is on
+  the target — so the "a-Shell is suspended by Settings" problem does not arise.
+- **The install** is `sh bin/pair`: the signer advertises `BariSign`, the target pairs from Settings,
+  and the signer installs with `installation_proxy` through the pure-Python userspace tunnel.
 - **The long-term win** is the fork plan: a pairing module inside SideStore/AltStore/LiveContainer
-  (RPPairing host + PIN + pairing record) plus LocalDevVPN and `installation_proxy` would install and
-  refresh **on the phone itself**, with no AirDrop and no second device. That belongs in the Swift
-  apps, not in a-Shell Python: Bonjour advertising, the Live Activity for the PIN, and the tunnel are
-  app-level features. a-Shell's Python cannot advertise the Bonjour service reliably, and the tunnel
-  needs TLS-PSK plus a software TCP stack.
+  (RPPairing host + PIN + pairing record) plus LocalDevVPN and `installation_proxy` would let the apps
+  refresh themselves. That belongs in the Swift apps; `bin/pair` is the first, a-Shell-side version of
+  the same protocol.
 - **Licence note.** SideInstaller and StikPair are non-commercial; LocalDevVPN is an App Store app.
   Read them for behaviour only. The clean-room reimplementation route in `docs/FORK_PLAN.md` stands,
   based on the MIT `jkcoxson/idevice` remote-pairing code.
