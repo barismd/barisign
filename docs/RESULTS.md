@@ -30,7 +30,7 @@ Everything here was confirmed on a real **iPhone 13, iOS 27** unless marked othe
 |---|---|
 | `getpass` hangs (it opens `/dev/tty`) | never used; prompts use a cbreak byte reader |
 | `termios` ECHO-off + `readline()` hangs | same; masked passwords are read byte by byte |
-| plain `input()` works, but not after a masked read | prompts fall back to `input()` carefully |
+| plain `input()` works, but not after a masked read | every prompt reads with the cbreak byte reader on a TTY; `input()` only for pipes |
 | `\r` and `\n` are not interchangeable | the byte reader accepts both |
 | the `open` command is broken (deprecated `keyWindow`, silent `openurl` fallback) | use `view <abs path>` (opens a preview with a share button) |
 | there is **no** `share` command | sharing goes through the preview |

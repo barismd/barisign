@@ -32,7 +32,7 @@ sh bin/barisign udid
 
 1. Safari opens `median.co/udid`
 2. install the profile, then copy the UDID
-3. come back and press Return
+3. come back; the UDID is read from the clipboard (or paste it at the `UDID:` prompt)
 
 `--no-open` skips Safari. Other ways to get a UDID: `docs/UDID_OPTIONS.md`.
 
