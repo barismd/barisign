@@ -1,5 +1,0 @@
-#!/bin/sh
-# BariSign — pair + install from the signer device.
-# Run this in a-Shell on the signer; the target only uses Safari and Settings.
-cd "$(dirname "$0")/.." || exit 1
-exec python3 -u poc/pair_install.py "$@"

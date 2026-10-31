@@ -68,7 +68,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.8.2"
+VERSION = "0.8.3"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
@@ -1250,7 +1250,7 @@ def _sign_now(ipa, saved, argv):
     _result("SIGN", "ok  %s" % os.path.basename(result["ipa"]))
     if result["zip"]:
         print("  zip   %s" % _display_path(result["zip"]))
-    print("  next  sh bin/pair  (install on the target over Wi-Fi)")
+    print("  next  sh bin/barisign pair  (install on the target over Wi-Fi)")
     return result
 
 
@@ -1336,7 +1336,14 @@ def cmd_guided(argv):
     return 0
 
 
+def cmd_pair(argv):
+    """Pair the target and install the signed IPA (the engine in pair_install.py)."""
+    pair = os.path.join(_HERE, "pair_install.py")
+    return subprocess.call([sys.executable, "-u", pair] + list(argv))
+
+
 COMMANDS = {
+    "pair": cmd_pair,
     "version": cmd_version,
     "check": cmd_check,
     "status": cmd_status,
@@ -1353,6 +1360,14 @@ COMMANDS = {
 _OPTIONS = {
     "all": (
         ("--no-install", "do not start the target install after signing"),
+    ),
+    "pair": (
+        ("--pair-only", "pair, print the UDID and write the pairing file"),
+        ("--ipa FILE", "install this signed IPA"),
+        ("--udid UDID", "reuse an existing pairing for this UDID"),
+        ("--check", "python, cryptography and engine import only"),
+        ("--setup", "install the engine only"),
+        ("--timeout N", "give up if the target does not pair"),
     ),
     "login": (
         ("--use-clipboard", "take the password from the clipboard, no typing"),
@@ -1382,7 +1397,7 @@ def _usage():
     print("  sh bin/barisign login     Apple sign-in")
     print("  sh bin/barisign portal    UDID + certificate + profile")
     print("  sh bin/barisign sign      download, sign and zip the chosen variant")
-    print("  sh bin/pair               (signer) pair the target and install over Wi-Fi")
+    print("  sh bin/barisign pair      pair the target and install over Wi-Fi")
     print("  sh bin/barisign status    what is saved")
     print("  sh bin/barisign check     diagnostics only")
     print("  sh bin/barisign version   which copy is running")

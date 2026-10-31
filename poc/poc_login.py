@@ -26,7 +26,7 @@
 #    * Stops after sign-in. No device registration, no certificate, no profile,
 #      no signing, nothing installed.
 #
-#  STATUS: VERIFIED ON DEVICE (iPhone 13, iOS 27) — the six self-test checks pass
+#  STATUS: VERIFIED ON DEVICE (iOS 27) — the six self-test checks pass
 #          in a-Shell and sign-in completes with a free Apple ID.
 #
 #  The password prompt uses plain input(): it is visible, and it is never stored.

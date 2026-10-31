@@ -1,7 +1,7 @@
 # BariSign
 
 Install **SideStore** — or **LiveContainer + SideStore**, or **AltStore Classic** — on an iPhone or iPad
-**with no computer**, using your own free Apple ID. Two devices, two roles:
+**with no computer**, using your own free Apple ID. **Two iOS/iPadOS devices on the same Wi-Fi are enough.**
 
 | Role | What it is | What it runs |
 |---|---|---|
@@ -11,10 +11,9 @@ Install **SideStore** — or **LiveContainer + SideStore**, or **AltStore Classi
 Both devices may be an **iPhone or an iPad**; iOS and iPadOS both work. The role is chosen at run time.
 They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSign.
 
-> **Status:** the signer path is verified on a real device (iPhone 13, iOS 27): Apple sign-in, the
-> developer portal, signing, and installing the IPA over USB with `ideviceinstaller` (AltStore then
-> launches). The new **pair-first UDID**, the fallback **UDID page** and the **signer → target
-> pairing install** are written but not yet verified on a device.
+> **Status:** the signer path is verified on a real device running iOS 27: Apple sign-in, the
+> developer portal, signing, and installing the IPA over USB. The **pair-first UDID**, the fallback
+> **UDID page** and the **signer → target pairing install** are written but not yet verified.
 
 ---
 
@@ -28,7 +27,7 @@ They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSig
    Paired Macs**, pick **BariSign**, enter the code. The signer takes the target's **UDID from the
    pairing** and continues; the median page is not needed.
 4. Signer: Apple sign-in, developer portal (device + App ID + certificate + profile), sign.
-5. Install with the same pairing record: `sh bin/pair`. The signer advertises again, the target
+5. Install with the same pairing record: `sh bin/barisign pair`. The signer advertises again, the target
    enters the code, and the signer installs over Wi-Fi with `installation_proxy`. The pairing file is
    saved under `state/` and written into AltStore (`Documents/ALTPairingFile.plist`) or SideStore
    (`Documents/ALTPairingFile.mobiledevicepairing`) so the installed app can refresh itself.
@@ -37,10 +36,6 @@ They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSig
 If pairing cannot produce a UDID (old target, Developer Mode not available), the signer falls back to
 a short-lived page on its Wi-Fi address: the target opens `http://<signer-ip>:<port>/`, installs the
 **median.co/udid** profile, copies the UDID and submits it.
-
-**AirDrop and OTA are not used for installing our app.** iOS 27 refuses a free-profile app from those
-sources (`MIInstallerErrorDomain` 111); the pairing tunnel is the developer source that works. Sharing
-the original IPA in step 2 is a file transfer/trigger, not our install.
 
 ---
 
@@ -54,8 +49,8 @@ the original IPA in step 2 is a file transfer/trigger, not our install.
 | **USB install** (`ideviceinstaller`) | ✅ verified — Trust Developer, AltStore launches |
 | **UDID from pairing** (pair-first) | ⚠️ written, untested on a device |
 | **UDID page** fallback served by the signer | ⚠️ written, untested on a device |
-| **Signer → target pairing install** (`sh bin/pair`) | ⚠️ written, untested on a device |
-| **AirDrop / OTA install** | ❌ refused by iOS for free profiles |
+| **Signer → target pairing install** (`sh bin/barisign pair`) | ⚠️ written, untested on a device |
+| **Two devices, no computer** | ✅ the design; pairing-first is the remaining device test |
 
 ---
 
@@ -73,7 +68,7 @@ Run `sh install.sh` again (or `sh bin/update`) any time to update. Your saved st
 
 ```
 sh bin/barisign          # guided: check -> variant -> download -> pair/UDID -> Apple -> portal -> sign -> install
-sh bin/pair              # pair the target and install over Wi-Fi
+sh bin/barisign pair     # pair the target and install over Wi-Fi
 sh bin/barisign status   # what is already known
 sh bin/barisign --help   # every command
 ```
@@ -139,7 +134,7 @@ and you are shown which version you are about to get. `variants.json` is the mac
 | File | What it is |
 |---|---|
 | **`GUIDE.md`** | step-by-step, in plain language |
-| `docs/PAIRING_INSTALL.md` | how the signer installs on the target without AirDrop/OTA |
+| `docs/PAIRING_INSTALL.md` | how the signer pairs with and installs on the target |
 | `docs/UDID_OPTIONS.md` | UDID sources, including the signer page |
 | `docs/ANISETTE.md` | anisette servers: what they see, which ones we use, how to pin or self-host |
 | `docs/PLAN_V2.md` | the current architecture and why |
@@ -147,7 +142,7 @@ and you are shown which version you are about to get. `variants.json` is the mac
 | `docs/RESULTS.md` | what is verified on device, and the device quirks we had to work around |
 | `variants.json` | the variant registry and runtime resolution rules |
 | `bin/barisign` | the single entry point on the signer |
-| `bin/pair` | the signer → target pairing install |
+| `sh bin/barisign pair` | the signer → target pairing install |
 | `THIRD_PARTY_NOTICES.md` | licences and attribution |
 
 ## Licences — please read
@@ -155,5 +150,5 @@ and you are shown which version you are about to get. `variants.json` is the mac
 BariSign's own code is **MIT**. `third_party/sideinstaller/` is under that project's own
 **non-commercial** licence, so **the repository as a whole may not be used commercially**. The forks
 planned in `docs/FORK_PLAN.md` are **AGPL-3.0** (SideStore, AltStore and LiveContainer are all AGPL-3.0).
-`bin/pair` installs `pymobiledevice3` (GPL-3.0) separately on the signer; it is not vendored.
+`bin/barisign pair` installs `pymobiledevice3` (GPL-3.0) separately on the signer; it is not vendored.
 Details in `THIRD_PARTY_NOTICES.md`.

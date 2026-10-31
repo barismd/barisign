@@ -27,12 +27,12 @@ Both may be an iPhone or an iPad; only the role matters. Same Wi-Fi required.
 - **Target = iOS 27+ only.** iOS 17.4–26.x is out of scope (pairing file needs a PC). Stated in `README.md`.
 - **Install = pairing + `installation_proxy` from the signer.** AirDrop and OTA are dead for
   free-profile apps on iOS 27: `MIInstallerErrorDomain` 111, *"free provisioning profile ... not
-  allowed to be installed from this source"*. The signer runs `sh bin/pair`; the target picks
+  allowed to be installed from this source"*. The signer runs `sh bin/barisign pair`; the target picks
   **BariSign** under Settings → Developer → Paired Macs and enters the code. See
   `docs/PAIRING_INSTALL.md` and `docs/RESULTS.md`.
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
-- Test devices (roles, not hardware): **iPhone 13 (iOS 27)** and **iPad (A16)**; either can be the
-  signer or the target. The role is chosen at run time; a-Shell is installed only on the signer.
+- Test devices are roles, not hardware: either device can be the signer or the target. Both run
+  iOS/iPadOS 27+; a-Shell is installed only on the signer.
 - On device and verified: UDID, Apple sign-in, the **developer portal**, the signer's signed IPA
   over USB (`ideviceinstaller`), and AltStore launching after the app-group fix. The pair-first UDID,
   the fallback UDID page and the signer→target pairing install are written but not yet device-verified.
@@ -50,7 +50,7 @@ Both may be an iPhone or an iPad; only the role matters. Same Wi-Fi required.
   licence text, attribution and a list of our changes), so the repo as a whole cannot be MIT or
   commercial. Never copy that code into MIT files; prefer reimplementing from MIT sources
   (`nab138/isideload`, `jkcoxson/idevice`). See `THIRD_PARTY_NOTICES.md`.
-- **pymobiledevice3** (GPL-3.0) is installed **separately** on the signer by `bin/pair`; it is not
+- **pymobiledevice3** (GPL-3.0) is installed **separately** on the signer by `bin/barisign pair`; it is not
   vendored and no code from it is copied into this repository. The wrapper is MIT; if redistributed
   with the library, treat that combination as GPL-3.0.
 - Step 1 PoC: `poc/poc_login.py` (MIT) + `third_party/sideinstaller/signin.py` (non-MIT).
@@ -74,7 +74,7 @@ The a-Shell interface (no Shortcuts):
 - runs the heavy steps on the **signer**: download the original (optional Developer Mode trigger),
   pair the target and take its UDID, Apple login with anisette (retry with another anisette server on
   failure), sign the chosen IPA.
-- Ends with `sh bin/pair`: the signer advertises as a pairable host, the **target** opens
+- Ends with `sh bin/barisign pair`: the signer advertises as a pairable host, the **target** opens
   Settings → Developer → Paired Macs, enters the code, and the signer installs over Wi-Fi.
 
 ## Hard constraints
@@ -121,7 +121,7 @@ The a-Shell interface (no Shortcuts):
 - If the same problem fails twice, **stop** and report so the user can switch to a stronger model.
 - Stages 1–2 are verified on device, 3 is written; the plan is `docs/PLAN_V2.md`, the verified facts
   are in `docs/RESULTS.md`.
-- Next: the pair-first UDID and `bin/pair` on a device, then the forks, then i18n + Turkish last.
+- Next: the pair-first UDID and `bin/barisign pair` on a device, then the forks, then i18n + Turkish last.
 
 ## Verified / unverified convention
 

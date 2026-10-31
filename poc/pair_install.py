@@ -4,7 +4,7 @@
 #
 #  Run on the SIGNER device's a-Shell, with the TARGET device on the same Wi-Fi:
 #
-#      sh bin/pair
+#      sh bin/barisign pair
 #
 #  The signer advertises itself as a pairable host; on the target open
 #  Settings > Privacy & Security > Developer Mode > Paired Macs (or
@@ -266,7 +266,7 @@ def check():
         _say("  ! cryptography: %s" % exc)
     engine = _import_engine()
     if engine is None:
-        _say("  ! run 'sh bin/pair setup' first (or run without --check to install)")
+        _say("  ! run 'sh bin/barisign pair setup' first (or run without --check to install)")
         return 1
     _say("  engine      imported")
     try:
@@ -417,13 +417,13 @@ def main(argv):
     pair_only = False
     udid = ""
     if "--help" in argv or "-h" in argv:
-        _say("sh bin/pair                 pair the target and install the newest -signed.ipa")
-        _say("sh bin/pair --ipa FILE      use a specific signed IPA")
-        _say("sh bin/pair --pair-only     pair only; print UDID, write pairing file")
-        _say("sh bin/pair --pair-only --timeout 120")
-        _say("sh bin/pair --udid UDID     install to an already paired device")
-        _say("sh bin/pair --check         check python, cryptography and the engine")
-        _say("sh bin/pair --setup         install the engine only")
+        _say("sh bin/barisign pair                 pair the target and install the newest -signed.ipa")
+        _say("sh bin/barisign pair --ipa FILE      use a specific signed IPA")
+        _say("sh bin/barisign pair --pair-only     pair only; print UDID, write pairing file")
+        _say("sh bin/barisign pair --pair-only --timeout 120")
+        _say("sh bin/barisign pair --udid UDID     install to an already paired device")
+        _say("sh bin/barisign pair --check         check python, cryptography and the engine")
+        _say("sh bin/barisign pair --setup         install the engine only")
         return 0
     if "--ipa" in argv:
         position = argv.index("--ipa") + 1

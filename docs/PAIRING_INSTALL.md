@@ -31,7 +31,7 @@ the missing pieces:
 - `pymobiledevice3 install <ipa>` then installs through `installation_proxy` over that tunnel — the
   developer source, so the free-profile restriction that blocks AirDrop does not apply.
 - The pairing result also carries the target's **UDID** (peer info, and the RSD tunnel reports it).
-  `sh bin/pair --pair-only` prints both and saves the hardware UDID into `state/barisign.json`. If that
+  `sh bin/barisign pair --pair-only` prints both and saves the hardware UDID into `state/barisign.json`. If that
   works, the median/UDID page is unnecessary; the signer pairs first, registers the UDID, signs, and
   installs over the same record.
 
@@ -59,13 +59,13 @@ If gate 2 is clean, this is the project's answer and no native helper is needed.
 
 ### One command
 
-`bin/pair` wires the gates together. On the signer:
+`bin/barisign pair` wires the gates together. On the signer:
 
 ```sh
-sh bin/pair            # first run installs the engine into state/pymd3, then pairs + installs
-sh bin/pair --check    # python, cryptography and engine import only
-sh bin/pair --setup    # install the engine only
-sh bin/pair --pair-only --timeout 120   # pair, print peer/tunnel UDID, save it
+sh bin/barisign pair            # first run installs the engine into state/pymd3, then pairs + installs
+sh bin/barisign pair --check    # python, cryptography and engine import only
+sh bin/barisign pair --setup    # install the engine only
+sh bin/barisign pair --pair-only --timeout 120   # pair, print peer/tunnel UDID, save it
 ```
 
 It finds the newest `*-signed.ipa` in the BariSign folder (or `--ipa FILE`), advertises as
@@ -83,12 +83,12 @@ primitives, which is large and easy to get subtly wrong. The pairing/tunnel code
 X25519, ChaCha20-Poly1305, HKDF, SHA-256 and AES-GCM — all present in 3.4.8; the imports were checked
 against it. If an API turns out to be missing, patch that call, not the library.
 
-`pymobiledevice3` itself is GPL-3.0 and is not vendored either: `bin/pair` installs it separately, so the
+`pymobiledevice3` itself is GPL-3.0 and is not vendored either: `bin/barisign pair` installs it separately, so the
 repository does not distribute it.
 
 ## 1. Why AirDrop and OTA are out
 
-Device log from the target (iPhone 13, iOS 27, 0.6.10 IPA, AirDrop):
+Device log from the target (iOS 27, AirDrop):
 
 ```
 MIInstallerErrorDomain Code=111
@@ -213,7 +213,7 @@ A merged plist containing both the RPPairing keys and the lockdown keys is the s
 new apps; AltStore ignores the lockdown half, SideStore uses the remote half on 26.4+. The file
 is written over AFC/house_arrest, exactly as AltServer and SideInstaller do.
 
-`bin/pair` normalizes pymobiledevice3's record (`host_identifier`/`host_alt_irk` become
+`bin/barisign pair` normalizes pymobiledevice3's record (`host_identifier`/`host_alt_irk` become
 `identifier`/`alt_irk`, which SideInstaller's `PairingFileKind` requires) and saves it under `state/`
 as `PairingFile_RemoteRP.plist`, `ALTPairingFile.plist` and `ALTPairingFile.mobiledevicepairing`.
 After a successful install it writes the appropriate file into the installed app's container with

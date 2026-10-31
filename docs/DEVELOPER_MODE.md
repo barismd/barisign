@@ -62,7 +62,7 @@ Other projects confirm the same pairing UI: StikPair (iOS 27+, "Pair with StikPa
 Activity), Husk ("Pair with Husk", code in a notification), Madeira ("Pair with Madeira").
 
 > **Update 2026-10-31:** the AirDrop experiment below is history. AirDrop refuses free-profile IPAs
-> (`MIInstallerErrorDomain` 111). The current install route is `sh bin/pair`: the **signer** runs a-Shell
+> (`MIInstallerErrorDomain` 111). The current install route is `sh bin/barisign pair`: the **signer** runs a-Shell
 > and the pairing host in the foreground, while the **target** only opens Settings and pairs. See
 > `docs/PAIRING_INSTALL.md` and `AGENTS.md`.
 
@@ -98,11 +98,11 @@ StikPair, Husk and Madeira all use an app extension for exactly this.
 - **The target** needs *its* UDID registered (`bin/barisign udid` serves the page; the target submits it)
   **and** Developer Mode on. The pairing host runs on the **signer**, in a-Shell, while the user is on
   the target — so the "a-Shell is suspended by Settings" problem does not arise.
-- **The install** is `sh bin/pair`: the signer advertises `BariSign`, the target pairs from Settings,
+- **The install** is `sh bin/barisign pair`: the signer advertises `BariSign`, the target pairs from Settings,
   and the signer installs with `installation_proxy` through the pure-Python userspace tunnel.
 - **The long-term win** is the fork plan: a pairing module inside SideStore/AltStore/LiveContainer
   (RPPairing host + PIN + pairing record) plus LocalDevVPN and `installation_proxy` would let the apps
-  refresh themselves. That belongs in the Swift apps; `bin/pair` is the first, a-Shell-side version of
+  refresh themselves. That belongs in the Swift apps; `bin/barisign pair` is the first, a-Shell-side version of
   the same protocol.
 - **Licence note.** SideInstaller and StikPair are non-commercial; LocalDevVPN is an App Store app.
   Read them for behaviour only. The clean-room reimplementation route in `docs/FORK_PLAN.md` stands,

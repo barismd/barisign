@@ -35,7 +35,7 @@
 #  STATUS: VERIFIED ON DEVICE (0.6.10/0.6.12): the signed IPA installed over
 #          USB with ideviceinstaller, Trust Developer was offered, and AltStore
 #          launched after the app-group fix. The signer -> target Wi-Fi install
-#          (bin/pair) is the remaining untested path.
+#          (bin/barisign pair) is the remaining untested path.
 #
 #  RUN IT
 #  ------

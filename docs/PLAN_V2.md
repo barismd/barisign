@@ -62,17 +62,17 @@ Facts that make it possible, checked 2026-10-29/31:
 - SideStore, AltStore and LiveContainer also accept an **imported** pairing file, which is how the module's
   output gets consumed.
 - `pymobiledevice3` implements the device-initiated pairing host and a **pure-Python userspace tunnel**
-  (no root/TUN) plus `installation_proxy`; `bin/pair` is the first implementation of that route.
+  (no root/TUN) plus `installation_proxy`; `bin/barisign pair` is the first implementation of that route.
 - Licences: SideStore **AGPL-3.0**, AltStore **AGPL-3.0**, LiveContainer **AGPL-3.0**; SideInstaller is
   "Other"/non-commercial and stays isolated in `third_party/sideinstaller/`. `pymobiledevice3` is GPL-3.0
   and is installed separately, not vendored.
 
 Cost accepted with the decision: our patch to three AGPL projects, rebuilt on every upstream release, plus
-the `bin/pair` engine on the signer.
+the `bin/barisign pair` engine on the signer.
 
 ## Status
 
-- Verified on the signer (iPhone 13, iOS 27): Apple sign-in, portal, signing, USB install, AltStore launch.
+- Verified on the signer (iOS 27): Apple sign-in, portal, signing, USB install, app launch.
 - Written, not yet device-verified: the pair-first UDID, the fallback UDID page and the signer→target
   pairing install.
 - The target page's HTTP handler is tested on Linux; the tunnel and mDNS path need a device run.

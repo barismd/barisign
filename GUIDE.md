@@ -1,6 +1,6 @@
 # BariSign
 
-Two devices, two roles, no computer:
+Two iOS/iPadOS devices on the same Wi-Fi are enough. Two roles, no computer:
 
 - **Signer** — runs **a-Shell** and BariSign; signs and installs.
 - **Target** — gets the app; uses only Safari and Settings.
@@ -99,7 +99,7 @@ sh bin/barisign sign --ipa X.ipa  # sign a file you already have
 ## INSTALL on the target (signer + target)
 
 ```
-sh bin/pair
+sh bin/barisign pair
 ```
 
 1. The signer advertises as **BariSign** and prints a 6-digit code.
@@ -111,9 +111,7 @@ sh bin/pair
    `Documents/ALTPairingFile.mobiledevicepairing`. A copy stays under `state/` for manual import.
 5. On the target, tap **Trust** for the developer and open the app.
 
-The first `sh bin/pair` installs its engine once. **AirDrop and OTA are not used**: iOS 27 refuses a
-free-profile app from those sources (`MIInstallerErrorDomain` 111). A computer with
-`ideviceinstaller -i <name>-signed.ipa` remains a development-only fallback.
+The first `sh bin/barisign pair` installs its networking engine once; later runs are local.
 
 The app installs **only on the target whose UDID is in the profile**: a development-signed app is
 refused on any other device or Apple ID. To use another target, register its UDID and sign again.
@@ -137,6 +135,6 @@ refused on any other device or Apple ID. To use another target, register its UDI
 | login `-80045` / `-80046` / `503` | Apple refused the identity, not the password. It moves to the next anisette server; if all fail, wait 10–15 minutes without retrying |
 | UDID not recognised | `40` hex characters, or `24` like `00008110-001a2c3e0e91801e` |
 | target cannot open the page | same Wi-Fi? Allow **Local Network** for a-Shell; the address has the signer's Wi-Fi IP |
-| `bin/pair` finds no IPA | sign on the signer first, or pass `--ipa FILE` |
-| BariSign does not appear in Paired Macs | both devices on the same Wi-Fi; press `sh bin/pair` again; allow Local Network for a-Shell |
+| `bin/barisign pair` finds no IPA | sign on the signer first, or pass `--ipa FILE` |
+| BariSign does not appear in Paired Macs | both devices on the same Wi-Fi; press `sh bin/barisign pair` again; allow Local Network for a-Shell |
 | terminal stops taking input | quit a-Shell from the app switcher and reopen it |
