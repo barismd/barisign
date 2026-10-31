@@ -9,8 +9,8 @@ Replaces the old phase-0 report. The current plan is the two-role flow in `AGENT
 |---|---|
 | Apple sign-in: anisette v3 + SRP-6a + 2FA, free Apple ID | works (`LOGIN: PASS`) |
 | Installing an **AirDropped distribution-signed** IPA (the notarized AltStore) | iOS installs it by itself; no extra "Install" tap |
-| Installing an **AirDropped free-profile** IPA (our output) | **refused by policy** on iOS 27 (0.6.10): `MIInstallerErrorDomain` 111, *"authorized by a free provisioning profile, but apps validated by those are not allowed to be installed from this source"* (`ApplicationVerificationFailed`, no Trust Developer prompt). The same IPA installs over USB with `ideviceinstaller` and starts after Trust Developer |
-| Our signer's IPA over USB (`ideviceinstaller`) | install accepted, Trust Developer offered; after the 0.6.12 app-group fix AltStore **launches** (device-confirmed) |
+| Installing an **AirDropped free-profile** IPA (our output) | **refused by policy** on iOS 27 (0.6.10): `MIInstallerErrorDomain` 111, *"authorized by a free provisioning profile, but apps validated by those are not allowed to be installed from this source"* (`ApplicationVerificationFailed`, no Trust Developer prompt). The same IPA installs from a developer source and starts after Trust Developer |
+| Our signer's IPA installed on a device | install accepted, Trust Developer offered; after the app-group fix the app **launches** (device-confirmed) |
 | a-Shell running our Python stack (`cryptography` 3.4.8, stdlib only) | works; no native binaries, no `openssl`/`unzip` |
 
 ## Written but **never tested on a device**

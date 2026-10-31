@@ -98,13 +98,13 @@ LegacyErrorString=ApplicationVerificationFailed
 ```
 
 `MobileInstallation` sets `allowingFreeProfileValidation=false` for the AirDrop source. The
-same IPA installs through `ideviceinstaller` (the developer/installation_proxy source), which
+same IPA installs through a developer `installation_proxy` source, which
 sets it true. OTA (`itms-services`) is enterprise/ad-hoc territory; a free profile is not
 accepted from it either. So:
 
 - AirDrop: **dead** for free-profile apps.
 - OTA: **dead** without a paid/enterprise certificate.
-- USB `installation_proxy` (ideviceinstaller / Xcode / Configurator): **works** (verified).
+- A developer-source `installation_proxy` install: **works** (used only to verify the signature; not part of BariSign).
 - `installation_proxy` over a **pairing tunnel**: the only remaining no-computer route.
 
 ## 2. How the on-device route works
@@ -191,7 +191,6 @@ options, easiest first:
 | **B. Fork SideInstaller into a BariSign installer** | yes, if distributed the same way | yes | medium | Non-commercial code, isolated from the AGPL forks. Bootstrap of the fork has the same problem as A. |
 | **C. Clean native helper from MIT `idevice`/`isideload`** | yes, once installed | yes | large | AGPL-compatible. RPPairing host + tunnel + installation_proxy + AFC pairing-file writer. Still needs a bootstrap (PC once, or a shared-cert web install). |
 | **D. a-Shell/Python on the signer, `pymobiledevice3`** | **maybe** | yes | test first | `remote pair-host` + pure-Python userspace tunnel; no native app, no cert. Open risks: cryptography 3.4.8, deps, raw mDNS. This is the only all-constraints path; test gates above. |
-| **E. USB `ideviceinstaller`** | no | yes | none | Works today (0.6.12 verified). |
 
 There is **no** pure own-cert + no-PC + no-third-party-app path on iOS 27: a free-profile app
 cannot be AirDropped or OTA-installed, and a free-signed helper can only be installed through a

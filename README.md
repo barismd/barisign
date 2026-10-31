@@ -12,7 +12,7 @@ Both devices may be an **iPhone or an iPad**; iOS and iPadOS both work. The role
 They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSign.
 
 > **Status:** the signer path is verified on a real device running iOS 27: Apple sign-in, the
-> developer portal, signing, and installing the IPA over USB. The **pair-first UDID**, the fallback
+> developer portal, signing, and launching the signed app. The **pair-first UDID**, the fallback
 > **UDID page** and the **signer → target pairing install** are written but not yet verified.
 
 ---
@@ -45,8 +45,7 @@ a short-lived page on its Wi-Fi address: the target opens `http://<signer-ip>:<p
 |---|---|
 | **Apple sign-in** (free ID, 2FA) | ✅ verified |
 | **Device, certificate, profile** (developer portal) | ✅ verified |
-| **Download + sign + verify** | ✅ verified — the signed IPA installs over USB |
-| **USB install** (`ideviceinstaller`) | ✅ verified — Trust Developer, AltStore launches |
+| **Download + sign + verify** | ✅ verified — the signed IPA installs and the app launches on a device |
 | **UDID from pairing** (pair-first) | ⚠️ written, untested on a device |
 | **UDID page** fallback served by the signer | ⚠️ written, untested on a device |
 | **Signer → target pairing install** (`sh bin/barisign pair`) | ⚠️ written, untested on a device |

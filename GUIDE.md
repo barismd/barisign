@@ -8,9 +8,9 @@ Two iOS/iPadOS devices on the same Wi-Fi are enough. Two roles, no computer:
 Either device can be an **iPhone or an iPad** (iOS/iPadOS 27+). They must be on the **same Wi-Fi**.
 a-Shell and BariSign are installed on the **signer only**.
 
-**Status:** Apple sign-in, the developer portal, signing and the USB install are verified on a real
-device. The pair-first **UDID from pairing**, the fallback **UDID page** and the **signer → target
-pairing install** are written but not yet verified on a device.
+**Status:** Apple sign-in, the developer portal, signing and launching the signed app are verified on
+a real device. The pair-first **UDID from pairing**, the fallback **UDID page** and the **signer →
+target pairing install** are written but not yet verified on a device.
 
 ---
 

@@ -16,7 +16,7 @@ SIGNER (a-Shell)                              TARGET (Safari / Settings)
               read the UDID from the pairing/tunnel
   2. Apple ID anisette + SRP-6a + 2FA         (verified)
   3. portal   UDID -> App ID -> cert -> profile (verified)
-  4. sign the chosen IPA                       (verified over USB)
+  4. sign the chosen IPA                       (verified on a device)
   5. install over the same pairing             installation_proxy over Wi-Fi
                                               (target Trust Developer, opens the app)
   fallback: signer serves http://<signer-ip>:<port>/; target installs median.co/udid,
@@ -36,9 +36,9 @@ MIInstallerErrorDomain 111
 to be installed from this source."
 ```
 
-The same IPA installs through `installation_proxy` (the developer source), which is what `ideviceinstaller`
-does over USB and what the signer→target pairing tunnel does over Wi-Fi. OTA is enterprise/ad-hoc territory
-and is not available with a free certificate. Both are out.
+The same IPA installs through a developer `installation_proxy` source, which is what the signer→target
+pairing tunnel does over Wi-Fi. OTA is enterprise/ad-hoc territory and is not available with a free
+certificate. Both are out.
 
 ## Why the UDID is a page, not a paste into a-Shell
 
@@ -72,7 +72,7 @@ the `bin/barisign pair` engine on the signer.
 
 ## Status
 
-- Verified on the signer (iOS 27): Apple sign-in, portal, signing, USB install, app launch.
+- Verified on the signer (iOS 27): Apple sign-in, portal, signing, app launch.
 - Written, not yet device-verified: the pair-first UDID, the fallback UDID page and the signer→target
   pairing install.
 - The target page's HTTP handler is tested on Linux; the tunnel and mDNS path need a device run.

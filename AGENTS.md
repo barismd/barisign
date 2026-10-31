@@ -33,9 +33,9 @@ Both may be an iPhone or an iPad; only the role matters. Same Wi-Fi required.
 - **Languages:** English only for now; English + Turkish in the final phase, after it works.
 - Test devices are roles, not hardware: either device can be the signer or the target. Both run
   iOS/iPadOS 27+; a-Shell is installed only on the signer.
-- On device and verified: UDID, Apple sign-in, the **developer portal**, the signer's signed IPA
-  over USB (`ideviceinstaller`), and AltStore launching after the app-group fix. The pair-first UDID,
-  the fallback UDID page and the signer→target pairing install are written but not yet device-verified.
+- On device and verified: UDID, Apple sign-in, the **developer portal**, signing, and the signed app
+  launching after install. The pair-first UDID, the fallback UDID page and the signer→target pairing
+  install are written but not yet device-verified.
 - Sign-in requires **Mac-emulating anisette** and the server's own client_info (Apple's Oct 2026
   -80045/-80046/503 rules). `mac-ani.jkcoxson.com` and `ani.jkcoxson.com` come first. Details:
   `docs/ANISETTE.md`, `docs/RESULTS.md`.

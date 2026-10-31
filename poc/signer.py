@@ -32,10 +32,10 @@
 #    * No third-party code: the encoding is written from the published formats
 #      and checked against real Apple-signed IPAs (see docs/RESULTS.md).
 #
-#  STATUS: VERIFIED ON DEVICE (0.6.10/0.6.12): the signed IPA installed over
-#          USB with ideviceinstaller, Trust Developer was offered, and AltStore
-#          launched after the app-group fix. The signer -> target Wi-Fi install
-#          (bin/barisign pair) is the remaining untested path.
+#  STATUS: VERIFIED ON DEVICE: the signed IPA installed on a device, Trust
+#          Developer was offered, and the app launched after the app-group fix.
+#          The signer -> target Wi-Fi install (`sh bin/barisign pair`) is the
+#          remaining untested path.
 #
 #  RUN IT
 #  ------

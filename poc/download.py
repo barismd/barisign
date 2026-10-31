@@ -20,7 +20,7 @@
 #  shipped CA bundle is always loaded explicitly).
 #
 #  STATUS: exercised on the signer; the download and signing flow has run on
-#          iOS 27 and the signed IPA installed over USB. See docs/RESULTS.md.
+#          iOS 27 and the signed IPA installed on a device. See docs/RESULTS.md.
 # =============================================================================
 
 import hashlib
