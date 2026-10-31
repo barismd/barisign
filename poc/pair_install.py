@@ -9,9 +9,10 @@
 #  The signer advertises itself as a pairable host; on the target open
 #  Settings > Privacy & Security > Developer Mode > Paired Macs (or
 #  Settings > Developer > Paired Macs), pick "BariSign", and enter the code
-#  printed here. The signer then opens the userspace tunnel and installs the
-#  signed IPA with installation_proxy. No PC, no SideInstaller, no certificate.
-#  Either device may be an iPhone or an iPad.
+#  printed here. The signer then opens the userspace tunnel, installs the signed
+#  IPA with installation_proxy, and writes the pairing file into AltStore or
+#  SideStore so the app can refresh itself. No PC, no SideInstaller, no
+#  certificate. Either device may be an iPhone or an iPad.
 #
 #  pymobiledevice3 is GPL-3.0-or-later and is NOT part of this repository: the
 #  first run installs it into state/pymd3 on the device. This wrapper contains
@@ -26,11 +27,13 @@ import asyncio
 import glob
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
 import sys
 import traceback
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -63,6 +66,86 @@ def save_udid(udid, record=""):
         state["pair_record"] = str(record)
     with open(path, "w") as handle:
         json.dump(state, handle, indent=2)
+
+
+def normalise_pair_record(record_path):
+    """Add the keys AltStore/SideStore expect to pymobiledevice3's record.
+
+    pymobiledevice3's device-initiated host writes host_identifier/host_alt_irk;
+    the pairing-file consumers look for identifier/alt_irk (SideInstaller's
+    PairingFileKind requires identifier). The public/private Ed25519 keys are
+    already named correctly. Return the normalized path in state/.
+    """
+    with open(record_path, "rb") as handle:
+        record = plistlib.loads(handle.read())
+    if "identifier" not in record and record.get("host_identifier"):
+        record["identifier"] = record["host_identifier"]
+    if "alt_irk" not in record:
+        alt = record.get("host_alt_irk") or record.get("peer_alt_irk")
+        if alt:
+            record["alt_irk"] = alt
+    os.makedirs(STATE_DIR, exist_ok=True)
+    target = os.path.join(STATE_DIR, "PairingFile_RemoteRP.plist")
+    with open(target, "wb") as handle:
+        plistlib.dump(record, handle)
+    for name in ("ALTPairingFile.plist", "ALTPairingFile.mobiledevicepairing"):
+        try:
+            shutil.copyfile(target, os.path.join(STATE_DIR, name))
+        except OSError:
+            pass
+    return target
+
+
+def ipa_bundle_id(ipa):
+    try:
+        with zipfile.ZipFile(ipa) as archive:
+            names = [name for name in archive.namelist()
+                     if name.startswith("Payload/") and name.endswith(".app/Info.plist")
+                     and name.count("/") == 2]
+            if not names:
+                return ""
+            info = plistlib.loads(archive.read(names[0]))
+            return info.get("CFBundleIdentifier") or ""
+    except Exception:                                         # noqa: BLE001
+        return ""
+
+
+async def write_pairing_file(rsd, ipa, record_path, bundle_id=""):
+    """Copy the pairing file into an installed AltStore/SideStore container."""
+    if not record_path or not os.path.isfile(record_path):
+        return False
+    bundle_id = bundle_id or ipa_bundle_id(ipa)
+    if not bundle_id:
+        return False
+    if bundle_id.startswith("com.altstore.AltStore"):
+        remote = "ALTPairingFile.plist"
+        documents_only = True
+    elif bundle_id.startswith("com.SideStore.SideStore"):
+        remote = "ALTPairingFile.mobiledevicepairing"
+        documents_only = True
+    elif bundle_id.startswith("com.kdt.livecontainer"):
+        remote = "SideStore/Documents/ALTPairingFile.mobiledevicepairing"
+        documents_only = False
+    else:
+        return False
+    try:
+        from pymobiledevice3.services.house_arrest import HouseArrestService
+        service = await HouseArrestService.create(rsd, bundle_id,
+                                                  documents_only=documents_only)
+        async with service:
+            if documents_only:
+                await service.push(record_path, remote, progress_bar=False)
+            else:
+                try:
+                    await service.makedirs(os.path.dirname("/" + remote))
+                except Exception:                             # noqa: BLE001
+                    pass
+                await service.push(record_path, "/" + remote, progress_bar=False)
+        _say("  pairing file written into %s" % bundle_id)
+        return True
+    except Exception as exc:                                    # noqa: BLE001
+        _say("  ! pairing file not written into the app: %s" % exc)
+        return False
 
 
 PURE_DEPS = [
@@ -234,6 +317,7 @@ async def _run(ipa, pair_only=False, udid="", timeout=None):
 
     found_udid = normalise_udid(udid) or udid
     rsd = None
+    normalized = ""
     if udid and not pair_only:
         _say("  using        already paired %s" % udid)
     else:
@@ -270,6 +354,13 @@ async def _run(ipa, pair_only=False, udid="", timeout=None):
         _say("  peer UDID    %s" % (peer_udid or getattr(device, "udid", "") or "(empty)"))
         record = getattr(result, "record_path", "")
         _say("  record       %s" % (record or "?"))
+        normalized = ""
+        if record and os.path.isfile(str(record)):
+            try:
+                normalized = normalise_pair_record(str(record))
+                _say("  pairing file %s" % normalized)
+            except Exception as exc:                            # noqa: BLE001
+                _say("  ! pairing file normalization failed: %s" % exc)
         rsd = None
         tunnel_udid = ""
         try:
@@ -282,19 +373,14 @@ async def _run(ipa, pair_only=False, udid="", timeout=None):
         if found_udid:
             save_udid(found_udid, record)
             _say("  UDID saved   %s" % found_udid)
-        if record and os.path.isfile(record):
-            # Same record under the names AltStore and SideStore read. The user
-            # can import the SideStore one, or copy the AltStore one with AFC.
-            for target in ("ALTPairingFile.plist",
-                           "ALTPairingFile.mobiledevicepairing",
-                           "PairingFile_RemoteRP.plist"):
-                try:
-                    shutil.copyfile(record, os.path.join(STATE_DIR, target))
-                except OSError:
-                    pass
-            _say("  pairing file also saved in state/ (AltStore + SideStore names)")
+        if normalized:
+            _say("  pairing names state/ALTPairingFile.plist + .mobiledevicepairing")
     if pair_only:
         return 0
+    if not normalized:
+        candidate = os.path.join(STATE_DIR, "ALTPairingFile.plist")
+        if os.path.isfile(candidate):
+            normalized = candidate
     if not ipa:
         _say("  ! no signed IPA found")
         return 2
@@ -316,6 +402,9 @@ async def _run(ipa, pair_only=False, udid="", timeout=None):
             await service.install_from_local(ipa, developer=True, handler=progress)
         _say("")
         _say("  installed")
+        if normalized:
+            await write_pairing_file(rsd, ipa, normalized)
+            _say("  pairing file ready for AltStore/SideStore")
         return 0
     except Exception as exc:                                    # noqa: BLE001
         _say("")
@@ -330,7 +419,7 @@ def main(argv):
     if "--help" in argv or "-h" in argv:
         _say("sh bin/pair                 pair the target and install the newest -signed.ipa")
         _say("sh bin/pair --ipa FILE      use a specific signed IPA")
-        _say("sh bin/pair --pair-only     pair only; print UDID + record")
+        _say("sh bin/pair --pair-only     pair only; print UDID, write pairing file")
         _say("sh bin/pair --pair-only --timeout 120")
         _say("sh bin/pair --udid UDID     install to an already paired device")
         _say("sh bin/pair --check         check python, cryptography and the engine")

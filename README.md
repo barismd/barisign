@@ -29,7 +29,9 @@ They must be on the **same Wi-Fi**. The target never installs a-Shell or BariSig
    pairing** and continues; the median page is not needed.
 4. Signer: Apple sign-in, developer portal (device + App ID + certificate + profile), sign.
 5. Install with the same pairing record: `sh bin/pair`. The signer advertises again, the target
-   enters the code, and the signer installs over Wi-Fi with `installation_proxy`.
+   enters the code, and the signer installs over Wi-Fi with `installation_proxy`. The pairing file is
+   saved under `state/` and written into AltStore (`Documents/ALTPairingFile.plist`) or SideStore
+   (`Documents/ALTPairingFile.mobiledevicepairing`) so the installed app can refresh itself.
 6. On the target, trust the developer and open the app.
 
 If pairing cannot produce a UDID (old target, Developer Mode not available), the signer falls back to

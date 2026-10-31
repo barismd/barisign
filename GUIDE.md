@@ -106,7 +106,10 @@ sh bin/pair
 2. On the **target**, open **Settings → Privacy & Security → Developer Mode → Paired Macs**
    (or **Settings → Developer → Paired Macs**), pick **BariSign**, and enter the code.
 3. The signer installs the newest `*-signed.ipa` over Wi-Fi with `installation_proxy`.
-4. On the target, tap **Trust** for the developer and open the app.
+4. The signer also writes the pairing file into the installed app:
+   AltStore `Documents/ALTPairingFile.plist`, SideStore
+   `Documents/ALTPairingFile.mobiledevicepairing`. A copy stays under `state/` for manual import.
+5. On the target, tap **Trust** for the developer and open the app.
 
 The first `sh bin/pair` installs its engine once. **AirDrop and OTA are not used**: iOS 27 refuses a
 free-profile app from those sources (`MIInstallerErrorDomain` 111). A computer with

@@ -213,6 +213,12 @@ A merged plist containing both the RPPairing keys and the lockdown keys is the s
 new apps; AltStore ignores the lockdown half, SideStore uses the remote half on 26.4+. The file
 is written over AFC/house_arrest, exactly as AltServer and SideInstaller do.
 
+`bin/pair` normalizes pymobiledevice3's record (`host_identifier`/`host_alt_irk` become
+`identifier`/`alt_irk`, which SideInstaller's `PairingFileKind` requires) and saves it under `state/`
+as `PairingFile_RemoteRP.plist`, `ALTPairingFile.plist` and `ALTPairingFile.mobiledevicepairing`.
+After a successful install it writes the appropriate file into the installed app's container with
+`house_arrest`/AFC.
+
 ## 6. Recommended order
 
 1. **Test the pure-Python route on the signer** (section 0). `pair_probe.py` is in the repo and needs no

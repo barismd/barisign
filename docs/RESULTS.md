@@ -16,9 +16,9 @@ Replaces the old phase-0 report. The current plan is the two-role flow in `AGENT
 ## Written but **never tested on a device**
 
 - The **pair-first UDID** (`sh bin/pair --pair-only`; peer/tunnel UDID), the fallback
-  **UDID page** (`sh bin/barisign udid`) and the **signer → target pairing install**
-  (`sh bin/pair`). The code is written and the HTTP handler is tested on Linux, but no
-  device has run the page or the tunnel yet.
+  **UDID page** (`sh bin/barisign udid`), the **signer → target pairing install** and the
+  **pairing-file writer** (state/ + AFC into AltStore/SideStore). The code is written and
+  the HTTP handler/normalizer are tested on Linux, but no device has run the tunnel yet.
 
 ## Not built
 

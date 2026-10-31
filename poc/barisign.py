@@ -68,7 +68,7 @@ except ImportError as exc:                                    # noqa: BLE001
     print("Fix it by re-running the installer in the BariSign folder:  sh install.sh")
     sys.exit(2)
 
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 STATE_DIR = poc_login.POC_STATE
 STATE_FILE = os.path.join(STATE_DIR, "barisign.json")
 VARIANTS_FILE = os.path.join(_HERE, "..", "variants.json")
