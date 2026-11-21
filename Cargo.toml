@@ -1,0 +1,50 @@
+[package]
+name = "baristore"
+version = "0.10.0-alpha.1"
+edition = "2021"
+description = "An app store for iPhone and iPad that runs in Open Minis: pairs, signs and installs on the device itself"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "baristore"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "process", "fs", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+plist = "1"
+base64 = "0.22"
+hex = "0.4"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+hkdf = "0.12"
+pbkdf2 = "0.12"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+num-bigint = "0.4"
+rsa = { version = "0.9", features = ["sha2"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "gzip", "stream", "http2"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 4
+
+[dev-dependencies]
+# The SRP fork jkcoxson/idevice uses with real iPhones: an oracle for ours.
+idevice-srp = "0.6"
+# An independent TCP/IPv6 implementation playing the iPhone's side in tests.
+smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }

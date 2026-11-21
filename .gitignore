@@ -1,0 +1,16 @@
+# Rust build output
+/target/
+
+# Never commit secrets or device data
+*.p12
+*.key
+*.mobileprovision
+*.mobiledevicepairing
+pairing*.plist
+account*.plist
+.env
+.env.*
+*.ipa
+.DS_Store
+__pycache__/
+/state/

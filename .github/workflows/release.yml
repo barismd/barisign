@@ -1,0 +1,44 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "ui/**", "assets/**", "Cargo.toml", "Cargo.lock", "scripts/**", ".cargo/**", ".github/workflows/release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-unknown-linux-musl
+      - name: Zig (C compiler for ring)
+        run: pip install ziglang
+      - name: Tests
+        run: cargo test --locked
+      - name: Build aarch64-musl
+        run: ./scripts/build.sh
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp target/aarch64-unknown-linux-musl/release/baristore baristore-aarch64
+          sha256sum baristore-aarch64 > baristore-aarch64.sha256
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          notes="Built by CI from ${GITHUB_SHA} on $(date -u +%Y-%m-%d). Install in Open Minis: see the README."
+          # v<version>: one release per version (alpha/beta are prereleases).
+          pre=""; case "$version" in *-*) pre="--prerelease";; esac
+          gh release view "v$version" >/dev/null 2>&1 || \
+            gh release create "v$version" $pre --title "BariStore $version" --notes "$notes" --target "${GITHUB_SHA}"
+          gh release upload "v$version" baristore-aarch64 baristore-aarch64.sha256 --clobber
+          # nightly: always the newest build; install.sh downloads it.
+          gh release view nightly >/dev/null 2>&1 || \
+            gh release create nightly --prerelease --title "BariStore nightly" --notes "$notes" --target "${GITHUB_SHA}"
+          gh release upload nightly baristore-aarch64 baristore-aarch64.sha256 --clobber
+          gh release edit nightly --notes "BariStore $version. $notes"

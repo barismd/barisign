@@ -1,0 +1,5 @@
+# Open Minis runs an Alpine aarch64 (musl) shell under iSH: a static binary,
+# linked by rust-lld. C parts (ring) are compiled by scripts/build.sh.
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "linker-flavor=ld.lld", "-C", "target-feature=+crt-static", "-C", "relocation-model=static"]

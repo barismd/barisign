@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>BariStore</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+:root {
+  --brand: #15337F; --brand-deep: #0A1B4D; --brand-soft: #E4EAF8; --accent: #15337F;
+  --bg: #F3F5FA; --card: #FFFFFF; --text: #0E1525; --muted: #5E6779; --line: #E3E7F0;
+  --good: #1F9D55; --warn: #C27803; --bad: #D0342C; --chip: #EEF1F8;
+  --shadow: 0 1px 2px rgba(10,27,77,.06), 0 6px 20px rgba(10,27,77,.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0A0F1E; --card: #131A2E; --text: #EEF1F8; --muted: #9AA3B8; --line: #222B44;
+  --chip: #1B2340; --brand-soft: #1B2A55; --accent: #9DB4FF; --shadow: none; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0A0F1E; --card: #131A2E; --text: #EEF1F8; --muted: #9AA3B8; --line: #222B44;
+  --chip: #1B2340; --brand-soft: #1B2A55; --accent: #9DB4FF; --shadow: none; color-scheme: dark; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+input { font: inherit; font-size: max(16px, 1em); color: var(--text); }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+header.top { padding: calc(14px + env(safe-area-inset-top)) 0 6px; display: flex; align-items: center; gap: 12px; }
+header.top img { width: 40px; height: 40px; }
+h1 { font-size: 32px; letter-spacing: -.02em; margin: 6px 0 10px; }
+h2 { font-size: 21px; margin: 26px 0 10px; letter-spacing: -.01em; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 12px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.row + .row { border-top: 1px solid var(--line); }
+.grow { flex: 1; min-width: 0; }
+.ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon { position: relative; width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(#15337F, #0A1B4D);
+  flex: none; overflow: hidden; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 22px; }
+.icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.icon.big { width: 96px; height: 96px; border-radius: 22px; font-size: 38px; }
+.pill { background: var(--chip); color: var(--accent); font-weight: 700; font-size: 15px; padding: 6px 16px; border-radius: 999px; }
+.btn { display: block; width: 100%; text-align: center; padding: 14px; border-radius: 14px; font-weight: 600;
+  background: linear-gradient(#1A3D96, #15337F); color: #fff; margin-top: 10px; }
+.btn.secondary { background: var(--chip); color: var(--text); }
+.btn.danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
+.btn:disabled { opacity: .5; }
+.search { width: 100%; padding: 12px 14px; border-radius: 12px; border: 0; background: var(--chip); outline: none; }
+.field { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+  margin-top: 8px; outline: none; }
+.field:focus { border-color: var(--brand); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.chip { background: var(--chip); border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--muted); }
+.chip.warn { color: var(--warn); } .chip.good { color: var(--good); } .chip.bad { color: var(--bad); }
+.hero { border-radius: 22px; padding: 18px; color: #fff; background:
+  radial-gradient(120% 90% at 20% 0%, rgba(255,255,255,.16), transparent 60%), linear-gradient(#15337F, #0A1B4D); }
+.hero .row + .row { border-color: rgba(255,255,255,.14); }
+.hero .muted { color: rgba(255,255,255,.75); }
+.hero .pill { background: rgba(255,255,255,.16); color: #fff; }
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-top: 1px solid var(--line); display: flex; justify-content: space-around; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); z-index: 5; }
+nav.tabs button { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--muted); padding: 4px 18px; }
+nav.tabs button.on { color: var(--accent); }
+nav.tabs svg { width: 26px; height: 26px; margin-bottom: 2px; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(5,10,25,.45); z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--bg); width: 100%; max-width: 720px; max-height: 92vh; overflow: auto; border-radius: 22px 22px 0 0;
+  padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); animation: up .22s ease-out; }
+@keyframes up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+.grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 12px; }
+.bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin-top: 12px; }
+.bar > i { display: block; height: 100%; background: linear-gradient(90deg, #2A55C6, #15337F); width: 0; transition: width .3s; }
+.bar.indet > i { width: 35%; animation: slide 1.2s infinite ease-in-out; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.code { font: 700 44px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .12em; text-align: center; margin: 16px 0 6px; }
+.steps { counter-reset: s; padding: 0; margin: 0; list-style: none; }
+.steps li { counter-increment: s; display: flex; gap: 12px; padding: 12px 0; }
+.steps li + li { border-top: 1px solid var(--line); }
+.steps li::before { content: counter(s); flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--chip);
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; color: var(--muted); }
+.steps li.done::before { content: "✓"; background: var(--good); color: #fff; }
+.steps li.now::before { background: var(--brand); color: #fff; }
+.switch { position: relative; width: 51px; height: 31px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 31px; transition: .2s; }
+.switch span::after { content: ""; position: absolute; width: 27px; height: 27px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.switch input:checked + span { background: var(--good); }
+.switch input:checked + span::after { transform: translateX(20px); }
+.seg { display: flex; background: var(--chip); border-radius: 10px; padding: 2px; }
+.seg button { flex: 1; padding: 7px; border-radius: 8px; font-size: 14px; }
+.seg button.on { background: var(--card); box-shadow: var(--shadow); font-weight: 600; }
+.choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 14px; margin-top: 8px; }
+.choice.on { border-color: var(--brand); background: var(--brand-soft); }
+.radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); flex: none; margin-top: 2px; }
+.choice.on .radio { border: 6px solid var(--brand); }
+textarea.log { width: 100%; height: 280px; font: 12px/1.35 ui-monospace, Menlo, monospace; background: var(--card); color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.empty { text-align: center; padding: 30px 10px; color: var(--muted); }
+.notice { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--card); border-radius: 10px; margin: 10px 0; font-size: 14px; }
+.notice.bad { border-color: var(--bad); }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+const T = location.pathname.replace(/\/$/, "");
+let S = null, C = { apps: [], sources: [], refreshing: false };
+let tab = "featured", query = "", detail = null, sheet = null, busySend = false;
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function api(path) { const r = await fetch(T + path, { cache: "no-store" }); return r.json(); }
+async function act(action, extra = {}) {
+  try {
+    const r = await fetch(T + "/api/action", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...extra }) });
+    const j = await r.json();
+    await poll();
+    return j;
+  } catch (e) { return { ok: false, message: String(e) }; }
+}
+
+function applyTheme() {
+  const t = S?.settings?.theme || "system";
+  if (t === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
+}
+
+function iconHtml(app, big) {
+  const letter = esc((app.name || "?").trim().charAt(0).toUpperCase());
+  const img = app.icon || app.icon_url;
+  return `<div class="icon${big ? " big" : ""}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${letter}</div>`;
+}
+const tabIcons = {
+  featured: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.1 6.1-.6z"/></svg>',
+  apps: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
+  options: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+};
+
+function daysLeft(expires) {
+  if (!expires) return null;
+  return Math.floor((expires * 1000 - Date.now()) / 86400000);
+}
+
+// ---------------------------------------------------------------- setup
+function needsSetup() { return S && (!S.setup.paired || !S.setup.signed_in); }
+
+function setupView() {
+  const st = S.setup;
+  const vpn = st.vpn === true, paired = st.paired, dm = st.devmode, signed = st.signed_in;
+  const step = !vpn && !paired ? 1 : !paired ? 2 : dm === false ? 3 : !signed ? 4 : 5;
+  const li = (n, title, body) => `<li class="${n < step ? "done" : n === step ? "now" : ""}"><div class="grow"><b>${title}</b>${n === step ? `<div class="muted small" style="margin-top:4px">${body}</div>` : ""}</div></li>`;
+  const s1 = `Install <b>LocalDevVPN</b> from the App Store, open it and connect. Developer Mode must be on:
+     Settings › Privacy & Security › Developer Mode. Wi-Fi on.
+     <button class="btn" onclick="check()">Check again</button>
+     ${st.vpn === false ? '<div class="notice bad">LocalDevVPN does not answer yet.</div>' : ""}`;
+  const s2 = `BariStore pairs this iPhone with itself. After you tap Start, Minis opens a player that plays silence so
+     BariStore keeps running: swipe it down, it keeps playing. Then go to Settings › Privacy & Security › Developer Mode,
+     scroll to the bottom and tap <b>Pair with BariStore</b>. After your passcode the 6-digit code comes as a notification.
+     <button class="btn" onclick="act('pair')">Start pairing</button>`;
+  const s3 = `Developer Mode is off. Show the switch in Settings (no restart), or turn it on now (the iPhone restarts;
+     iOS refuses this while a passcode is set, then flip the switch yourself).
+     <button class="btn" onclick="act('devmode_show')">Show the switch</button>
+     <button class="btn secondary" onclick="if(confirm('The iPhone will restart. Continue?')) act('devmode_on')">Turn on now</button>`;
+  const s4 = `Sign in with your Apple ID. A free account is enough.
+     <input class="field" id="email" type="email" autocomplete="username" autocapitalize="none" placeholder="Apple ID email" value="${esc(st.email)}">
+     <input class="field" id="password" type="password" autocomplete="current-password" placeholder="Password">
+     <button class="btn" onclick="login()">Sign in</button>
+     <div class="small muted" style="margin-top:10px">Your password never leaves this iPhone: Apple's SRP sign-in turns it into a one-time
+     proof here. The anisette server that supplies Apple's device-identity headers never sees your Apple ID, password or tokens.</div>`;
+  return `<div class="wrap">
+    <header class="top"><img src="logo.svg" alt=""><div><div style="font-weight:700;font-size:20px">BariStore</div><div class="muted small">Set up this iPhone</div></div></header>
+    <div class="card"><ol class="steps">
+      ${li(1, "LocalDevVPN and Developer Mode", s1)}
+      ${li(2, "Pair this iPhone", s2)}
+      ${li(3, "Developer Mode", s3)}
+      ${li(4, "Apple ID", s4)}
+      ${li(5, "Ready", `<button class="btn" onclick="finishSetup()">Open the store</button>`)}
+    </ol></div>
+    ${paired ? `<div class="small muted" style="text-align:center">Paired with ${esc(st.device_name || "this iPhone")}</div>` : ""}
+  </div>`;
+}
+async function check() { await act("check"); if (S.setup.paired) act("devmode_status"); }
+function login() { act("login", { email: $("#email").value, password: $("#password").value }); }
+function finishSetup() { localStorage.setItem("setupSeen", "1"); render(); }
+
+// ---------------------------------------------------------------- featured
+function versionsLabel(a) {
+  const chans = a.versions.map((v) => v.channel).filter(Boolean);
+  if (chans.length) return chans.join(" · ");
+  return a.versions.length > 1 ? `${a.versions.length} sources` : esc(a.versions[0]?.source || "");
+}
+function appRow(a) {
+  return `<div class="row" data-key="${esc(a.key)}" onclick="openApp(this.dataset.key)">${iconHtml(a)}
+    <div class="grow"><div class="ell" style="font-weight:600">${esc(a.name)}</div>
+    <div class="ell muted small">${esc(a.subtitle || a.developer || "")}</div>
+    <div class="ell muted small">${versionsLabel(a)}</div></div>
+    <button class="pill" data-key="${esc(a.key)}" onclick="event.stopPropagation();openApp(this.dataset.key)">GET</button></div>`;
+}
+function featuredView() {
+  const q = query.trim().toLowerCase();
+  const match = (a) => !q || [a.name, a.developer, a.subtitle, a.bundle_id].some((x) => (x || "").toLowerCase().includes(q));
+  const picks = C.apps.filter((a) => a.featured && match(a));
+  const rest = C.apps.filter((a) => !a.featured && match(a)).sort((a, b) => a.name.localeCompare(b.name));
+  const errors = C.sources.filter((s) => s.error);
+  return `<div class="wrap">
+    <header class="top"><img src="logo.svg" alt=""><h1 style="margin:0">Featured</h1></header>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input class="search" placeholder="Search apps" value="${esc(query)}" oninput="query=this.value;renderList()">
+      <button class="pill" style="white-space:nowrap" onclick="addSource()">+ Source</button>
+    </div>
+    <div id="list">${listHtml(picks, rest, errors)}</div>
+  </div>`;
+}
+function listHtml(picks, rest, errors) {
+  return `${picks.length ? `<h2>BariStore picks</h2><div class="hero">${picks.map(appRow).join("")}</div>` : ""}
+    <h2>All apps ${C.refreshing ? '<span class="muted small">updating…</span>' : ""}</h2>
+    <div class="card">${rest.length ? rest.map(appRow).join("") : `<div class="empty">${C.refreshing ? "Loading sources…" : "No apps match."}</div>`}</div>
+    ${errors.map((s) => `<div class="notice small">${esc(s.name)}: ${esc(s.error)}</div>`).join("")}`;
+}
+function renderList() {
+  const q = query.trim().toLowerCase();
+  const match = (a) => !q || [a.name, a.developer, a.subtitle, a.bundle_id].some((x) => (x || "").toLowerCase().includes(q));
+  $("#list").innerHTML = listHtml(C.apps.filter((a) => a.featured && match(a)),
+    C.apps.filter((a) => !a.featured && match(a)).sort((a, b) => a.name.localeCompare(b.name)), C.sources.filter((s) => s.error));
+}
+function addSource() {
+  sheet = { kind: "source" };
+  renderSheet();
+}
+
+// ---------------------------------------------------------------- detail
+let pickVersion = 0, optExt = false, optMem = false;
+function openApp(key) {
+  detail = C.apps.find((a) => a.key === key);
+  pickVersion = 0; optExt = !!S.settings.remove_extensions; optMem = !!S.settings.increased_memory;
+  sheet = { kind: "detail" };
+  renderSheet();
+}
+function detailHtml() {
+  const a = detail;
+  const multi = a.versions.length > 1;
+  const v = a.versions[pickVersion] || a.versions[0];
+  const installed = (S.installed || []).find((i) => i.original_id === a.bundle_id);
+  return `<div class="grab"></div>
+    <div style="display:flex;gap:14px;align-items:center">${iconHtml(a, true)}
+      <div class="grow"><div style="font-size:22px;font-weight:700">${esc(a.name)}</div>
+      <div class="muted">${esc(a.developer)}</div>
+      ${installed ? `<div class="chip good" style="display:inline-block;margin-top:6px">Installed ${esc(installed.version)}</div>` : ""}</div></div>
+    ${a.subtitle ? `<p>${esc(a.subtitle)}</p>` : ""}
+    <h2 style="margin-top:16px">${multi ? "Choose a version" : "Version"}</h2>
+    ${a.versions.map((x, i) => `<div class="choice ${i === pickVersion ? "on" : ""}" onclick="pickVersion=${i};renderSheet()">
+      <div class="radio"></div><div class="grow"><div style="font-weight:600">${esc(x.channel ? x.channel[0].toUpperCase() + x.channel.slice(1) : x.source)}
+      <span class="muted" style="font-weight:400">${esc(x.version)}</span></div>
+      <div class="muted small">${esc(x.source)}${x.date ? " · " + esc(x.date) : ""}${x.size ? " · " + Math.round(x.size / 1e6) + " MB" : ""}</div>
+      ${x.warning ? `<div class="small" style="color:var(--warn);margin-top:4px">${esc(x.warning)}</div>` : ""}</div></div>`).join("")}
+    <h2 style="margin-top:18px">Options</h2>
+    <div class="card">
+      <div class="row"><div class="grow"><div>Remove extensions</div><div class="muted small">Saves App IDs (a free Apple ID gets 10 a week); widgets and share sheets stop working.</div></div>
+        <label class="switch"><input type="checkbox" ${optExt ? "checked" : ""} onchange="optExt=this.checked"><span></span></label></div>
+      <div class="row"><div class="grow"><div>Increased Memory Limit</div><div class="muted small">Asks Apple for more memory (emulators, LiveContainer). Not every iPhone supports it.</div></div>
+        <label class="switch"><input type="checkbox" ${optMem ? "checked" : ""} onchange="optMem=this.checked"><span></span></label></div>
+    </div>
+    <button class="btn" onclick="install()">${installed ? "Install again" : "Install"}</button>
+    <button class="btn secondary" onclick="closeSheet()">Close</button>
+    ${a.description ? `<p class="muted small" style="white-space:pre-wrap">${esc(a.description).slice(0, 1200)}</p>` : ""}
+    ${v && v.notes ? `<details><summary class="muted small">Release notes</summary><p class="small" style="white-space:pre-wrap">${esc(v.notes)}</p></details>` : ""}`;
+}
+function install() {
+  const a = detail;
+  sheet = null; renderSheet();
+  act("install", { key: a.key, version: pickVersion, name: a.name, remove_extensions: optExt, increased_memory: optMem });
+}
+
+// ---------------------------------------------------------------- my apps
+function myAppsView() {
+  const list = (S.installed || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  return `<div class="wrap">
+    <header class="top"><img src="logo.svg" alt=""><h1 style="margin:0">My Apps</h1></header>
+    ${list.length ? `<button class="btn secondary" onclick="act('refresh_all')">Refresh apps that expire soon</button>` : ""}
+    <div class="card" style="margin-top:14px">${list.length ? list.map((i) => {
+      const d = daysLeft(i.expires);
+      const cls = d === null ? "" : d < 1 ? "bad" : d < 3 ? "warn" : "good";
+      const label = d === null ? "" : d < 0 ? "Expired" : d < 1 ? "Expires today" : `${d} day${d === 1 ? "" : "s"} left`;
+      return `<div class="row">${iconHtml(i)}<div class="grow"><div class="ell" style="font-weight:600">${esc(i.name)}</div>
+        <div class="ell muted small">${esc(i.version)} · ${esc(i.bundle_id)}</div>
+        <div class="chips"><span class="chip ${cls}">${label}</span>${i.options.increased_memory ? '<span class="chip">More memory</span>' : ""}${i.options.remove_extensions ? '<span class="chip">No extensions</span>' : ""}</div></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><button class="pill" data-id="${esc(i.bundle_id)}" onclick="act('refresh',{bundle_id:this.dataset.id})">Refresh</button>
+        <button class="pill" data-id="${esc(i.bundle_id)}" onclick="appMenu(this.dataset.id)">•••</button></div></div>`;
+    }).join("") : `<div class="empty">Apps you install from BariStore appear here.<br>A free Apple ID keeps them for 7 days; refresh before that.</div>`}</div>
+    <div class="small muted" style="text-align:center">A free Apple ID can have 3 sideloaded apps installed at a time. BariStore itself does not count: it runs in Minis.</div>
+  </div>`;
+}
+function appMenu(id) { sheet = { kind: "appmenu", id }; renderSheet(); }
+
+// ---------------------------------------------------------------- options
+function optionsView() {
+  const st = S.setup, set = S.settings;
+  const theme = set.theme || "system";
+  const seg = (v, l) => `<button class="${theme === v ? "on" : ""}" onclick="saveSetting('theme','${v}')">${l}</button>`;
+  const toggle = (k, label, note) => `<div class="row"><div class="grow"><div>${label}</div><div class="muted small">${note}</div></div>
+    <label class="switch"><input type="checkbox" ${set[k] ? "checked" : ""} onchange="saveSetting('${k}',this.checked)"><span></span></label></div>`;
+  return `<div class="wrap">
+    <header class="top"><img src="logo.svg" alt=""><h1 style="margin:0">Options</h1></header>
+    <h2>Apple ID</h2>
+    <div class="card">${st.signed_in ? `<div class="row"><div class="grow"><div>${esc(st.email)}</div><div class="muted small">${esc(st.team_name || st.team)}</div></div></div>
+      <button class="btn secondary" onclick="if(confirm('Sign out of this Apple ID in BariStore?')) act('sign_out')">Sign out</button>`
+      : `<div class="muted">Not signed in.</div><button class="btn" onclick="localStorage.removeItem('setupSeen');render()">Sign in</button>`}</div>
+    <h2>Pairing</h2>
+    <div class="card"><div class="row"><div class="grow"><div>${st.paired ? "Paired" : "Not paired"}</div>
+      <div class="muted small">${esc(st.device_name || "")}${st.devmode === false ? " · Developer Mode off" : ""}</div></div></div>
+      <button class="btn secondary" onclick="act('export_pairing').then(r=>alert(r.message))" ${st.paired ? "" : "disabled"}>Export pairing file</button>
+      <button class="btn secondary" onclick="act('pair')">Pair again</button></div>
+    <h2>Install options</h2>
+    <div class="card">${toggle("increased_memory", "Increased Memory Limit by default", "Applied to new installs; you can still change it per app.")}
+      ${toggle("remove_extensions", "Remove extensions by default", "Fewer App IDs used per app.")}</div>
+    <h2>Sources</h2>
+    <div class="card">${C.sources.map((s) => `<div class="row"><div class="grow"><div class="ell">${esc(s.name)}</div><div class="ell muted small">${esc(s.url)}</div>
+      ${s.error ? `<div class="small" style="color:var(--warn)">${esc(s.error)}</div>` : ""}</div>
+      <button class="pill" data-url="${esc(s.url)}" onclick="if(confirm('Remove this source?')) act('source_remove',{url:this.dataset.url}).then(loadCatalog)">Remove</button></div>`).join("") || '<div class="empty">No sources</div>'}
+      <button class="btn secondary" onclick="addSource()">Add source</button></div>
+    <h2>Appearance</h2>
+    <div class="card"><div class="seg">${seg("system", "System")}${seg("light", "Light")}${seg("dark", "Dark")}</div></div>
+    <h2>About</h2>
+    <div class="card"><div class="row"><div class="grow">BariStore</div><div class="muted">${esc(S.version)}</div></div>
+      <button class="btn secondary" onclick="doctor()">Diagnostics to copy</button>
+      <button class="btn danger" onclick="if(confirm('Forget the Apple ID session, pairing, sources and app list? Apps stay on the iPhone.')) act('reset').then(()=>{localStorage.clear();render()})">Reset BariStore</button></div>
+    <p class="small muted" style="text-align:center">MIT licence. No accounts, no analytics: BariStore talks only to Apple, the anisette server, and the sources you add.</p>
+  </div>`;
+}
+function saveSetting(k, v) { act("settings", { settings: { [k]: v } }).then(() => { applyTheme(); render(); }); }
+async function doctor() {
+  sheet = { kind: "doctor", text: "Collecting…" }; renderSheet();
+  const r = await act("doctor");
+  sheet = { kind: "doctor", text: r.message }; renderSheet();
+}
+
+// ---------------------------------------------------------------- sheets
+function closeSheet() { sheet = null; renderSheet(); }
+function renderSheet() {
+  let html = "";
+  const q = S?.question, task = S?.task;
+  if (q) {
+    html = `<div class="grab"></div><h2 style="margin-top:0">${esc(q.title)}</h2><p class="muted">${esc(q.message)}</p>` +
+      (q.kind === "choice" ? q.options.map((o) => `<button class="btn secondary" onclick="answer(${q.id}, this.dataset.v)" data-v="${esc(o)}">${esc(o)}</button>`).join("")
+        : `<input class="field" id="answer" inputmode="${q.kind === "code" ? "numeric" : "text"}" autocomplete="one-time-code" maxlength="${q.kind === "code" ? 6 : 200}"
+            style="font-size:28px;text-align:center;letter-spacing:.3em" oninput="if(this.value.length===6&&'${q.kind}'==='code')answer(${q.id},this.value)">
+           <button class="btn" onclick="answer(${q.id}, $('#answer').value)">Continue</button>`) +
+      `<button class="btn secondary" onclick="answer(${q.id}, null)">Cancel</button>`;
+  } else if (task) {
+    const pct = task.progress;
+    const code = S.pairing_code;
+    html = `<div class="grab"></div><h2 style="margin-top:0">${esc(task.title)}</h2>
+      ${code && !task.done ? `<div class="muted">Your pairing code</div><div class="code">${esc(code.slice(0, 3))} ${esc(code.slice(3))}</div>` : ""}
+      ${S.pairing_waiting && !task.done ? `<ol class="small muted"><li>Swipe Minis's player down. It keeps playing in a small bubble; leave it.</li>
+        <li>Open Settings › Privacy & Security › Developer Mode, scroll to the bottom, tap <b>Pair with BariStore</b>.</li>
+        <li>Enter your passcode. The pairing code comes then, as a notification at the top: type it in Settings.</li>
+        <li>Come back to Minis when Settings says it paired.</li></ol>` : ""}
+      ${task.error ? `<div class="notice bad">${esc(task.error)}</div>` : `<p>${esc(task.step || "Working…")}</p>`}
+      ${task.done ? "" : `<div class="bar ${pct == null ? "indet" : ""}"><i style="width:${pct ?? 35}%"></i></div>`}
+      ${task.done ? `${task.error && task.retry ? `<button class="btn" onclick="retry()">Try again</button>` : ""}
+        <button class="btn ${task.error ? "secondary" : ""}" onclick="act('dismiss')">${task.error ? "Close" : "Done"}</button>` : ""}`;
+  } else if (sheet?.kind === "detail" && detail) {
+    html = detailHtml();
+  } else if (sheet?.kind === "source") {
+    html = `<div class="grab"></div><h2 style="margin-top:0">Add a source</h2>
+      <p class="muted small">An AltSource address (AltStore / SideStore format), starting with https://.</p>
+      <input class="field" id="srcurl" type="url" autocapitalize="none" placeholder="https://example.com/apps.json">
+      <button class="btn" onclick="act('source_add',{url:$('#srcurl').value}).then(r=>{if(!r.ok)alert(r.message);else{closeSheet();loadCatalog();}})">Add</button>
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>`;
+  } else if (sheet?.kind === "appmenu") {
+    const i = (S.installed || []).find((x) => x.bundle_id === sheet.id) || { name: sheet.id };
+    html = `<div class="grab"></div><h2 style="margin-top:0">${esc(i.name)}</h2>
+      <button class="btn secondary" data-id="${esc(sheet.id)}" onclick="act('place_pairing',{bundle_id:this.dataset.id});closeSheet()">Put the pairing file in this app</button>
+      <button class="btn danger" data-id="${esc(sheet.id)}" data-name="${esc(i.name)}" onclick="if(confirm('Delete '+this.dataset.name+' from this iPhone?')){act('delete',{bundle_id:this.dataset.id});closeSheet()}">Delete app</button>
+      <button class="btn secondary" onclick="closeSheet()">Close</button>`;
+  } else if (sheet?.kind === "doctor") {
+    html = `<div class="grab"></div><h2 style="margin-top:0">Diagnostics</h2>
+      <p class="muted small">No password, token or key is in here. Copy it and paste it where you asked for help.</p>
+      <textarea class="log" id="doc" readonly>${esc(sheet.text)}</textarea>
+      <button class="btn" onclick="copyDoc()">Copy</button><button class="btn secondary" onclick="closeSheet()">Close</button>`;
+  }
+  let bg = $(".sheet-bg");
+  if (!html) { if (bg) bg.remove(); return; }
+  if (!bg) { bg = document.createElement("div"); bg.className = "sheet-bg"; bg.innerHTML = '<div class="sheet"></div>'; document.body.appendChild(bg);
+    bg.addEventListener("click", (e) => { if (e.target === bg && !S.task && !S.question) closeSheet(); }); }
+  const sh = bg.firstChild;
+  const key = q ? "q" + q.id : task ? "t" : sheet?.kind;
+  const focused = document.activeElement && sh.contains(document.activeElement);
+  if (sh.dataset.key === key && focused && (q || sheet?.kind === "source")) return; // never re-render under typing hands
+  if (sh.dataset.html !== html) { sh.innerHTML = html; sh.dataset.html = html; sh.dataset.key = key;
+    if (q && q.kind !== "choice") setTimeout(() => $("#answer")?.focus(), 50); }
+}
+function answer(id, value) { act("answer", { id, value }); }
+function retry() { const r = S?.task?.retry; if (r) act("dismiss").then(() => act(r.action, r)); }
+function copyDoc() {
+  const t = $("#doc"); t.select();
+  (navigator.clipboard?.writeText(t.value) || Promise.reject()).then(() => alert("Copied"), () => { document.execCommand("copy"); alert("Copied"); });
+}
+
+// ---------------------------------------------------------------- shell
+function render() {
+  if (!S) return;
+  applyTheme();
+  const setup = needsSetup() || !localStorage.getItem("setupSeen");
+  const root = $("#root");
+  if (setup && document.activeElement && root.contains(document.activeElement) && document.activeElement.tagName === "INPUT") {
+    // keep the form the user is typing in
+  } else if (setup) {
+    root.innerHTML = setupView();
+  } else {
+    const view = tab === "featured" ? featuredView() : tab === "apps" ? myAppsView() : optionsView();
+    const typing = document.activeElement?.classList?.contains("search");
+    if (!typing) root.innerHTML = view + `<nav class="tabs">${["featured", "apps", "options"].map((t) =>
+      `<button class="${tab === t ? "on" : ""}" onclick="tab='${t}';render();window.scrollTo(0,0)">${tabIcons[t]}${t === "featured" ? "Featured" : t === "apps" ? "My Apps" : "Options"}</button>`).join("")}</nav>`;
+  }
+  renderSheet();
+}
+let lastState = "";
+async function poll() {
+  try {
+    const s = await api("/api/state");
+    const text = JSON.stringify({ ...s, log: null });
+    S = s;
+    if (text !== lastState) { lastState = text; render(); }
+  } catch (e) { /* the server is restarting or gone */ }
+}
+async function loadCatalog() {
+  C = await api("/api/catalog");
+  if (S && !needsSetup() && tab === "featured" && !document.activeElement?.classList?.contains("search")) render();
+  if (C.refreshing) setTimeout(loadCatalog, 1500);
+}
+(async () => {
+  await poll();
+  await loadCatalog();
+  act("catalog_refresh").then(() => setTimeout(loadCatalog, 800));
+  if (S.setup.paired) act("check");
+  setInterval(poll, 900);
+})();
+</script>
+</body>
+</html>
