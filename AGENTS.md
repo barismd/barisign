@@ -27,7 +27,7 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   and complete, history is squashed and released as 1.0.0.
 - Never sign the user out on our own. Never store the password.
 - No `baristore doctor` command: Options › Log (quick) and Run checks (network,
-  tunnel, sign-in probe) in the page.
+  tunnel, sign-in probe) in the page; `baristore log` prints the quick log.
 - Code, comments, commits, README in English. The owner talks Turkish.
 - Device tests come in **batches** the owner runs; keep their effort low.
 
@@ -51,8 +51,12 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
 - `baristore` is a supervisor: it runs the server as a child
   (BARISTORE_SERVE="port token") and restarts it when it dies; iOS takes
   memory from Minis in the background and Rust aborts on a failed allocation
-  (seen on device). Exit 0 = quit, 75 = updated (supervisor execs the new
-  build with BARISTORE_KEEP, same address). The page reloads when the
+  (seen on device). Exit 0 = quit, 75 = updated (the file is already
+  the new build: the supervisor starts the next child, same address). Never
+  exec from a process that ran tokio: in Minis's shell the exec'd process
+  kept the old worker threads, which panicked on closed descriptors (seen on
+  device, alpha.7); `baristore update` shuts its runtime down and runs the
+  new build as a child. The page reloads when the
   server's boot id changes. Memory: IPAs are streamed to disk and only
   Mach-O/plist entries are kept in memory while signing; icon decoding is
   bounded; two tokio workers.
@@ -70,8 +74,8 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   prefs `isPairingReset=false`, `activePairingProtocol=rppairing`; LiveContainer's
   SideStore reads `SideStore/Documents/ALTPairingFile.mobiledevicepairing`;
   AltStore 2.3.1+ reads `Documents/ALTPairingFile.plist` (SideInstaller docs).
-- Apple sign-in, checked live 2026-11-21 with a made-up account (`baristore
-  doctor` repeats the check): through the macOS-library servers Apple takes
+- Apple sign-in, checked live 2026-11-21 with a made-up account (Options › Log ›
+  Run checks repeats it): through the macOS-library servers Apple takes
   the client they advertise (`<MacBookPro13,3> <Mac OS X;10.12.6;16G29>`, UA
   `akd/1.0 CFNetwork/811.5.4 Darwin/16.7.0`, iloader 2.4.2) and answers a
   current Mac with HTTP 503; a Windows claim fails provisioning there. Sign-in

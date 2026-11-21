@@ -19,16 +19,19 @@ mod update;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: baristore            open the store
-       baristore update     install the newest BariStore
+       baristore update     install the newest BariStore, then open it
+       baristore log        print the log (the same as Options › Log)
        baristore --version";
 
 /// Set for the store's server process: "<port> <token>" to serve on.
 const SERVE: &str = "BARISTORE_SERVE";
-/// Set when the supervisor restarts itself after an update: the page stays
-/// at the same address, so it is not opened again.
-const KEEP: &str = "BARISTORE_KEEP";
 /// The server's exit code after it installed a new build.
 pub const UPDATED: i32 = 75;
+
+/// Two workers: Minis's shell runs on an emulated CPU with little memory.
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime")
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,10 +39,10 @@ fn main() -> ExitCode {
     if args.is_empty() && std::env::var_os(SERVE).is_none() {
         return supervise();
     }
-    // Two workers: Minis's shell runs on an emulated CPU with little memory.
-    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()
-        .expect("tokio runtime");
-    match runtime.block_on(run(args)) {
+    if args.len() == 1 && args[0] == "update" {
+        return update_then_open();
+    }
+    match runtime().block_on(run(args)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             eprintln!("baristore: {message}");
@@ -51,16 +54,10 @@ fn main() -> ExitCode {
 async fn run(args: Vec<String>) -> Result<(), String> {
     match args.first().map(String::as_str) {
         None => serve().await,
-        Some("update") => match update::download_and_replace(&|step| println!("{step}")).await? {
-            update::Outcome::UpToDate => {
-                println!("BariStore {} is the newest build.", env!("CARGO_PKG_VERSION"));
-                Ok(())
-            }
-            update::Outcome::Updated(version) => {
-                println!("Updated to {version}. Opening the store…");
-                Err(update::restart())
-            }
-        },
+        Some("log") => {
+            print!("{}", doctor::report(false).await);
+            Ok(())
+        }
         Some("--version") | Some("-V") => {
             println!("baristore {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -74,33 +71,63 @@ async fn run(args: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// `baristore update`: progress on one line, then the new build opens the
+/// store as a child process. The runtime is shut down first and nothing is
+/// exec'd from this process: in Minis's shell an exec'd process kept the old
+/// runtime's threads, which then panicked on closed descriptors (seen on
+/// device, 0.10.0-alpha.7).
+fn update_then_open() -> ExitCode {
+    use std::io::Write;
+    // Read before the file is replaced (Linux then names the old one "(deleted)").
+    let exe = std::env::current_exe();
+    let runtime = runtime();
+    let outcome = runtime.block_on(update::download_and_replace(&|step| {
+        print!("\r{step:<40}");
+        let _ = std::io::stdout().flush();
+    }));
+    runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+    println!();
+    match outcome {
+        Ok(update::Outcome::UpToDate) => {
+            println!("BariStore {} is the newest build.", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
+        Ok(update::Outcome::Updated(version)) => {
+            println!("Updated to {version}.");
+            let status = exe.and_then(|exe| std::process::Command::new(exe).status());
+            match status {
+                Ok(s) if s.success() => ExitCode::SUCCESS,
+                Ok(_) => ExitCode::FAILURE,
+                Err(e) => {
+                    eprintln!("baristore: cannot start the new build ({e}). Type baristore to open it.");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Err(message) => {
+            eprintln!("baristore: {message}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `baristore`: a small supervisor that runs the store's server as a child
 /// process and starts it again when it dies. iOS can take memory from Minis
 /// in the background, and the server then aborts ("memory allocation …
 /// failed"); the page stays at the same address and reconnects. The
 /// supervisor itself allocates almost nothing after start.
 fn supervise() -> ExitCode {
-    let (port, token, reopen) = match std::env::var(KEEP).ok().and_then(|v| {
-        let (p, t) = v.split_once(' ')?;
-        Some((p.parse::<u16>().ok()?, t.to_string()))
-    }) {
-        Some((port, token)) => (port, token, false),
-        None => {
-            let port = std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr())
-                .map(|a| a.port()).unwrap_or(47801);
-            (port, hex::encode(rand::random::<[u8; 16]>()), true)
-        }
-    };
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr())
+        .map(|a| a.port()).unwrap_or(47801);
+    let token = hex::encode(rand::random::<[u8; 16]>());
     let url = format!("http://127.0.0.1:{port}/{token}/");
     let Ok(exe) = std::env::current_exe() else {
         eprintln!("baristore: cannot find its own file");
         return ExitCode::FAILURE;
     };
-    if reopen {
-        println!("BariStore {}", env!("CARGO_PKG_VERSION"));
-        if !app::minis_ok() {
-            println!("Note: this is not Open Minis 1.16+ (no minis-bonjour): pairing will not work here.");
-        }
+    println!("BariStore {}", env!("CARGO_PKG_VERSION"));
+    if !app::minis_ok() {
+        println!("Note: this is not Open Minis 1.16+ (no minis-bonjour): pairing will not work here.");
     }
     let (quit_tx, quit_rx) = std::sync::mpsc::channel::<()>();
     std::thread::spawn(move || {
@@ -111,10 +138,10 @@ fn supervise() -> ExitCode {
         }
     });
     let mut crashes: Vec<std::time::Instant> = Vec::new();
-    let mut opened = !reopen;
+    let mut opened = false;
     loop {
         let child = std::process::Command::new(&exe).env(SERVE, format!("{port} {token}"))
-            .env_remove(KEEP).stdin(std::process::Stdio::null()).spawn();
+            .stdin(std::process::Stdio::null()).spawn();
         let mut child = match child {
             Ok(c) => c,
             Err(e) => {
@@ -147,13 +174,9 @@ fn supervise() -> ExitCode {
                 println!("BariStore closed. Type baristore to open it again.");
                 return ExitCode::SUCCESS;
             }
-            Some(UPDATED) => {
-                use std::os::unix::process::CommandExt;
-                println!("BariStore updated; starting the new build.");
-                let err = std::process::Command::new(&exe).env(KEEP, format!("{port} {token}")).exec();
-                eprintln!("baristore: cannot start the new build: {err}");
-                return ExitCode::FAILURE;
-            }
+            // The file is already the new build: the next child runs it, at
+            // the same address, and the page reloads by itself.
+            Some(UPDATED) => println!("BariStore updated; starting the new build."),
             _ => {
                 let now = std::time::Instant::now();
                 crashes.retain(|t| now.duration_since(*t).as_secs() < 60);

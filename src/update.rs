@@ -41,10 +41,13 @@ pub async fn download_and_replace(progress: &(dyn Fn(String) + Send + Sync)) -> 
     let mut resp = get(format!("{BASE}/baristore-aarch64")).await?;
     let total = resp.content_length().unwrap_or(0);
     let mut bytes = Vec::with_capacity(total as usize);
+    let mut shown = None;
     while let Some(chunk) = resp.chunk().await.map_err(|e| format!("download failed: {e}"))? {
         bytes.extend_from_slice(&chunk);
-        if total > 0 {
-            progress(format!("Downloading {} of {} MB", bytes.len() / 1_000_000, total / 1_000_000));
+        let mb = bytes.len() / 1_000_000;
+        if total > 0 && shown != Some(mb) {
+            shown = Some(mb);
+            progress(format!("Downloading {mb} of {} MB", total / 1_000_000));
         }
     }
     if hex::encode(Sha256::digest(&bytes)) != want {
@@ -65,13 +68,4 @@ pub async fn download_and_replace(progress: &(dyn Fn(String) + Send + Sync)) -> 
     }
     std::fs::rename(&staged, &exe).map_err(|e| format!("cannot replace {}: {e}", exe.display()))?;
     Ok(Outcome::Updated(version))
-}
-
-/// Starts the (new) binary in place of this process: it opens the store again.
-pub fn restart() -> String {
-    use std::os::unix::process::CommandExt;
-    match executable() {
-        Ok(exe) => format!("cannot restart: {}", std::process::Command::new(exe).exec()),
-        Err(e) => e,
-    }
 }

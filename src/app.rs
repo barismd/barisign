@@ -72,6 +72,8 @@ pub struct App {
     session: Arc<AsyncMutex<Option<Arc<Session>>>>,
     apple: Arc<AsyncMutex<Option<Arc<(gsa::GrandSlam, gsa::Account)>>>>,
     busy: Arc<AsyncMutex<()>>,
+    /// Stops the running task (Start again, Reset).
+    cancel: Arc<tokio::sync::Notify>,
 }
 
 const SETTINGS: [&str; 4] = ["theme", "increased_memory", "remove_extensions", "setup_done"];
@@ -97,6 +99,7 @@ impl App {
             session: Arc::new(AsyncMutex::new(None)),
             apple: Arc::new(AsyncMutex::new(None)),
             busy: Arc::new(AsyncMutex::new(())),
+            cancel: Arc::new(tokio::sync::Notify::new()),
         };
         {
             let mut i = app.inner.lock().unwrap();
@@ -201,7 +204,13 @@ impl App {
                 i.task = Some(Task { title: title.clone(), ..Default::default() });
             }
             logf!("task: start {title}");
-            let result = job(app.clone()).await;
+            let result = tokio::select! {
+                r = job(app.clone()) => r,
+                _ = app.cancel.notified() => {
+                    logf!("task: stopped {title}");
+                    return;
+                }
+            };
             let mut i = app.inner.lock().unwrap();
             let t = i.task.get_or_insert_with(Task::default);
             t.done = true;
@@ -762,9 +771,16 @@ impl App {
     }
 
     /// Forgets everything except installed apps on the iPhone itself.
-    pub async fn reset(&self) {
-        *self.apple.lock().await = None;
-        *self.session.lock().await = None;
+    /// Answers at once: the running task is stopped, and the cached Apple and
+    /// iPhone sessions are dropped as soon as a pending connection check
+    /// lets go of them (it can take 45 s; Start again waited for it in alpha.7).
+    pub fn reset(&self) {
+        self.cancel.notify_waiters();
+        let (apple, session) = (self.apple.clone(), self.session.clone());
+        tokio::spawn(async move {
+            *apple.lock().await = None;
+            *session.lock().await = None;
+        });
         for name in ["account.plist", "team", "pairing.plist", "host.plist", "installed.json", "catalog.json",
                      "sources.json", "settings.json", "signing-key.der", "anisette-server", "host-uuid",
                      "device-port", "silence.wav"] {

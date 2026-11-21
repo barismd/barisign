@@ -30,9 +30,9 @@ wget -qO- https://raw.githubusercontent.com/barismd/BariStore/main/install.sh | 
 After that, `baristore` opens the store over the terminal; press Return (or
 Ctrl-C) in the terminal, or Options › Quit, to close it. If iOS stops it in the
 background, it starts again by itself and the page reconnects. `baristore
-update` (or Options › Update BariStore) installs the newest build; Options ›
-Log gives a report to paste when something goes wrong (no password, token or
-key in it).
+update` (or Options › Update BariStore) installs the newest build and opens it;
+Options › Log, or `baristore log` in the terminal, gives a report to paste when
+something goes wrong (no password, token or key in it).
 
 ## First run
 
@@ -95,7 +95,7 @@ extensions" saves them).
   `ani3.stikstore.app`, `ani.jkcoxson.com`, `ani2.stikstore.app`,
   `win.ani.sidestore.io`, then any new ones on SideStore's public list. Each
   is tried as the Mac it reports and as a current Mac until Apple accepts one;
-  `baristore doctor` shows which one Apple takes from your network today.
+  Options › Log › Run checks shows which one Apple takes from your network today.
 - Two-factor codes: on your trusted devices, or by text message if none arrives.
 - The session token, the pairing record and the signing key stay in
   `~/.baristore` inside Minis (mode 600). **No BariStore server exists**: no

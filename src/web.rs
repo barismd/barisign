@@ -329,7 +329,7 @@ async fn action(app: &App, r: &Json) -> Json {
         "settings" => { app.save_settings(r.get("settings").unwrap_or(&Json::Null)); ok("saved") }
         "log" => ok(&crate::doctor::report(false).await),
         "checks" => ok(&crate::doctor::report(true).await),
-        "reset" => { app.reset().await; ok("reset") }
+        "reset" => { app.reset(); ok("reset") }
         "quit" => {
             tokio::spawn(async {
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;

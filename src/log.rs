@@ -1,5 +1,5 @@
 //! One log for everything: timestamped lines in ~/.baristore/baristore.log,
-//! and the last lines in memory for the page and `baristore doctor`.
+//! and the last lines in memory for the page (Options › Log, `baristore log`).
 
 use std::io::Write;
 use std::sync::Mutex;
