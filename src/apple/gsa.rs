@@ -12,16 +12,22 @@ use sha2::{Digest, Sha256};
 use std::future::Future;
 use std::pin::Pin;
 
-use super::anisette::{Anisette, Headers, SERVERS};
+use super::anisette::{Anisette, Claim, ClientInfo, Headers, SERVERS};
 use crate::{logf, srp, state};
 
 const URL_BAG: &str = "https://gsa.apple.com/grandslam/GsService2/lookup";
+/// The anisette server list SideStore and iloader read.
+const SERVER_LIST: &str = "https://servers.sidestore.io/servers.json";
 const APPLE_ROOT: &[u8] = include_bytes!("../../assets/certs/AppleRootCA.cer");
 
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .add_root_certificate(reqwest::Certificate::from_der(APPLE_ROOT).expect("Apple root"))
         .http1_title_case_headers()
+        .http1_only()
+        // A fresh connection per request: GSA has answered reused
+        // connections with 5xx (SideSign 35993d7, isideload f6a4d5d).
+        .pool_max_idle_per_host(0)
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .expect("HTTP client")
@@ -34,7 +40,9 @@ pub enum LoginError {
     WrongPassword(String),
     /// Apple refused this anisette identity (-80045/-80046/-23782): try another server.
     IdentityRefused(String),
-    /// Retrying cannot help now (429, 503 from gsa, locked account).
+    /// Apple's front end answered HTTP 503: it refuses the client claimed.
+    ServiceRefused(String),
+    /// Retrying cannot help now (429, locked account).
     Stop(String),
     Cancelled,
     Other(String),
@@ -47,6 +55,7 @@ impl std::fmt::Display for LoginError {
                 "Apple rejected the email or password ({why}). If you are sure they are right, Apple may be \
                  limiting sign-ins: wait a while before trying again"),
             LoginError::Stop(why) => write!(f, "{why}"),
+            LoginError::ServiceRefused(why) => write!(f, "Apple's sign-in server refused every client BariStore can claim to be ({why}). Try again later or update BariStore"),
             LoginError::IdentityRefused(why) => write!(f, "Apple refused the sign-in identity ({why})"),
             LoginError::Cancelled => write!(f, "sign-in cancelled"),
             LoginError::Other(why) => write!(f, "{why}"),
@@ -71,7 +80,7 @@ pub type CodeAsker = dyn Fn(CodeKind, Option<String>) -> Pin<Box<dyn Future<Outp
 pub struct GrandSlam {
     pub http: reqwest::Client,
     pub anisette: tokio::sync::Mutex<Anisette>,
-    info: super::anisette::ClientInfo,
+    pub info: ClientInfo,
     bag: Dictionary,
 }
 
@@ -110,9 +119,10 @@ impl GrandSlam {
         h
     }
 
-    pub async fn connect(server: &str, as_advertised: bool) -> Result<GrandSlam, String> {
+    pub async fn connect(server: &str, advertised: &ClientInfo, claim: Claim) -> Result<GrandSlam, String> {
         let http = http_client();
-        let anisette = Anisette::connect(&http, server, as_advertised).await?;
+        let anisette = Anisette::new(server, advertised, claim)
+            .ok_or_else(|| format!("{server} cannot sign in as {}", claim.name()))?;
         let info = anisette.info.clone();
         let mut gs = GrandSlam { http, anisette: tokio::sync::Mutex::new(anisette), info, bag: Dictionary::new() };
         let text = gs.http.get(URL_BAG).headers(gs.base_headers(false)).send().await
@@ -152,6 +162,14 @@ impl GrandSlam {
         let status = resp.status();
         let text = resp.text().await.map_err(|e| e.to_string())?;
         if !status.is_success() {
+            // GrandSlam explains some refusals (401) in a plist with a Status.
+            if let Some(r) = plist::from_bytes::<Dictionary>(text.as_bytes()).ok()
+                .and_then(|d| d.get("Response").and_then(Value::as_dictionary).cloned())
+                .filter(|r| r.contains_key("Status"))
+            {
+                logf!("gsa: HTTP {status} with a Status");
+                return Ok(r);
+            }
             return Err(format!("HTTP {status} from Apple: {}", text.chars().take(200).collect::<String>()));
         }
         let d: Dictionary = plist::from_bytes(text.as_bytes())
@@ -226,7 +244,9 @@ fn session_hmac(key: &[u8], label: &str) -> Vec<u8> {
 
 enum Stage {
     LoggedIn(Dictionary),
-    TrustedDevice(Dictionary),
+    /// Trusted-device code; `sent` when Apple already pushed one (hsc 409
+    /// without `au`), so none is requested again.
+    TrustedDevice { spd: Dictionary, sent: bool },
     Sms(Dictionary),
 }
 
@@ -291,13 +311,13 @@ async fn srp_login(gs: &GrandSlam, email: &str, password: &str) -> Result<Stage,
     let spd: Dictionary = plist::from_bytes(&spd_raw).map_err(other)?;
     let status = r2.get("Status").and_then(Value::as_dictionary).cloned().unwrap_or_default();
     match status.get("au").and_then(Value::as_string) {
-        Some("trustedDeviceSecondaryAuth") => return Ok(Stage::TrustedDevice(spd)),
+        Some("trustedDeviceSecondaryAuth") => return Ok(Stage::TrustedDevice { spd, sent: false }),
         Some("secondaryAuth") => return Ok(Stage::Sms(spd)),
         Some("repair") | None => {}
         Some(other_step) => logf!("gsa: unknown extra step {other_step}; continuing"),
     }
     if status.get("hsc").and_then(Value::as_signed_integer) == Some(409) {
-        return Ok(Stage::TrustedDevice(spd));
+        return Ok(Stage::TrustedDevice { spd, sent: true });
     }
     Ok(Stage::LoggedIn(spd))
 }
@@ -307,7 +327,7 @@ async fn srp_login(gs: &GrandSlam, email: &str, password: &str) -> Result<Stage,
 /// throttling, so no other server would do better.
 fn gsa_failure(e: String) -> LoginError {
     if e.contains("HTTP 503") {
-        LoginError::Stop(format!("Apple's sign-in server refused the request; try again later ({e})"))
+        LoginError::ServiceRefused("HTTP 503".into())
     } else if e.contains("HTTP 429") {
         LoginError::Stop("Apple is limiting sign-ins for this account or network. Wait a while: every attempt \
                           can extend the wait".into())
@@ -352,13 +372,23 @@ async fn second_factor_headers(gs: &GrandSlam, spd: &Dictionary, json: bool) -> 
     Ok(h)
 }
 
-async fn trusted_device(gs: &GrandSlam, spd: &Dictionary, ask: &CodeAsker) -> Result<(), LoginError> {
+/// The trusted-device code. Apple may turn the request away (a bare 403)
+/// and still have pushed a code, so the user is asked either way; answering
+/// "sms" switches to a text message.
+async fn trusted_device(gs: &GrandSlam, spd: &Dictionary, sent: bool, ask: &CodeAsker) -> Result<(), LoginError> {
     let send = gs.url("trustedDeviceSecondaryAuth").map_err(other)?;
     let validate = gs.url("validateCode").map_err(other)?;
-    gs.http.get(&send).headers(second_factor_headers(gs, spd, false).await?).send().await.map_err(other)?;
+    if !sent {
+        let status = gs.http.get(&send).headers(second_factor_headers(gs, spd, false).await?).send().await
+            .map_err(other)?.status();
+        logf!("gsa: trusted-device code requested ({status})");
+    }
     let mut hint = None;
     for _ in 0..5 {
         let code = ask(CodeKind::TrustedDevice, hint.take()).await.ok_or(LoginError::Cancelled)?;
+        if code.trim() == "sms" {
+            return sms(gs, spd, ask).await;
+        }
         let text = gs.http.get(&validate).headers(second_factor_headers(gs, spd, false).await?)
             .header("security-code", code.trim()).send().await.map_err(other)?
             .text().await.map_err(other)?;
@@ -378,8 +408,11 @@ async fn sms(gs: &GrandSlam, spd: &Dictionary, ask: &CodeAsker) -> Result<(), Lo
         .json().await.unwrap_or(serde_json::Value::Null);
     let id = numbers.pointer("/trustedPhoneNumbers/0/id").and_then(|v| v.as_u64()).unwrap_or(1);
     let body = serde_json::json!({"phoneNumber": {"id": id}, "mode": "sms"});
-    gs.http.put("https://gsa.apple.com/auth/verify/phone")
-        .headers(second_factor_headers(gs, spd, true).await?).json(&body).send().await.map_err(other)?;
+    let status = gs.http.put("https://gsa.apple.com/auth/verify/phone")
+        .headers(second_factor_headers(gs, spd, true).await?).json(&body).send().await.map_err(other)?.status();
+    // A refusal here (e.g. -22979: a code was sent recently) still leaves the
+    // last code valid, so the user is asked either way.
+    logf!("gsa: text-message code requested ({status})");
     let mut hint = None;
     for _ in 0..5 {
         let code = ask(CodeKind::Sms, hint.take()).await.ok_or(LoginError::Cancelled)?;
@@ -438,7 +471,7 @@ async fn login_on(gs: &GrandSlam, email: &str, password: &str, ask: &CodeAsker) 
     for _ in 0..2 {
         match stage {
             Stage::LoggedIn(_) => break,
-            Stage::TrustedDevice(ref spd) => trusted_device(gs, spd, ask).await?,
+            Stage::TrustedDevice { ref spd, sent } => trusted_device(gs, spd, sent, ask).await?,
             Stage::Sms(ref spd) => sms(gs, spd, ask).await?,
         }
         stage = srp_login(gs, email, password).await?;
@@ -456,64 +489,113 @@ async fn login_on(gs: &GrandSlam, email: &str, password: &str, ask: &CodeAsker) 
     Ok(account)
 }
 
-/// Signs in, failing over to the next anisette server when Apple refuses the
-/// identity. On a server whose own client info we replaced (an old Mac), a
-/// credential refusal is tried once more as the server advertises it
-/// (iloader 2.4.2 signs in that way), then sign-in stops: more attempts with
-/// the same password risk Apple locking the account. Returns the GrandSlam
-/// connection that worked.
-pub async fn login(email: &str, password: &str, ask: &CodeAsker) -> Result<(GrandSlam, Account), LoginError> {
+/// One sign-in attempt's place: a server and the client it claims to be.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Route {
+    pub server: String,
+    pub claim: Claim,
+}
+
+impl Route {
+    fn save(&self) {
+        let _ = std::fs::write(state::path("anisette-server"), format!("{}\n{}", self.server, self.claim.name()));
+    }
+
+    fn saved() -> Option<Route> {
+        let text = std::fs::read_to_string(state::path("anisette-server")).ok()?;
+        let mut lines = text.lines().map(str::trim);
+        let server = lines.next().filter(|s| !s.is_empty())?.to_string();
+        let claim = lines.next().and_then(Claim::from_name).unwrap_or(Claim::Advertised);
+        Some(Route { server, claim })
+    }
+}
+
+/// Signs in through every server and claim in turn until one works.
+///
+/// * HTTP 503 from Apple, or -80045/-80046/-23782: Apple refused that client
+///   or identity before looking at the password; the next claim or server
+///   is tried. A claim refused with 503 on two servers is skipped after
+///   that (SideInstaller's AppleRefusals).
+/// * -20101/-20970/-22406 (credentials): tried once more with another
+///   claim, since Apple has answered a distrusted identity this way, then
+///   sign-in stops: more attempts with the same password risk a lock.
+/// * 429 and a locked account stop at once.
+pub async fn login(email: &str, password: &str, ask: &CodeAsker, status: &(dyn Fn(String) + Send + Sync))
+    -> Result<(GrandSlam, Account), LoginError>
+{
     let email = email.trim().to_lowercase();
     let mut last = LoginError::Other("no anisette server answered".into());
-    let mut tried_advertised = false;
-    for server in preferred_servers() {
-        for as_advertised in [false, true] {
-            if as_advertised && tried_advertised {
-                break;
+    let mut refused: Vec<Claim> = Vec::new();
+    let mut credential_retry_used = false;
+    let saved = Route::saved();
+    for server in candidate_servers().await {
+        let http = http_client();
+        let advertised = match Anisette::advertised(&http, &server).await {
+            Ok(a) => a,
+            Err(e) => {
+                logf!("gsa: {e}");
+                last = LoginError::Other(e);
+                continue;
             }
-            let gs = match GrandSlam::connect(&server, as_advertised).await {
+        };
+        let mut claims = Claim::ALL.to_vec();
+        if let Some(r) = saved.as_ref().filter(|r| r.server == server) {
+            claims.retain(|c| *c != r.claim);
+            claims.insert(0, r.claim);
+        }
+        for claim in claims {
+            if refused.iter().filter(|c| **c == claim).count() >= 2 {
+                continue;
+            }
+            let gs = match GrandSlam::connect(&server, &advertised, claim).await {
                 Ok(gs) => gs,
                 Err(e) => {
-                    logf!("gsa: {server} unusable: {e}");
-                    last = LoginError::Other(e);
-                    break;
+                    logf!("gsa: {e}");
+                    continue;
                 }
             };
-            let replaced = { let a = gs.anisette.lock().await; a.info != a.advertised };
-            if as_advertised && !replaced {
-                break;
-            }
+            let host = server.trim_start_matches("https://");
+            status(format!("Signing in through {host} as {}", claim.name()));
+            logf!("gsa: trying {host} as {} ({})", claim.name(), gs.info.client_info);
             match login_on(&gs, &email, password, ask).await {
                 Ok(account) => {
-                    let _ = std::fs::write(state::path("anisette-server"),
-                                           format!("{server}\n{}", if as_advertised { "advertised" } else { "" }));
+                    Route { server: server.clone(), claim }.save();
                     return Ok((gs, account));
                 }
+                Err(LoginError::ServiceRefused(why)) => {
+                    logf!("gsa: {host} as {}: {why}", claim.name());
+                    refused.push(claim);
+                    last = LoginError::ServiceRefused(why);
+                }
                 Err(LoginError::IdentityRefused(why)) => {
-                    logf!("gsa: {server}: identity refused ({why}); next server");
+                    logf!("gsa: {host} as {}: identity refused ({why})", claim.name());
                     gs.anisette.lock().await.forget();
                     last = LoginError::IdentityRefused(why);
-                    break;
                 }
-                Err(LoginError::WrongPassword(why)) if replaced && !as_advertised => {
-                    logf!("gsa: {server}: {why} as a current Mac; once more as the server advertises");
-                    tried_advertised = true;
+                Err(LoginError::WrongPassword(why)) if !credential_retry_used => {
+                    logf!("gsa: {host} as {}: {why}; once more with another client", claim.name());
+                    credential_retry_used = true;
                     last = LoginError::WrongPassword(why);
                 }
-                Err(e) => return Err(e),
+                Err(e @ (LoginError::WrongPassword(_) | LoginError::Stop(_) | LoginError::Cancelled)) => return Err(e),
+                Err(LoginError::Other(why)) => {
+                    logf!("gsa: {host} as {}: {why}", claim.name());
+                    last = LoginError::Other(why);
+                }
             }
         }
     }
     Err(last)
 }
 
-/// Reuses the saved session: refreshes the Xcode token without a password.
+/// Reuses the saved session: refreshes the Xcode token without a password,
+/// through the server and claim that signed in (the token belongs to that
+/// anisette identity).
 pub async fn resume() -> Result<(GrandSlam, Account), String> {
     let mut account = Account::load().ok_or("not signed in")?;
-    let saved = std::fs::read_to_string(state::path("anisette-server")).unwrap_or_default();
-    let mut lines = saved.lines();
-    let server = lines.next().filter(|s| !s.trim().is_empty()).unwrap_or(SERVERS[0]).trim().to_string();
-    let gs = GrandSlam::connect(&server, lines.next() == Some("advertised")).await?;
+    let route = Route::saved().unwrap_or(Route { server: SERVERS[0].into(), claim: Claim::Advertised });
+    let advertised = Anisette::advertised(&http_client(), &route.server).await?;
+    let gs = GrandSlam::connect(&route.server, &advertised, route.claim).await?;
     if !account.token_fresh() {
         app_token(&gs, &mut account).await.map_err(|e| e.to_string())?;
         let _ = account.save();
@@ -521,13 +603,52 @@ pub async fn resume() -> Result<(GrandSlam, Account), String> {
     Ok((gs, account))
 }
 
-fn preferred_servers() -> Vec<String> {
-    let mut list: Vec<String> = SERVERS.iter().map(|s| s.to_string()).collect();
-    if let Some(saved) = std::fs::read_to_string(state::path("anisette-server")).ok()
-        .and_then(|s| s.lines().next().map(|l| l.trim().to_string())).filter(|s| !s.is_empty())
-    {
-        list.retain(|s| *s != saved);
-        list.insert(0, saved);
+/// The saved server first, then ours, then macOS- and Windows-library
+/// servers from SideStore's live list (kind 2 and 1) we do not know yet.
+async fn candidate_servers() -> Vec<String> {
+    let mut list: Vec<String> = Route::saved().map(|r| r.server).into_iter().collect();
+    for s in SERVERS {
+        if !list.iter().any(|l| l == s) {
+            list.push(s.to_string());
+        }
+    }
+    let live = async {
+        let v: serde_json::Value = reqwest::Client::new().get(SERVER_LIST)
+            .timeout(std::time::Duration::from_secs(10)).send().await.ok()?.json().await.ok()?;
+        Some(v.get("servers")?.as_array()?.iter()
+            .filter(|s| matches!(s.get("kind").and_then(|k| k.as_u64()), Some(1 | 2)))
+            .filter_map(|s| s.get("address")?.as_str().map(|a| a.trim_end_matches('/').to_string()))
+            .filter(|a| a.starts_with("https://"))
+            .collect::<Vec<_>>())
+    };
+    for s in live.await.unwrap_or_default() {
+        if !list.contains(&s) {
+            list.push(s);
+        }
     }
     list
+}
+
+
+/// Whether Apple takes `claim` through `server` right now, asked with a
+/// made-up account (for `baristore doctor`): -20970 means Apple read the
+/// request and looked the account up; HTTP 503 or -8004x mean it refused the
+/// client or identity. No real account or password is involved.
+pub async fn probe(server: &str, claim: Claim) -> String {
+    let advertised = match Anisette::advertised(&http_client(), server).await {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    let gs = match GrandSlam::connect(server, &advertised, claim).await {
+        Ok(gs) => gs,
+        Err(e) => return e,
+    };
+    let email = format!("baristore.probe{:08x}@icloud.com", rand::random::<u32>());
+    let never: &CodeAsker = &|_, _| Box::pin(async { None });
+    match login_on(&gs, &email, "not-a-password", never).await {
+        Err(LoginError::WrongPassword(why)) if why.starts_with("-20970") => "Apple accepts it".into(),
+        Err(LoginError::ServiceRefused(why)) => format!("Apple refuses it ({why})"),
+        Err(e) => format!("{e:?}"),
+        Ok(_) => "signed in?".into(),
+    }
 }

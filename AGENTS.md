@@ -39,6 +39,10 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   terminal commands.
 - The "Pair with …" entry asks for the passcode, then sends pair-setup M1; the
   code is made and notified at M1 (owner: an earlier notification is gone by then).
+- Developer Mode may be missing from Settings on a phone that never had it:
+  offering a pairing (the pairable-host advert) makes iOS show it (Apple's
+  docs, and the owner's a-Shell build revealed it this way). After pairing,
+  AMFI action 0/1 shows or turns it on.
 - The pairing service is usually on 49152 but can be another dynamic port
   (siboot 0.19.1): knock 49153–65535 except 62078.
 - iOS 27.2+: every RemoteXPC handshake on a tunnel must present the same host
@@ -47,11 +51,17 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   prefs `isPairingReset=false`, `activePairingProtocol=rppairing`; LiveContainer's
   SideStore reads `SideStore/Documents/ALTPairingFile.mobiledevicepairing`;
   AltStore 2.3.1+ reads `Documents/ALTPairingFile.plist` (SideInstaller docs).
-- Apple sign-in (SideInstaller `client_info_to_use`, siboot 0.20): no
-  Android-library servers (-80046 at the token); a server naming a Mac older
-  than 10.13 signs in as `<MacBookPro18,3> <macOS;26.6;25F84>`; Windows-library
-  servers need the hsc 434 resync. One anisette identity per (server, client
-  info). Credential codes -20101/-20970/-22406 stop sign-in.
+- Apple sign-in, checked live 2026-11-21 with a made-up account (`baristore
+  doctor` repeats the check): through the macOS-library servers Apple takes
+  the client they advertise (`<MacBookPro13,3> <Mac OS X;10.12.6;16G29>`, UA
+  `akd/1.0 CFNetwork/811.5.4 Darwin/16.7.0`, iloader 2.4.2) and answers a
+  current Mac with HTTP 503; a Windows claim fails provisioning there. Sign-in
+  rotates servers × claims (advertised, then current Mac for -23782). No
+  Android-library servers (-80046). Fresh HTTP/1.1 connection per GSA
+  request (isideload: reused ones get 5xx). Windows-library servers need the
+  hsc 434 resync. One anisette identity per (server, client info). Email is
+  lowercased. Credential codes -20101/-20970/-22406 stop sign-in after one
+  retry with the other claim.
 - SideStore/AltStore refresh with the certificate in their bundle:
   `ALTCertificate.p12` (password = portal machineId) + `ALTCertificateID` =
   serial (SideStore CertificateProvisioningFlow; isideload). LC+SS: in the

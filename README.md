@@ -77,7 +77,10 @@ extensions" saves them).
   uses the macOS- and Windows-library ones, in siboot's order:
   `new.ani.sidestore.io`, `mac-ani.jkcoxson.com`, `ani.iloader.app`,
   `ani3.stikstore.app`, `ani.jkcoxson.com`, `ani2.stikstore.app`,
-  `win.ani.sidestore.io`.
+  `win.ani.sidestore.io`, then any new ones on SideStore's public list. Each
+  is tried as the Mac it reports and as a current Mac until Apple accepts one;
+  `baristore doctor` shows which one Apple takes from your network today.
+- Two-factor codes: on your trusted devices, or by text message if none arrives.
 - The session token, the pairing record and the signing key stay in
   `~/.baristore` inside Minis (mode 600). **No BariStore server exists**: no
   accounts, no analytics.

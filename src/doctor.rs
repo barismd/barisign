@@ -66,7 +66,12 @@ pub async fn report() -> String {
     for server in apple::anisette::SERVERS {
         let _ = writeln!(out, "anisette    {server:<32} {}", reach(&format!("{server}/v3/client_info")).await);
     }
-    let _ = writeln!(out, "apple       {}", reach("https://gsa.apple.com/grandslam/GsService2/lookup").await);
+    // A made-up account through the first server that answers: tells which
+    // client Apple takes from this network today.
+    for claim in apple::anisette::Claim::ALL {
+        let verdict = apple::gsa::probe(apple::anisette::SERVERS[0], claim).await;
+        let _ = writeln!(out, "sign-in     as {:<12} {verdict}", claim.name());
+    }
     let _ = writeln!(out, "github      {}", reach("https://api.github.com/repos/SideStore/SideStore/releases?per_page=1").await);
     let apps = install::installed();
     let _ = writeln!(out, "installed   {} app(s)", apps.len());

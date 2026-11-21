@@ -33,7 +33,6 @@ pub const SERVERS: &[&str] = &[
     "https://win.ani.sidestore.io",
 ];
 
-const WINDOWS_CLIENT_INFO: &str = "<PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>";
 const AKD_USER_AGENT: &str = "akd/1.0 CFNetwork/808.1.4";
 const CURRENT_MAC_CLIENT_INFO: &str = "<MacBookPro18,3> <macOS;26.6;25F84> <com.apple.AuthKit/1 (com.apple.akd/1.0)>";
 const CURRENT_MAC_USER_AGENT: &str = "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.akd/1.0)";
@@ -62,24 +61,56 @@ fn mac_version(client: &str) -> Option<(u32, u32)> {
     Some((major, minor))
 }
 
-/// What to tell GrandSlam for a server advertising `advertised`.
-pub fn client_info_to_use(advertised: &ClientInfo) -> ClientInfo {
-    let client = advertised.client_info.trim();
-    if client.is_empty() || android_adi(advertised) {
-        return ClientInfo { client_info: WINDOWS_CLIENT_INFO.into(), user_agent: AKD_USER_AGENT.into() };
+/// Which client GrandSlam is told it is talking to. Apple's front end has
+/// answered one or another with HTTP 503 at different times (Android since
+/// 2026-10-15, Xcode since September), so sign-in rotates through them; a
+/// 503 comes before the password is checked.
+///
+/// Checked live on 2026-11-21 with a made-up account through all six
+/// macOS-library servers: as advertised (`<MacBookPro13,3> <Mac OS X;10.12.6>`,
+/// iloader 2.4.2's rollback of 2026-11-19) Apple answers -20970 ("account
+/// information entered incorrectly": it took the client and identity); as a
+/// current Mac it answers HTTP 503; a Windows PC claimed on them fails
+/// provisioning. Some accounts get -23782 (macOS 10.13 required) for the old
+/// Mac: they go on to the current Mac.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Claim {
+    /// Exactly what the server advertises.
+    Advertised,
+    /// A current Mac, as SideStore and SideInstaller report.
+    CurrentMac,
+}
+
+impl Claim {
+    pub const ALL: [Claim; 2] = [Claim::Advertised, Claim::CurrentMac];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Claim::Advertised => "advertised",
+            Claim::CurrentMac => "current-mac",
+        }
     }
-    if mac_version(client).is_some_and(|v| v < (10, 13)) {
-        return ClientInfo { client_info: CURRENT_MAC_CLIENT_INFO.into(), user_agent: CURRENT_MAC_USER_AGENT.into() };
+
+    pub fn from_name(name: &str) -> Option<Claim> {
+        Claim::ALL.into_iter().find(|c| c.name() == name)
     }
-    let ua = advertised.user_agent.trim();
-    ClientInfo { client_info: client.into(), user_agent: if ua.is_empty() { AKD_USER_AGENT } else { ua }.into() }
+
+    /// The client info this claim makes for a server advertising `advertised`.
+    pub fn info(self, advertised: &ClientInfo) -> ClientInfo {
+        match self {
+            Claim::Advertised => {
+                let ua = advertised.user_agent.trim();
+                ClientInfo { client_info: advertised.client_info.trim().into(),
+                             user_agent: if ua.is_empty() { AKD_USER_AGENT } else { ua }.into() }
+            }
+            Claim::CurrentMac => ClientInfo { client_info: CURRENT_MAC_CLIENT_INFO.into(), user_agent: CURRENT_MAC_USER_AGENT.into() },
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct Anisette {
     pub server: String,
-    /// What the server advertises (/v3/client_info).
-    pub advertised: ClientInfo,
     /// What this identity signs in as.
     pub info: ClientInfo,
     keychain_id: [u8; 16],
@@ -101,21 +132,29 @@ fn state_path(server: &str, info: &ClientInfo) -> std::path::PathBuf {
 }
 
 impl Anisette {
-    /// Connects to `server`. With `as_advertised`, signs in as exactly what
-    /// the server advertises (iloader 2.4.2's choice) instead of
-    /// `client_info_to_use`.
-    pub async fn connect(http: &reqwest::Client, server: &str, as_advertised: bool) -> Result<Anisette, String> {
+    /// What `server` advertises (/v3/client_info). Servers on Apple's
+    /// Android library are refused: Apple turns down their token (-80046).
+    pub async fn advertised(http: &reqwest::Client, server: &str) -> Result<ClientInfo, String> {
         let advertised: ClientInfo = http.get(format!("{server}/v3/client_info"))
             .timeout(Duration::from_secs(30))
             .send().await.map_err(|e| format!("{server}: {e}"))?
             .error_for_status().map_err(|e| format!("{server}: {e}"))?
             .json().await.map_err(|e| format!("{server}: bad client_info: {e}"))?;
-        if android_adi(&advertised) {
+        if android_adi(&advertised) || advertised.client_info.trim().is_empty() {
             return Err(format!("{server} runs Apple's Android ADI library, which Apple refuses (-80046)"));
         }
-        let info = if as_advertised { advertised.clone() } else { client_info_to_use(&advertised) };
-        logf!("anisette: {server} advertises {}; signing in as {}", advertised.client_info, info.client_info);
-        let mut a = Anisette { server: server.into(), advertised, info, keychain_id: rand::random(), adi_pb: None };
+        Ok(advertised)
+    }
+
+    /// The anisette identity for `server` signing in as `claim`; None when
+    /// the claim does not fit: only a server naming a Mac can claim another.
+    pub fn new(server: &str, advertised: &ClientInfo, claim: Claim) -> Option<Anisette> {
+        if claim == Claim::CurrentMac && mac_version(&advertised.client_info).is_none() {
+            return None;
+        }
+        let info = claim.info(advertised);
+        let mut a = Anisette { server: server.into(), info,
+                               keychain_id: rand::random(), adi_pb: None };
         if let Ok(Value::Dictionary(d)) = plist::from_file::<_, Value>(a.state_path()) {
             if let (Some(id), Some(pb)) = (d.get("keychain_identifier").and_then(Value::as_data),
                                            d.get("adi_pb").and_then(Value::as_data)) {
@@ -125,7 +164,7 @@ impl Anisette {
                 }
             }
         }
-        Ok(a)
+        Some(a)
     }
 
     pub fn device_id(&self) -> String {
@@ -297,27 +336,29 @@ mod tests {
         ClientInfo { client_info: c.into(), user_agent: ua.into() }
     }
 
+    const OLD_MAC: &str = "<MacBookPro13,3> <Mac OS X;10.12.6;16G29> <com.apple.AuthKit/1 (com.apple.akd/1.0)>";
+
     #[test]
-    fn old_mac_becomes_current_mac() {
-        let got = client_info_to_use(&info("<MacBookPro13,3> <Mac OS X;10.12.6;16G29> <com.apple.AuthKit/1 (com.apple.akd/1.0)>", "akd/1.0"));
-        assert_eq!(got.client_info, CURRENT_MAC_CLIENT_INFO);
-        assert_eq!(got.user_agent, CURRENT_MAC_USER_AGENT);
+    fn claims_on_a_macos_library_server() {
+        let adv = info(OLD_MAC, "akd/1.0 CFNetwork/811.5.4 Darwin/16.7.0");
+        assert_eq!(Claim::Advertised.info(&adv), adv);
+        assert_eq!(Claim::CurrentMac.info(&adv).client_info, CURRENT_MAC_CLIENT_INFO);
+        for c in Claim::ALL {
+            assert!(Anisette::new("https://example.invalid", &adv, c).is_some());
+        }
     }
 
     #[test]
-    fn windows_and_new_macs_are_kept() {
-        let win = info(WINDOWS_CLIENT_INFO, "akd/1.0 CFNetwork/808.1.4");
-        assert_eq!(client_info_to_use(&win), win);
-        let mac = info("<Mac15,7> <macOS;27.0;26A5378j> <com.apple.AuthKit/1 (com.apple.akd/1.0)>", "");
-        assert_eq!(client_info_to_use(&mac).client_info, mac.client_info);
-        assert_eq!(client_info_to_use(&mac).user_agent, AKD_USER_AGENT);
+    fn a_windows_server_is_only_itself() {
+        let adv = info("<PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>", "akd/1.0 CFNetwork/808.1.4");
+        assert!(Anisette::new("https://example.invalid", &adv, Claim::Advertised).is_some());
+        assert!(Anisette::new("https://example.invalid", &adv, Claim::CurrentMac).is_none());
     }
 
     #[test]
     fn android_library_is_recognised() {
         assert!(android_adi(&info("<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>", "")));
         assert!(android_adi(&info("<Pixel 6> <Android;12;0> <com.apple.AuthKit/1 (com.apple.akd/1.0)>", "")));
-        assert!(!android_adi(&info(WINDOWS_CLIENT_INFO, "")));
-        assert_eq!(client_info_to_use(&info("", "")).client_info, WINDOWS_CLIENT_INFO);
+        assert!(!android_adi(&info(OLD_MAC, "")));
     }
 }

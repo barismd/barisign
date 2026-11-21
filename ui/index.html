@@ -155,12 +155,13 @@ function setupView() {
   const vpn = st.vpn === true, paired = st.paired, dm = st.devmode, signed = st.signed_in;
   const step = !vpn && !paired ? 1 : !paired ? 2 : dm === false ? 3 : !signed ? 4 : 5;
   const li = (n, title, body) => `<li class="${n < step ? "done" : n === step ? "now" : ""}"><div class="grow"><b>${title}</b>${n === step ? `<div class="muted small" style="margin-top:4px">${body}</div>` : ""}</div></li>`;
-  const s1 = `Install <b>LocalDevVPN</b> from the App Store, open it and connect. Developer Mode must be on:
-     Settings › Privacy & Security › Developer Mode. Wi-Fi on.
+  const s1 = `Install <b>LocalDevVPN</b> from the App Store, open it and connect. Wi-Fi on.
+     Developer Mode may be off, and may not be in Settings yet: it appears once pairing starts.
      <button class="btn" onclick="check()">Check again</button>
      ${st.vpn === false ? '<div class="notice bad">LocalDevVPN does not answer yet.</div>' : ""}`;
   const s2 = `BariStore pairs this iPhone with itself. After you tap Start, Minis opens a player that plays silence so
-     BariStore keeps running: swipe it down, it keeps playing. Then go to Settings › Privacy & Security › Developer Mode,
+     BariStore keeps running: swipe it down, it keeps playing. Then go to Settings › Privacy & Security › Developer Mode
+     (if it was not there before, it is now: iOS shows it while a pairing is offered),
      scroll to the bottom and tap <b>Pair with BariStore</b>. After your passcode the 6-digit code comes as a notification.
      <button class="btn" onclick="act('pair')">Start pairing</button>`;
   const s3 = `Developer Mode is off. Show the switch in Settings (no restart), or turn it on now (the iPhone restarts;
@@ -350,7 +351,8 @@ function renderSheet() {
       (q.kind === "choice" ? q.options.map((o) => `<button class="btn secondary" onclick="answer(${q.id}, this.dataset.v)" data-v="${esc(o)}">${esc(o)}</button>`).join("")
         : `<input class="field" id="answer" inputmode="${q.kind === "code" ? "numeric" : "text"}" autocomplete="one-time-code" maxlength="${q.kind === "code" ? 6 : 200}"
             style="font-size:28px;text-align:center;letter-spacing:.3em" oninput="if(this.value.length===6&&'${q.kind}'==='code')answer(${q.id},this.value)">
-           <button class="btn" onclick="answer(${q.id}, $('#answer').value)">Continue</button>`) +
+           <button class="btn" onclick="answer(${q.id}, $('#answer').value)">Continue</button>
+           ${(q.options || []).includes("sms") ? `<button class="btn secondary" onclick="answer(${q.id}, 'sms')">No code on my devices? Send a text message</button>` : ""}`) +
       `<button class="btn secondary" onclick="answer(${q.id}, null)">Cancel</button>`;
   } else if (task) {
     const pct = task.progress;

@@ -338,11 +338,14 @@ impl App {
                     gsa::CodeKind::Sms => "Apple sent a 6-digit code by text message.",
                 };
                 let msg = match hint { Some(h) => format!("{h} {where_}"), None => where_.to_string() };
-                app.ask("code", "Verification code", &msg, &[]).await
+                let options: &[&str] = if kind == gsa::CodeKind::TrustedDevice { &["sms"] } else { &[] };
+                app.ask("code", "Verification code", &msg, options).await
             })
         });
         self.step("Signing in to Apple");
-        let (gs, account) = gsa::login(email.trim(), &password, ask.as_ref()).await.map_err(|e| e.to_string())?;
+        let app = self.clone();
+        let status = move |text: String| app.step(text);
+        let (gs, account) = gsa::login(email.trim(), &password, ask.as_ref(), &status).await.map_err(|e| e.to_string())?;
         account.save().map_err(|e| format!("signed in, but the session could not be saved: {e}"))?;
         self.step("Choosing the developer team");
         let teams = portal::Portal { gs: &gs, account: &account }.teams().await.map_err(|e| e.to_string())?;
