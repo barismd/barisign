@@ -1,6 +1,6 @@
 //! RemotePairing client: pair-verify with our saved record, then ask the
 //! iPhone for a TCP tunnel listener. Message shapes and key derivation follow
-//! jkcoxson/idevice (wire version 19, one sequence counter for plain and
+//! jkcoxson/idevice (one sequence counter for plain and
 //! encrypted messages, the X25519 secret as TLS-PSK).
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
@@ -16,7 +16,9 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::pairing::{record::PairingRecord, tlv8};
 
-pub const WIRE_VERSION: u64 = 19;
+/// Wire protocol versions a host can announce: 26 is what iOS 27 itself
+/// speaks, 19 is what idevice announces. The iPhone may ignore one of them.
+pub const WIRE_VERSIONS: [u64; 2] = [26, 19];
 
 pub struct Control {
     stream: TcpStream,
@@ -88,7 +90,7 @@ impl Control {
         tlv8::decode(&B64.decode(data).map_err(other)?).map_err(other)
     }
 
-    pub async fn open(host: &str, port: u16, record: &PairingRecord) -> Result<Control, VerifyError> {
+    pub async fn open(host: &str, port: u16, wire: u64, record: &PairingRecord) -> Result<Control, VerifyError> {
         let stream = tokio::time::timeout(std::time::Duration::from_secs(8), TcpStream::connect((host, port)))
             .await
             .map_err(|_| other(format!("{host}:{port} did not answer (is LocalDevVPN connected?)")))?
@@ -99,7 +101,7 @@ impl Control {
             psk: Vec::new(), peer_info: Json::Null,
         };
         c.send_plain(json!({"request": {"_0": {"handshake": {"_0": {
-            "hostOptions": {"attemptPairVerify": true}, "wireProtocolVersion": WIRE_VERSION}}}}})).await?;
+            "hostOptions": {"attemptPairVerify": true}, "wireProtocolVersion": wire}}}}})).await?;
         let reply = c.recv().await?;
         c.peer_info = reply.pointer("/message/plain/_0/response/_1/handshake/_0/peerDeviceInfo")
             .cloned().unwrap_or(Json::Null);

@@ -252,11 +252,11 @@ impl App {
         let record = flow::load_record().ok_or("This iPhone is not paired yet.")?;
         // Bounded: on mobile data LocalDevVPN can take a connection and then
         // never answer.
-        let s = match tokio::time::timeout(std::time::Duration::from_secs(45), Session::open(&record)).await {
+        let s = match tokio::time::timeout(session::CONNECT_BUDGET, Session::open(&record)).await {
             Ok(Ok(s)) => Arc::new(s),
             Ok(Err(e)) => return Err(e.to_string()),
             Err(_) => {
-                logf!("device: no tunnel within 45 s");
+                logf!("device: no tunnel within {} s", session::CONNECT_BUDGET.as_secs());
                 return Err(session::NO_ROUTE.into());
             }
         };
@@ -331,11 +331,16 @@ impl App {
         self.step("Checking the connection");
         let mut last = String::new();
         for attempt in 1..=3 {
+            let started = std::time::Instant::now();
             match self.device().await {
                 Ok(_) => return Ok(format!("Paired with {}.", record.peer.name)),
                 Err(e) => {
                     logf!("pair: connection check {attempt} failed: {e}");
                     last = e;
+                    // A failure that took long (a scan, a stalled tunnel) would only repeat.
+                    if started.elapsed() > std::time::Duration::from_secs(20) {
+                        break;
+                    }
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 }
             }
@@ -773,7 +778,7 @@ impl App {
     /// Forgets everything except installed apps on the iPhone itself.
     /// Answers at once: the running task is stopped, and the cached Apple and
     /// iPhone sessions are dropped as soon as a pending connection check
-    /// lets go of them (it can take 45 s; Start again waited for it in alpha.7).
+    /// lets go of them (it can take 100 s; Start again waited for it in alpha.7).
     pub fn reset(&self) {
         self.cancel.notify_waiters();
         let (apple, session) = (self.apple.clone(), self.session.clone());

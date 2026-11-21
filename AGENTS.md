@@ -67,7 +67,12 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   localStorage: settings.json holds theme and setup_done.
   WKWebView in Minis shows no confirm()/alert(): the page uses its own sheets.
 - The pairing service is usually on 49152 but can be another dynamic port
-  (siboot 0.19.1): knock 49153–65535 except 62078.
+  (siboot 0.19.1): knock 49153–65535 except 62078. Device log 2026-11-21
+  (iOS 27.2.1, alpha.8): 49152 took the TCP connection and then never answered
+  the wire-19 handshake (not refused), and the scan found nothing in 45 s.
+  Since alpha.9 the handshake is tried with wire 26 (what iOS 27 sends as a
+  host) and then 19, the scan has 75 s, and the log says why a port did not
+  answer. Untested on device.
 - iOS 27.2+: every RemoteXPC handshake on a tunnel must present the same host
   UUID (idevice); we keep one per install (`~/.baristore/host-uuid`).
 - SideStore nightlies read `Documents/PairingFile_RemoteRP.plist` only with

@@ -39,7 +39,7 @@ pub async fn report(checks: bool) -> String {
     let _ = writeln!(out, "LocalDevVPN {}", if session::vpn_up().await { "answers" } else { "NO ANSWER" });
     if checks {
         let _ = writeln!(out, "pairing svc {}", match session::endpoint().await {
-            Ok((host, port)) => format!("{host}:{port}"),
+            Ok((host, port, wire)) => format!("{host}:{port} (wire {wire})"),
             Err(e) => e.to_string(),
         });
     }
@@ -47,7 +47,7 @@ pub async fn report(checks: bool) -> String {
         Some(r) => {
             let _ = writeln!(out, "pairing     yes, {} ({}), udid {}", r.peer.name, r.peer.model, short(&r.peer.udid, 8));
             if checks && session::vpn_up().await {
-                match tokio::time::timeout(Duration::from_secs(40), session::Session::open(&r)).await {
+                match tokio::time::timeout(session::CONNECT_BUDGET, session::Session::open(&r)).await {
                     Ok(Ok(s)) => {
                         let dm = crate::device::services::developer_mode(&s).await;
                         let _ = writeln!(out, "tunnel      ok, {} services, Developer Mode {:?}", s.services.len(), dm);

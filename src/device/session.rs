@@ -85,45 +85,64 @@ enum Knock {
 }
 
 /// Does `port` answer an RPPairing handshake (the RemotePairing service)?
-async fn knock(host: &str, port: u16, answer: Duration) -> Knock {
+/// Each wire version gets its own connection. `note`: say in the log why a
+/// port that took the connection did not answer.
+async fn knock(host: &str, port: u16, answer: Duration, note: bool) -> (Knock, u64) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let mut s = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect((host, port))).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) if matches!(e.kind(), std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset) => {
-            return Knock::Closed;
+    let mut last = (Knock::Closed, super::rppairing::WIRE_VERSIONS[0]);
+    for wire in super::rppairing::WIRE_VERSIONS {
+        let mut s = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect((host, port))).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) if matches!(e.kind(), std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset) => {
+                if note {
+                    logf!("device: {host}:{port}: {:?}", e.kind());
+                }
+                return (Knock::Closed, wire);
+            }
+            Ok(Err(e)) => {
+                logf!("device: {host}:{port}: {e} ({:?})", e.kind());
+                return (Knock::Silent, wire);
+            }
+            Err(_) => {
+                logf!("device: {host}:{port}: no answer in 3 s");
+                return (Knock::Silent, wire);
+            }
+        };
+        let body = serde_json::to_vec(&json!({"message": {"plain": {"_0": {"request": {"_0": {"handshake": {"_0": {
+            "hostOptions": {"attemptPairVerify": true}, "wireProtocolVersion": wire}}}}}}},
+            "originatedBy": "host", "sequenceNumber": 0})).unwrap();
+        let mut frame = b"RPPairing".to_vec();
+        frame.extend_from_slice(&(body.len() as u16).to_be_bytes());
+        frame.extend_from_slice(&body);
+        let mut magic = [0u8; 9];
+        let sent = s.write_all(&frame).await;
+        let read = tokio::time::timeout(answer, s.read_exact(&mut magic)).await;
+        if sent.is_ok() && matches!(read, Ok(Ok(_))) && &magic == b"RPPairing" {
+            return (Knock::Answered, wire);
         }
-        Ok(Err(e)) => {
-            logf!("device: {host}:{port}: {e} ({:?})", e.kind());
-            return Knock::Silent;
+        if note {
+            let why = match (&sent, &read) {
+                (Err(e), _) => format!("write failed: {e}"),
+                (_, Err(_)) => format!("no answer in {} s", answer.as_secs()),
+                (_, Ok(Err(e))) => format!("closed: {e}"),
+                _ => format!("answered {:02x?}", magic),
+            };
+            logf!("device: {host}:{port} took the connection with wire {wire}, then: {why}");
         }
-        Err(_) => {
-            logf!("device: {host}:{port}: no answer in 3 s");
-            return Knock::Silent;
-        }
-    };
-    let body = serde_json::to_vec(&json!({"message": {"plain": {"_0": {"request": {"_0": {"handshake": {"_0": {
-        "hostOptions": {"attemptPairVerify": true},
-        "wireProtocolVersion": super::rppairing::WIRE_VERSION}}}}}}},
-        "originatedBy": "host", "sequenceNumber": 0})).unwrap();
-    let mut frame = b"RPPairing".to_vec();
-    frame.extend_from_slice(&(body.len() as u16).to_be_bytes());
-    frame.extend_from_slice(&body);
-    let mut magic = [0u8; 9];
-    let answered = s.write_all(&frame).await.is_ok()
-        && matches!(tokio::time::timeout(answer, s.read_exact(&mut magic)).await, Ok(Ok(_)))
-        && &magic == b"RPPairing";
-    if answered { Knock::Answered } else { Knock::Closed }
+        last = (Knock::Closed, wire);
+    }
+    last
 }
 
 pub const NO_ROUTE: &str = "No connection to the iPhone. Check that Wi-Fi is on and LocalDevVPN is connected.";
 
-/// Where the RemotePairing service answers. Usually 49152, but iOS takes
-/// the first free dynamic port at boot, so when that one is not it, the
-/// other dynamic ports are knocked 32 at a time (as siboot 0.19.1 does) and
-/// the port found is remembered.
-pub async fn endpoint() -> Result<(String, u16), OpenError> {
-    if let Some(e) = override_endpoint() {
-        return Ok(e);
+/// Where the RemotePairing service answers, and the wire version it
+/// accepts. Usually 49152, but iOS takes the first free dynamic port at
+/// boot, so when that one is not it, the other dynamic ports are knocked in
+/// batches (as siboot 0.19.1 does) and the port found is remembered.
+pub async fn endpoint() -> Result<(String, u16, u64), OpenError> {
+    if let Some((host, port)) = override_endpoint() {
+        return Ok((host, port, super::rppairing::WIRE_VERSIONS[0]));
     }
     let saved = std::fs::read_to_string(state::path("device-port")).ok()
         .and_then(|s| s.trim().parse::<u16>().ok()).filter(|p| *p != PAIRING_PORT);
@@ -132,40 +151,46 @@ pub async fn endpoint() -> Result<(String, u16), OpenError> {
         // Minis comes back from Settings: ask three times before giving up.
         let mut silent = 0;
         loop {
-            match knock(LOOPBACK, port, Duration::from_secs(5)).await {
-                Knock::Answered => return Ok((LOOPBACK.to_string(), port)),
+            match knock(LOOPBACK, port, Duration::from_secs(5), true).await {
+                (Knock::Answered, wire) => return Ok((LOOPBACK.to_string(), port, wire)),
                 // Silence is no route at all (siboot): knocking on 16 000
                 // more ports would only wait longer.
-                Knock::Silent if silent < 2 => {
+                (Knock::Silent, _) if silent < 2 => {
                     silent += 1;
                     tokio::time::sleep(Duration::from_secs(2)).await;
                 }
-                Knock::Silent => return Err(OpenError::NoVpn(NO_ROUTE.into())),
-                Knock::Closed => break,
+                (Knock::Silent, _) => return Err(OpenError::NoVpn(NO_ROUTE.into())),
+                (Knock::Closed, _) => break,
             }
         }
     }
     logf!("device: {PAIRING_PORT} is not the pairing service; knocking on the other dynamic ports");
     let started = std::time::Instant::now();
     let ports: Vec<u16> = (PAIRING_PORT + 1..=u16::MAX).filter(|p| *p != 62078).collect();
-    for chunk in ports.chunks(32) {
-        if started.elapsed() > Duration::from_secs(90) {
+    for chunk in ports.chunks(128) {
+        if started.elapsed() > SCAN_BUDGET {
+            logf!("device: stopped knocking after {} s, at port {}", SCAN_BUDGET.as_secs(), chunk[0]);
             break;
         }
-        let probes = chunk.iter().map(|&p| async move { (p, knock(LOOPBACK, p, Duration::from_millis(300)).await) });
+        let probes = chunk.iter().map(|&p| async move { (p, knock(LOOPBACK, p, Duration::from_secs(1), false).await) });
         let results = futures_util::future::join_all(probes).await;
-        if let Some((port, _)) = results.iter().find(|(_, k)| *k == Knock::Answered) {
-            logf!("device: the pairing service answers on {port}");
+        if let Some((port, (_, wire))) = results.iter().find(|(_, (k, _))| *k == Knock::Answered) {
+            logf!("device: the pairing service answers on {port} (wire {wire})");
             let _ = std::fs::write(state::path("device-port"), port.to_string());
-            return Ok((LOOPBACK.to_string(), *port));
+            return Ok((LOOPBACK.to_string(), *port, *wire));
         }
-        if results.iter().all(|(_, k)| *k == Knock::Silent) {
+        if results.iter().all(|(_, (k, _))| *k == Knock::Silent) {
             return Err(OpenError::NoVpn(NO_ROUTE.into()));
         }
     }
     Err(OpenError::Failed("LocalDevVPN is connected, but the iPhone's pairing service does not answer. Turn on \
         Developer Mode, restart the iPhone, connect LocalDevVPN and try again.".into()))
 }
+
+/// What the scan for the pairing service may take; the connection check
+/// (`CONNECT_BUDGET`) leaves room for the tunnel after it.
+const SCAN_BUDGET: Duration = Duration::from_secs(75);
+pub const CONNECT_BUDGET: Duration = Duration::from_secs(100);
 
 pub struct Tunnel {
     pub control: Control,
@@ -176,9 +201,9 @@ pub struct Tunnel {
 impl Tunnel {
     /// Pair-verify, createListener, TLS-PSK, CDTunnel, and our TCP stack on it.
     pub async fn open(record: &PairingRecord) -> Result<Tunnel, OpenError> {
-        let (host, pairing_port) = endpoint().await?;
+        let (host, pairing_port, wire) = endpoint().await?;
         let host = host.as_str();
-        let mut control = match Control::open(host, pairing_port, record).await {
+        let mut control = match Control::open(host, pairing_port, wire, record).await {
             Ok(c) => c,
             Err(VerifyError::NotPaired) => return Err(OpenError::NotPaired),
             Err(VerifyError::Other(why)) if why.contains("LocalDevVPN") => {
