@@ -30,7 +30,8 @@ input { font: inherit; font-size: max(16px, 1em); color: var(--text); }
 .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
 header.top { padding: calc(14px + env(safe-area-inset-top)) 0 8px; display: flex; align-items: center; gap: 12px; }
 header.top img { width: 40px; height: 40px; }
-header.top h1 { flex: 1; }
+header.top h1 { flex: 1; min-width: 0; }
+header.top .pill { padding: 6px 12px; font-size: 14px; }
 h1 { font-size: 30px; letter-spacing: -.02em; margin: 0; }
 h2 { font-size: 20px; margin: 24px 0 10px; letter-spacing: -.01em; }
 .muted { color: var(--muted); }
@@ -185,7 +186,7 @@ function toggleRow(id, label, note, on, disabled) {
       onchange="toggled(this.dataset.id, this.checked)"><span></span></label></div>`;
 }
 function toggled(id, value) {
-  if (id.startsWith("opt:")) { opts[id.slice(4)] = value; return; }
+  if (id.startsWith("opt:")) { opts[id.slice(4)] = value; renderSheet(); return; }
   act("settings", { settings: { [id]: value } });
 }
 
@@ -196,27 +197,25 @@ function pairingHow() {
   const player = S.pairing_keepalive === "Minis's player";
   return `<ol class="how small">
     ${player ? "<li>Swipe Minis's player down. It keeps playing in a small bubble: leave it.</li>" : ""}
-    <li>Open <b>Settings › Privacy & Security › Developer Mode</b>. If Developer Mode was not there before, it is now.</li>
+    <li>Open <b>Settings › Privacy & Security › Developer Mode</b>. It is there now, even if it was not before.</li>
     <li>At the bottom, tap <b>Pair with BariStore</b> and enter your passcode.</li>
-    <li>The 6-digit code comes as a notification. Type it in Settings.</li>
-    <li>Come back to Minis.</li></ol>`;
+    <li>Type the 6-digit code from the notification.</li>
+    <li>If Developer Mode is off, turn it on there (the iPhone restarts), then come back to Minis.</li></ol>`;
 }
 
 function setupView() {
   const st = S.setup;
-  const vpn = st.vpn === true, paired = st.paired, dm = st.devmode, signed = st.signed_in;
-  const step = !vpn && !paired ? 1 : !paired ? 2 : dm === false ? 3 : !signed ? 4 : 5;
+  const vpn = st.vpn === true, paired = st.paired, signed = st.signed_in;
+  const step = !paired ? (vpn ? 2 : 1) : !signed ? 3 : 4;
   const li = (n, title, body) => `<li class="${n < step ? "done" : n === step ? "now" : ""}"><div class="grow"><b>${title}</b>${n === step ? `<div class="muted small" style="margin-top:4px">${body}</div>` : ""}</div></li>`;
-  const s1 = `Install <b>LocalDevVPN</b> from the App Store, open it and connect. Wi-Fi must be on.
-     <button class="btn" onclick="check()">Check again</button>
-     ${st.vpn === false ? '<div class="notice bad">LocalDevVPN is not connected yet.</div>' : ""}`;
-  const s2 = `BariStore pairs this iPhone with itself. It keeps running in the background while you are in Settings.
-     ${pairingHow()}<button class="btn" onclick="act('pair')">Start pairing</button>`;
-  const s3 = `Developer Mode is off. Show its switch in Settings, or turn it on now (the iPhone restarts; with a passcode set,
-     iOS only shows the switch).
-     <button class="btn" onclick="act('devmode_show')">Show the switch</button>
-     <button class="btn secondary" onclick="ask({title:'Restart the iPhone?', message:'Turning Developer Mode on restarts the iPhone. Open BariStore again afterwards.', ok:'Restart and turn on', run:()=>act('devmode_on')})">Turn on now</button>`;
-  const s4 = `Sign in with your Apple ID. A free one is enough.
+  const s1 = st.vpn == null ? `Checking LocalDevVPN…`
+    : `Turn on Wi-Fi, then install <b>LocalDevVPN</b> from the App Store, open it and connect. BariStore moves on by itself.
+     <div class="notice bad">${esc(S.vpn_message || "LocalDevVPN is not connected yet.")}</div>
+     <button class="btn secondary" onclick="check()">Check again</button>`;
+  const s2 = `BariStore pairs this iPhone with itself; Settings shows where to tap once you start.
+     <button class="btn" onclick="act('pair')">Start pairing</button>`;
+  const s3 = `Sign in with your Apple ID. A free one is enough.
+     ${st.devmode === false ? `<div class="notice">Developer Mode is off: turn it on in Settings › Privacy & Security › Developer Mode (the iPhone restarts).</div>` : ""}
      <input class="field" id="email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Apple ID email" value="${esc(st.email)}">
      <input class="field" id="password" type="password" autocomplete="current-password" placeholder="Password">
      <button class="btn" onclick="login()">Sign in</button>
@@ -225,16 +224,16 @@ function setupView() {
   return `<div class="wrap">
     <header class="top"><img src="logo.svg" alt=""><div><div style="font-weight:700;font-size:20px">BariStore</div><div class="muted small">Set up this iPhone</div></div></header>
     <div class="card pad"><ol class="steps">
-      ${li(1, "LocalDevVPN", s1)}
+      ${li(1, "Wi-Fi and LocalDevVPN", s1)}
       ${li(2, "Pair this iPhone", s2)}
-      ${li(3, "Developer Mode", s3)}
-      ${li(4, "Apple ID", s4)}
-      ${li(5, "Done", `<button class="btn" onclick="act('settings',{settings:{setup_done:true}})">Open the store</button>`)}
+      ${li(3, "Apple ID", s3)}
+      ${li(4, "Done", `<button class="btn" onclick="act('settings',{settings:{setup_done:true}})">Open the store</button>`)}
     </ol></div>
     ${paired ? `<div class="small muted" style="text-align:center">Paired with ${esc(st.device_name || "this iPhone")}</div>` : ""}
+    <button class="link bad" style="text-align:center" onclick="ask({title:'Start again?', message:'BariStore forgets the pairing, the Apple ID session and its settings, and setup starts from the beginning. Apps stay on the iPhone.', ok:'Start again', danger:true, run:reset})">Start again</button>
   </div>`;
 }
-async function check() { await act("check"); if (S.setup.paired) act("devmode_status"); }
+async function check() { const r = await act("check"); S.vpn_message = r.ok ? "" : r.message; render(); }
 function login() {
   const email = $("#email").value.trim(), password = $("#password").value;
   if (!email || !password) { toast("Enter your Apple ID email and password."); return; }
@@ -261,7 +260,7 @@ function appRow(a) {
 }
 function featuredView() {
   return `<div class="wrap">
-    ${header("Featured", `<button class="pill quiet" onclick="openSheet({kind:'sources'})">Sources</button>`)}
+    ${header("Featured", `<button class="pill quiet" onclick="pickIpa()">Add IPA</button><button class="pill quiet" onclick="openSheet({kind:'sources'})">Sources</button>`)}
     <input class="search" type="search" placeholder="Search apps" value="${esc(query)}" oninput="query=this.value;renderList()">
     <div id="list">${listHtml()}</div>
   </div>`;
@@ -307,12 +306,36 @@ function removeSource(url, name) {
 
 // ---------------------------------------------------------------- detail
 let pickVersion = 0, opts = {};
+function freshOpts() {
+  return { remove_extensions: !!S.settings.remove_extensions, increased_memory: !!S.settings.increased_memory,
+           reuse_id: "", reuse_extensions: false };
+}
 function openApp(key) {
   detail = C.apps.find((a) => a.key === key);
   if (!detail) return;
   pickVersion = 0;
-  opts = { remove_extensions: !!S.settings.remove_extensions, increased_memory: !!S.settings.increased_memory };
+  opts = freshOpts();
   openSheet({ kind: "detail" });
+  loadAppIds(true);
+}
+/** Options and the App ID choice, the same for store apps and added IPAs. */
+function installOptionsHtml() {
+  const ids = S.app_ids;
+  const free = ids && ids.list ? ids.list.filter((a) => !a.app) : [];
+  const choice = (id, title, note) => `<div class="choice ${opts.reuse_id === id ? "on" : ""}" data-id="${esc(id)}" onclick="opts.reuse_id=this.dataset.id;renderSheet()">
+      <div class="radio"></div><div class="grow"><div style="font-weight:600" class="ell">${esc(title)}</div><div class="muted small ell">${esc(note)}</div></div></div>`;
+  const appIds = !S.setup.signed_in ? "" : !ids || !ids.list
+    ? `<div class="muted small">${appIdsError ? esc(appIdsError) : "Loading your App IDs…"}</div>`
+    : `${choice("", "New App ID", `${ids.left} of ${ids.max} left`)}
+       ${free.map((a) => choice(a.identifier, `Reuse ${a.name}`, `${a.identifier}${a.expires ? " · until " + dateText(a.expires) : ""}`)).join("")}
+       ${free.length ? `<div class="card" style="margin-top:8px">${toggleRow("opt:reuse_extensions", "Extensions too", "Extensions take free App IDs under the chosen one instead of new ones.", opts.reuse_extensions)}</div>`
+         : `<div class="muted small" style="margin-top:6px">No App ID of a deleted app is free to reuse.</div>`}`;
+  return `<h2>Options</h2>
+    <div class="card">
+      ${toggleRow("opt:remove_extensions", "Remove extensions", "Uses fewer App IDs (a free Apple ID has 10). Widgets and share sheets of this app stop working.", opts.remove_extensions)}
+      ${toggleRow("opt:increased_memory", "Increased Memory Limit", "More memory for emulators and LiveContainer, where the iPhone supports it.", opts.increased_memory)}
+    </div>
+    ${appIds ? `<h2>App ID</h2>${appIds}` : ""}`;
 }
 function detailSheet() {
   const a = detail;
@@ -330,11 +353,7 @@ function detailSheet() {
       ${installed ? `<div class="chips"><span class="chip good">Installed ${esc(installed.version)}</span></div>` : ""}</div>`,
     body: `${a.subtitle ? `<p>${esc(a.subtitle)}</p>` : ""}
       <h2>${a.versions.length > 1 ? "Choose a version" : "Version"}</h2>${versions}
-      <h2>Options</h2>
-      <div class="card">
-        ${toggleRow("opt:remove_extensions", "Remove extensions", "Uses fewer App IDs (a free Apple ID has 10). Widgets and share sheets of this app stop working.", opts.remove_extensions)}
-        ${toggleRow("opt:increased_memory", "Increased Memory Limit", "More memory for emulators and LiveContainer, where the iPhone supports it.", opts.increased_memory)}
-      </div>
+      ${installOptionsHtml()}
       ${a.description ? `<h2>About</h2><p class="muted small" style="white-space:pre-wrap">${esc(a.description.slice(0, 1500))}</p>` : ""}
       ${v && v.notes ? `<details><summary>Release notes</summary><p class="small muted" style="white-space:pre-wrap">${esc(v.notes)}</p></details>` : ""}`,
     foot: `<button class="btn" onclick="install()">${installed ? "Install again" : "Install"}</button>`,
@@ -346,6 +365,42 @@ function install() {
   act("install", { key: a.key, version: pickVersion, name: a.name, ...opts });
 }
 
+// ---------------------------------------------------------------- add IPA
+function pickIpa() {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = ".ipa,application/octet-stream";
+  input.onchange = () => { if (input.files[0]) uploadIpa(input.files[0]); };
+  input.click();
+}
+function uploadIpa(file) {
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", T + "/api/upload");
+  openSheet({ kind: "upload", name: file.name, pct: 0 });
+  xhr.upload.onprogress = (e) => { if (e.lengthComputable && sheet?.kind === "upload") { sheet.pct = Math.round(e.loaded * 100 / e.total); renderSheet(); } };
+  xhr.onload = () => {
+    let r = {};
+    try { r = JSON.parse(xhr.responseText); } catch (e) { r = { ok: false, message: "BariStore did not answer." }; }
+    if (!r.ok) { closeSheet(); toast(r.message); return; }
+    opts = freshOpts();
+    openSheet({ kind: "local", ipa: r });
+    loadAppIds(true);
+  };
+  xhr.onerror = () => { closeSheet(); toast("The upload failed."); };
+  xhr.send(file);
+}
+function localSheet(ipa) {
+  return {
+    title: ipa.name,
+    body: `<p class="muted small">${esc(ipa.bundle_id)} · ${esc(ipa.version)} · ${Math.round(ipa.size / 1e6)} MB</p>${installOptionsHtml()}`,
+    foot: `<button class="btn" onclick="installLocal()">Install</button>`,
+  };
+}
+function installLocal() {
+  const ipa = sheet.ipa;
+  closeSheet();
+  act("install_local", { path: ipa.path, name: ipa.name, ...opts });
+}
+
 // ---------------------------------------------------------------- my apps
 function myAppsView() {
   const list = (S.installed || []).slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -355,7 +410,7 @@ function myAppsView() {
     const label = d === null ? "" : d < 0 ? "Expired" : d < 1 ? "Expires today" : `${plural(d, "day")} left`;
     return `<div class="row">${iconHtml(i)}<div class="grow"><div class="ell" style="font-weight:600">${esc(i.name)}</div>
       <div class="ell muted small">${esc(i.version)}</div>
-      <div class="chips">${label ? `<span class="chip ${cls}">${label}</span>` : ""}${i.options.increased_memory ? '<span class="chip">More memory</span>' : ""}${i.options.remove_extensions ? '<span class="chip">No extensions</span>' : ""}</div></div>
+      <div class="chips">${label ? `<span class="chip ${cls}">${label}</span>` : ""}${i.increased_memory ? '<span class="chip good">More memory</span>' : i.options.increased_memory ? '<span class="chip warn">No more memory</span>' : ""}${i.options.remove_extensions ? '<span class="chip">No extensions</span>' : ""}</div></div>
       <button class="pill" data-id="${esc(i.bundle_id)}" data-name="${esc(i.name)}" onclick="act('refresh',{bundle_id:this.dataset.id,name:this.dataset.name})">Refresh</button>
       <button class="pill quiet" data-id="${esc(i.bundle_id)}" onclick="openSheet({kind:'appmenu',id:this.dataset.id})" aria-label="More">•••</button></div>`;
   }).join("");
@@ -382,13 +437,27 @@ function appIdsHtml() {
     <div class="small muted" style="text-align:center">Each app and each of its extensions needs one. They free up 7 days after they were made.</div>`;
 }
 function appMenuSheet(id) {
-  const i = (S.installed || []).find((x) => x.bundle_id === id) || { name: id, bundle_id: id };
+  const i = (S.installed || []).find((x) => x.bundle_id === id) || { name: id, bundle_id: id, options: {}, ids: {} };
+  const d = daysLeft(i.expires);
+  const memory = i.options.increased_memory
+    ? (i.increased_memory ? "On (in the app's profile)" : "Asked for, but Apple did not add it")
+    : (i.increased_memory ? "On (in the app's profile)" : "Off");
+  const line = (k, v) => `<div class="row"><div class="grow muted">${k}</div><div style="text-align:right;max-width:65%;word-break:break-all" class="small">${v}</div></div>`;
+  const ids = Object.values(i.ids || {});
   return {
     title: i.name,
-    body: `<div class="muted small" style="margin-top:8px">${esc(i.bundle_id)}</div>
-      <div class="card" style="margin-top:12px">
-        <button class="link" data-id="${esc(id)}" onclick="closeSheet();act('place_pairing',{bundle_id:this.dataset.id})">Give it the pairing file again</button>
-        <button class="link bad" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="deleteApp(this.dataset.id, this.dataset.name)">Delete app</button>
+    body: `<h2>About this app</h2><div class="card">
+        ${line("Version", esc(i.version || "–"))}
+        ${line("Expires", i.expires ? `${esc(dateText(i.expires))} (${d < 0 ? "expired" : plural(Math.max(d, 0), "day") + " left"})` : "–")}
+        ${line("Increased Memory Limit", esc(memory))}
+        ${line("Extensions", i.options.remove_extensions ? "Removed" : "Kept")}
+        ${line("Installed from", i.source_url ? "Store" : "Added IPA")}
+        ${line(ids.length > 1 ? "App IDs" : "App ID", (ids.length ? ids : [i.bundle_id]).map(esc).join("<br>"))}
+      </div>
+      <div class="card">
+        <div class="row"><button class="link" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="closeSheet();act('refresh',{bundle_id:this.dataset.id,name:this.dataset.name})">Refresh</button></div>
+        <div class="row"><button class="link" data-id="${esc(id)}" onclick="closeSheet();act('place_pairing',{bundle_id:this.dataset.id})">Give it the pairing file again</button></div>
+        <div class="row"><button class="link bad" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="deleteApp(this.dataset.id, this.dataset.name)">Delete app</button></div>
       </div>`,
   };
 }
@@ -417,8 +486,6 @@ function optionsView() {
     <div class="card">
       ${toggleRow("remove_extensions", "Remove extensions", "Default for new installs: fewer App IDs, no widgets.", set.remove_extensions)}
       ${toggleRow("increased_memory", "Increased Memory Limit", "Default for new installs.", set.increased_memory)}
-      ${toggleRow("reuse_app_ids", "Reuse App IDs of deleted apps", "When no App ID is left, use one of an app that is no longer on this iPhone without asking. Otherwise BariStore asks.", set.reuse_app_ids)}
-      ${toggleRow("reuse_for_extensions", "Reuse them for extensions too", "Extensions also take unused App IDs instead of new ones.", set.reuse_for_extensions)}
     </div>
     <h2>Appearance</h2>
     <div class="seg">${seg("system", "System")}${seg("light", "Light")}${seg("dark", "Dark")}</div>
@@ -426,7 +493,8 @@ function optionsView() {
     <div class="card">
       <div class="row"><div class="grow">BariStore</div><div class="muted">${esc(S.version)}</div></div>
       <div class="row"><button class="link" onclick="act('update')">Update BariStore</button></div>
-      <div class="row"><button class="link" onclick="doctor()">Copy diagnostics to clipboard</button></div>
+      <div class="row"><button class="link" onclick="showLog()">Log</button></div>
+      <div class="row"><button class="link" onclick="ask({title:'Clear the cache?', message:'Deletes downloaded apps, icons and the copy of the catalog. Apps from the store are downloaded again when they are refreshed.', ok:'Clear cache', run:clearCache})">Clear cache${cacheBytes != null ? ` <span class="muted small">(${Math.round(cacheBytes / 1e6)} MB)</span>` : ""}</button></div>
       <div class="row"><button class="link bad" onclick="ask({title:'Reset BariStore?', message:'BariStore forgets the Apple ID session, the pairing, sources, settings and its app list, and starts setup again. Apps stay on the iPhone.', ok:'Reset', danger:true, run:reset})">Reset BariStore</button></div>
       <div class="row"><button class="link bad" onclick="quit()">Quit BariStore</button></div>
     </div>
@@ -443,11 +511,17 @@ async function quit() {
   $("#root").innerHTML = `<div class="wrap"><div class="empty" style="padding-top:30vh"><img src="logo.svg" alt="" width="56"><p>BariStore is closed.<br>Close this page. Type <b>baristore</b> in Minis to open it again.</p></div></div>`;
   S = null;
 }
-async function doctor() {
-  toast("Collecting diagnostics…");
-  const r = await act("doctor");
-  try { await navigator.clipboard.writeText(r.message); toast("Diagnostics copied. Paste them where you asked for help."); }
-  catch (e) { openSheet({ kind: "doctor", text: r.message }); }
+let cacheBytes = null;
+async function loadCacheSize() { const r = await act("cache_size"); if (r.ok) { cacheBytes = r.bytes; render(); } }
+async function clearCache() { const r = await act("clear_cache"); toast(r.message); loadCatalog(); loadCacheSize(); }
+async function showLog(checks) {
+  openSheet({ kind: "log", text: checks ? "Running checks (network, tunnel, Apple sign-in)…" : "Loading…" });
+  const r = await act(checks ? "checks" : "log");
+  if (sheet?.kind === "log") { sheet.text = r.message; renderSheet(); }
+}
+async function copyLog() {
+  try { await navigator.clipboard.writeText(sheet.text); toast("Copied. Paste it where you asked for help."); }
+  catch (e) { const t = $(".sheet textarea"); t.focus(); t.select(); toast("Selected: tap Copy."); }
 }
 
 // ---------------------------------------------------------------- sheets
@@ -495,8 +569,12 @@ function sheetParts() {
       body: `<p class="muted">${esc(sheet.message)}</p>`,
       foot: `<button class="btn ${sheet.danger ? "danger" : ""}" onclick="confirmed()">${esc(sheet.ok)}</button>
         <button class="btn secondary" onclick="closeSheet()">Cancel</button>` };
-    case "doctor": return { key: "doctor", closable: true, title: "Diagnostics",
-      body: `<p class="muted small">No password, token or key is in here. Select all and copy.</p><textarea class="log" readonly>${esc(sheet.text)}</textarea>` };
+    case "log": return { key: "log", closable: true, title: "Log",
+      body: `<p class="muted small">No password, token or key is in here.</p><textarea class="log" readonly>${esc(sheet.text)}</textarea>`,
+      foot: `<button class="btn" onclick="copyLog()">Copy</button><button class="btn secondary" onclick="showLog(true)">Run checks</button>` };
+    case "upload": return { key: "upload", title: "Adding IPA",
+      body: `<p class="ell">${esc(sheet.name)}</p><div class="bar"><i style="width:${sheet.pct}%"></i></div><p class="muted small">${sheet.pct}%</p>` };
+    case "local": return { key: "local", closable: true, ...localSheet(sheet.ipa) };
   }
   return null;
 }
@@ -550,24 +628,47 @@ function switchTab(t) {
   tab = t;
   render();
   window.scrollTo(0, 0);
+  if (t === "options") loadCacheSize();
 }
 let appIdsError = "", appIdsLoading = false;
-/** My Apps lists the App IDs: asked for when shown and not known yet. */
-async function loadAppIds() {
-  if (appIdsLoading || appIdsError || tab !== "apps" || needsSetup() || !S.setup.signed_in || S.app_ids) return;
+/** The App IDs (My Apps, install sheets): asked for when shown and not known yet. */
+async function loadAppIds(forSheet) {
+  if (appIdsLoading || appIdsError || (tab !== "apps" && !forSheet) || needsSetup() || !S.setup.signed_in || S.app_ids) return;
   appIdsLoading = true;
   const r = await act("app_ids");
   appIdsLoading = false;
   if (!r.ok) { appIdsError = r.message || "Could not load the App IDs."; render(); }
 }
-let lastState = "";
+let lastState = "", failures = 0, boot = null;
 async function poll() {
   try {
     const s = await api("/api/state");
+    // A restarted server (after a crash or an update): start the page over.
+    if (boot && s.boot !== boot) { location.reload(); return; }
+    boot = s.boot;
+    if (failures) { failures = 0; stopped(false); }
     const text = JSON.stringify({ ...s, log: null });
     S = s;
     if (text !== lastState) { lastState = text; render(); }
-  } catch (e) { /* the server is restarting or gone */ }
+  } catch (e) {
+    // The server is restarting (its supervisor starts it again) or gone.
+    failures++;
+    if (failures >= 2) stopped(true);
+  }
+}
+/** Over everything while BariStore does not answer. */
+function stopped(on) {
+  let el = $("#stopped");
+  if (!on) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement("div"); el.id = "stopped"; document.body.appendChild(el); }
+  const long = failures > 15;
+  el.className = "sheet-bg";
+  el.style.alignItems = "center";
+  el.innerHTML = `<div class="card pad" style="max-width:340px;margin:16px;text-align:center">
+    <img src="logo.svg" alt="" width="56"><h2 style="margin:10px 0 6px">${long ? "BariStore stopped" : "Reconnecting…"}</h2>
+    <p class="muted small">${long ? "Type <b>baristore</b> in Minis's terminal to start it again. This page then works again by itself."
+      : "BariStore is starting again."}</p>
+    ${long ? '<button class="btn" onclick="location.reload()">Try again</button>' : '<div class="bar indet"><i></i></div>'}</div>`;
 }
 async function loadCatalog() {
   try { C = await api("/api/catalog"); } catch (e) { return; }
@@ -578,8 +679,12 @@ async function loadCatalog() {
   await poll();
   await loadCatalog();
   act("catalog_refresh").then(() => setTimeout(loadCatalog, 800));
-  if (S.setup.paired) act("check");
-  setInterval(() => { if (S) poll(); }, 900);
+  act("check").then((r) => { S.vpn_message = r.ok ? "" : r.message; render(); });
+  setInterval(() => { if (S || failures) poll(); }, 900);
+  // Setup's first step moves on by itself once LocalDevVPN answers.
+  setInterval(() => {
+    if (S && needsSetup() && !S.setup.paired && S.setup.vpn !== true && !S.task) check();
+  }, 4000);
 })();
 </script>
 </body>

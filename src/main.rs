@@ -19,14 +19,26 @@ mod update;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: baristore            open the store
-       baristore doctor     print a diagnostic report to paste
        baristore update     install the newest BariStore
        baristore --version";
+
+/// Set for the store's server process: "<port> <token>" to serve on.
+const SERVE: &str = "BARISTORE_SERVE";
+/// Set when the supervisor restarts itself after an update: the page stays
+/// at the same address, so it is not opened again.
+const KEEP: &str = "BARISTORE_KEEP";
+/// The server's exit code after it installed a new build.
+pub const UPDATED: i32 = 75;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let _ = std::fs::create_dir_all(state::home());
-    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
+    if args.is_empty() && std::env::var_os(SERVE).is_none() {
+        return supervise();
+    }
+    // Two workers: Minis's shell runs on an emulated CPU with little memory.
+    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()
+        .expect("tokio runtime");
     match runtime.block_on(run(args)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -38,11 +50,7 @@ fn main() -> ExitCode {
 
 async fn run(args: Vec<String>) -> Result<(), String> {
     match args.first().map(String::as_str) {
-        None => open_store().await,
-        Some("doctor") => {
-            println!("{}", doctor::report().await);
-            Ok(())
-        }
+        None => serve().await,
         Some("update") => match update::download_and_replace(&|step| println!("{step}")).await? {
             update::Outcome::UpToDate => {
                 println!("BariStore {} is the newest build.", env!("CARGO_PKG_VERSION"));
@@ -66,37 +74,111 @@ async fn run(args: Vec<String>) -> Result<(), String> {
     }
 }
 
-async fn open_store() -> Result<(), String> {
-    logf!("baristore {} starting", env!("CARGO_PKG_VERSION"));
-    if !app::minis_ok() {
-        println!("Note: this is not Open Minis 1.16+ (no minis-bonjour): pairing will not work here.");
+/// `baristore`: a small supervisor that runs the store's server as a child
+/// process and starts it again when it dies. iOS can take memory from Minis
+/// in the background, and the server then aborts ("memory allocation …
+/// failed"); the page stays at the same address and reconnects. The
+/// supervisor itself allocates almost nothing after start.
+fn supervise() -> ExitCode {
+    let (port, token, reopen) = match std::env::var(KEEP).ok().and_then(|v| {
+        let (p, t) = v.split_once(' ')?;
+        Some((p.parse::<u16>().ok()?, t.to_string()))
+    }) {
+        Some((port, token)) => (port, token, false),
+        None => {
+            let port = std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr())
+                .map(|a| a.port()).unwrap_or(47801);
+            (port, hex::encode(rand::random::<[u8; 16]>()), true)
+        }
+    };
+    let url = format!("http://127.0.0.1:{port}/{token}/");
+    let Ok(exe) = std::env::current_exe() else {
+        eprintln!("baristore: cannot find its own file");
+        return ExitCode::FAILURE;
+    };
+    if reopen {
+        println!("BariStore {}", env!("CARGO_PKG_VERSION"));
+        if !app::minis_ok() {
+            println!("Note: this is not Open Minis 1.16+ (no minis-bonjour): pairing will not work here.");
+        }
     }
-    let store = app::App::new();
-    let url = web::serve(store.clone()).await?;
-    println!("BariStore {}", env!("CARGO_PKG_VERSION"));
-    if !minis::open(&url) {
-        println!("Open this address in Minis's browser: {url}");
+    let (quit_tx, quit_rx) = std::sync::mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        // Return quits; with no terminal input (stdin at its end) nothing does.
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).unwrap_or(0) > 0 {
+            let _ = quit_tx.send(());
+        }
+    });
+    let mut crashes: Vec<std::time::Instant> = Vec::new();
+    let mut opened = !reopen;
+    loop {
+        let child = std::process::Command::new(&exe).env(SERVE, format!("{port} {token}"))
+            .env_remove(KEEP).stdin(std::process::Stdio::null()).spawn();
+        let mut child = match child {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("baristore: cannot start the store: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if !opened {
+            opened = true;
+            // The page polls until the server answers, so it can open now.
+            if !minis::open(&url) {
+                println!("Open this address in Minis's browser: {url}");
+            }
+            println!("The store is open. Keep Minis open while installing.");
+            println!("To quit: press Return here (or Ctrl-C), or Options › Quit in the store.");
+        }
+        let status = loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                break status;
+            }
+            if quit_rx.recv_timeout(std::time::Duration::from_millis(250)).is_ok() {
+                let _ = child.kill();
+                let _ = child.wait();
+                println!("BariStore closed. Type baristore to open it again.");
+                return ExitCode::SUCCESS;
+            }
+        };
+        match status.code() {
+            Some(0) => {
+                println!("BariStore closed. Type baristore to open it again.");
+                return ExitCode::SUCCESS;
+            }
+            Some(UPDATED) => {
+                use std::os::unix::process::CommandExt;
+                println!("BariStore updated; starting the new build.");
+                let err = std::process::Command::new(&exe).env(KEEP, format!("{port} {token}")).exec();
+                eprintln!("baristore: cannot start the new build: {err}");
+                return ExitCode::FAILURE;
+            }
+            _ => {
+                let now = std::time::Instant::now();
+                crashes.retain(|t| now.duration_since(*t).as_secs() < 60);
+                crashes.push(now);
+                println!("BariStore stopped ({status}); starting it again.");
+                // In the background iOS may refuse memory for a while: wait
+                // longer when it keeps failing.
+                let pause = if crashes.len() > 3 { 10 } else { 1 };
+                std::thread::sleep(std::time::Duration::from_secs(pause));
+            }
+        }
     }
-    println!("The store is open. Keep Minis open while installing.");
-    println!("To quit: press Return here (or Ctrl-C), or Options › Quit in the store.");
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
-        _ = return_pressed() => {}
-    }
-    println!("BariStore closed. Type baristore to open it again.");
-    Ok(())
 }
 
-/// Resolves when a line is typed in the terminal. When there is no terminal
-/// input (stdin at its end, as after `| sh`), it never resolves.
-async fn return_pressed() {
-    let line = tokio::task::spawn_blocking(|| {
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line).unwrap_or(0)
-    }).await.unwrap_or(0);
-    if line == 0 {
-        std::future::pending::<()>().await;
-    }
+/// The store's server (the supervisor's child): serves the page at the
+/// address it was given until Options › Quit or an update ends it.
+async fn serve() -> Result<(), String> {
+    let spec = std::env::var(SERVE).map_err(|_| "not started by baristore".to_string())?;
+    let (port, token) = spec.split_once(' ').ok_or("bad BARISTORE_SERVE")?;
+    let port: u16 = port.parse().map_err(|_| "bad port")?;
+    logf!("baristore {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id());
+    let store = app::App::new();
+    web::serve(store, port, token).await?;
+    std::future::pending::<()>().await;
+    Ok(())
 }
 
 /// Developer commands for interop tests (debug builds only).
@@ -142,7 +224,7 @@ async fn dev(args: &[String]) -> Result<(), String> {
                 rsa::RsaPrivateKey::from_pkcs8_der(&std::fs::read(a(4)?).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?
             };
             let team = a(5)?;
-            let mut ipa = sign::bundle::Ipa::read(&bytes)?;
+            let mut ipa = sign::bundle::Ipa::read(bytes)?;
             let mut plan = sign::bundle::Plan {
                 identity: sign::codesign::Identity { leaf, chain: vec![], key, team: team.clone(), common_name: "Test".into() },
                 bundles: Default::default(), info_edits: Default::default(), add_files: vec![],

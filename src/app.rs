@@ -74,12 +74,10 @@ pub struct App {
     busy: Arc<AsyncMutex<()>>,
 }
 
-const SETTINGS: [&str; 6] = ["theme", "increased_memory", "remove_extensions", "reuse_app_ids",
-                             "reuse_for_extensions", "setup_done"];
+const SETTINGS: [&str; 4] = ["theme", "increased_memory", "remove_extensions", "setup_done"];
 
 fn settings() -> Json {
-    let mut s = json!({"theme": "system", "increased_memory": false, "remove_extensions": false,
-                       "reuse_app_ids": false, "reuse_for_extensions": false, "setup_done": false});
+    let mut s = json!({"theme": "system", "increased_memory": false, "remove_extensions": false, "setup_done": false});
     let saved: Json = std::fs::read(state::path("settings.json")).ok()
         .and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Json::Null);
     if let (Some(obj), Some(saved)) = (s.as_object_mut(), saved.as_object()) {
@@ -90,10 +88,6 @@ fn settings() -> Json {
         }
     }
     s
-}
-
-fn setting(key: &str) -> bool {
-    settings().get(key).and_then(Json::as_bool).unwrap_or(false)
 }
 
 impl App {
@@ -130,6 +124,7 @@ impl App {
         let i = self.inner.lock().unwrap();
         json!({
             "version": env!("CARGO_PKG_VERSION"),
+            "boot": boot_id(),
             "setup": i.setup,
             "task": i.task,
             "question": i.question,
@@ -243,10 +238,19 @@ impl App {
             *guard = None;
         }
         if !self.check_vpn().await {
-            return Err("LocalDevVPN is not connected. Connect it, then try again.".into());
+            return Err(session::NO_ROUTE.into());
         }
         let record = flow::load_record().ok_or("This iPhone is not paired yet.")?;
-        let s = Arc::new(Session::open(&record).await.map_err(|e| e.to_string())?);
+        // Bounded: on mobile data LocalDevVPN can take a connection and then
+        // never answer.
+        let s = match tokio::time::timeout(std::time::Duration::from_secs(45), Session::open(&record)).await {
+            Ok(Ok(s)) => Arc::new(s),
+            Ok(Err(e)) => return Err(e.to_string()),
+            Err(_) => {
+                logf!("device: no tunnel within 45 s");
+                return Err(session::NO_ROUTE.into());
+            }
+        };
         let dm = services::developer_mode(&s).await.ok().flatten();
         {
             let mut i = self.inner.lock().unwrap();
@@ -264,6 +268,11 @@ impl App {
 
     /// `player`: keep Minis running with its player instead of silent speech.
     pub async fn pair(&self, player: bool) -> Result<String, String> {
+        // Pairing itself would work on mobile data, but nothing after it would.
+        self.step("Checking Wi-Fi and LocalDevVPN");
+        if !self.check_vpn().await {
+            return Err(session::NO_ROUTE.into());
+        }
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let app = self.clone();
         let watcher = tokio::spawn(async move {
@@ -467,7 +476,9 @@ impl App {
         Ok(portal::Team { id: i.setup.team.clone(), name: i.setup.team_name.clone(), kind: String::new() })
     }
 
-    pub async fn install_version(&self, app_key: &str, version: usize, opts: Options) -> Result<String, String> {
+    pub async fn install_version(&self, app_key: &str, version: usize, opts: Options, reuse: install::Reuse)
+        -> Result<String, String>
+    {
         let (entry, v) = {
             let i = self.inner.lock().unwrap();
             let entry = i.catalog.iter().find(|a| a.key == app_key).cloned().ok_or("This app is no longer in the store.")?;
@@ -483,16 +494,33 @@ impl App {
         }).await?;
         logf!("install: downloaded in {:.1} s", started.elapsed().as_secs_f64());
         let bytes = std::fs::read(&ipa_path).map_err(|e| e.to_string())?;
-        self.sign_and_install(&session, &apple, &bytes, opts, Installed {
+        self.sign_and_install(&session, &apple, bytes, opts, reuse, Installed {
             bundle_id: String::new(), original_id: entry.bundle_id.clone(), name: entry.name.clone(),
             version: v.version.clone(), source_url: v.url.clone(), ipa_path: ipa_path.to_string_lossy().into(),
             team: String::new(), expires: 0, installed_at: 0, options: Options::default(), icon_url: entry.icon.clone(),
-            ids: Default::default(),
+            ids: Default::default(), increased_memory: false,
         }).await
     }
 
-    async fn sign_and_install(&self, session: &Session, apple: &(gsa::GrandSlam, gsa::Account), bytes: &[u8],
-                              opts: Options, mut entry: Installed) -> Result<String, String> {
+    /// Installs an IPA the user picked (uploaded by the page into ipas/).
+    pub async fn install_local(&self, path: &str, opts: Options, reuse: install::Reuse) -> Result<String, String> {
+        let path = std::path::Path::new(path);
+        if path.parent() != Some(state::path("ipas").as_path()) {
+            return Err("That file is not one BariStore received.".into());
+        }
+        let info = crate::sign::bundle::peek(path)?;
+        let (session, apple) = self.ready_to_install().await?;
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        self.sign_and_install(&session, &apple, bytes, opts, reuse, Installed {
+            bundle_id: String::new(), original_id: info.id, name: info.name, version: info.version,
+            source_url: String::new(), ipa_path: path.to_string_lossy().into(), team: String::new(), expires: 0,
+            installed_at: 0, options: Options::default(), icon_url: String::new(), ids: Default::default(),
+            increased_memory: false,
+        }).await
+    }
+
+    async fn sign_and_install(&self, session: &Session, apple: &(gsa::GrandSlam, gsa::Account), bytes: Vec<u8>,
+                              opts: Options, reuse: install::Reuse, mut entry: Installed) -> Result<String, String> {
         let team = self.team()?;
         let (udid, name) = {
             let i = self.inner.lock().unwrap();
@@ -514,7 +542,7 @@ impl App {
             gs: &apple.0, account: &apple.1, team: &team, udid: &udid,
             device_name: if name.is_empty() { "iPhone" } else { &name },
             session, ask: ask.as_ref(),
-            reuse: install::Reuse { auto: setting("reuse_app_ids"), extensions: setting("reuse_for_extensions") },
+            reuse,
             previous: previous.as_ref().map(|(id, ids)| (id.as_str(), ids)),
         };
         let app = self.clone();
@@ -530,8 +558,10 @@ impl App {
         };
         entry.bundle_id = prepared.main_id.clone();
         entry.ids = prepared.ids.clone();
+        entry.increased_memory = prepared.increased_memory;
         entry.team = team.id.clone();
         entry.expires = prepared.expires;
+        let opts_memory = opts.increased_memory;
         entry.options = opts;
         let started = std::time::Instant::now();
         install::install_signed(session, &prepared.ipa, entry.clone(), &status).await?;
@@ -545,23 +575,42 @@ impl App {
         }
         self.inner.lock().unwrap().app_ids = Json::Null;
         let first = install::installed().len() <= 1;
+        let memory = if opts_memory && !prepared.increased_memory {
+            " Apple did not add Increased Memory Limit to its profile."
+        } else { "" };
         Ok(if first {
-            format!("{} is installed. Before opening it the first time, trust your Apple ID in Settings › General › \
-                     VPN & Device Management.", entry.name)
+            format!("{} is installed.{memory} Before opening it the first time, trust your Apple ID in Settings › \
+                     General › VPN & Device Management.", entry.name)
         } else {
-            format!("{} is installed.", entry.name)
+            format!("{} is installed.{memory}", entry.name)
         })
     }
 
     pub async fn refresh_app(&self, bundle_id: &str) -> Result<String, String> {
-        let entry = install::installed().into_iter().find(|i| i.bundle_id == bundle_id)
+        let mut entry = install::installed().into_iter().find(|i| i.bundle_id == bundle_id)
             .ok_or("BariStore did not install this app.")?;
         let (session, apple) = self.ready_to_install().await?;
-        let bytes = std::fs::read(&entry.ipa_path)
-            .map_err(|_| "The downloaded app is gone. Install it again from the store.".to_string())?;
+        if !std::path::Path::new(&entry.ipa_path).is_file() {
+            // Cleared from the cache: download it again from where it came from.
+            if entry.source_url.is_empty() {
+                return Err("The IPA this app was installed from is gone. Add it again with Add IPA.".into());
+            }
+            let v = store::Version {
+                source: String::new(), source_url: String::new(), channel: String::new(), version: entry.version.clone(),
+                date: String::new(), url: entry.source_url.clone(), size: 0, sha256: String::new(), min_os: String::new(),
+                notes: String::new(), warning: String::new(),
+            };
+            let app = self.clone();
+            let path = store::download(&v, &move |done, total| {
+                let pct = if total > 0 { (done * 100 / total) as u32 } else { 0 };
+                app.progress(format!("Downloading {} of {} MB", done / 1_000_000, total.max(done) / 1_000_000), pct);
+            }).await?;
+            entry.ipa_path = path.to_string_lossy().into();
+        }
+        let bytes = std::fs::read(&entry.ipa_path).map_err(|e| e.to_string())?;
         let opts = entry.options.clone();
         let name = entry.name.clone();
-        self.sign_and_install(&session, &apple, &bytes, opts, entry).await?;
+        self.sign_and_install(&session, &apple, bytes, opts, install::Reuse::default(), entry).await?;
         Ok(format!("{name} is refreshed for 7 more days."))
     }
 
@@ -709,20 +758,62 @@ impl App {
         i.catalog = store::cached_catalog();
     }
 
+    /// Options › Clear cache: icons, the catalog copy and downloaded IPAs.
+    /// IPAs of installed apps that came from a source are downloaded again
+    /// when they are refreshed; IPAs added by hand are kept.
+    pub fn clear_cache(&self) -> String {
+        let keep: Vec<String> = install::installed().into_iter().filter(|i| i.source_url.is_empty())
+            .map(|i| i.ipa_path).collect();
+        let mut freed = dir_size(&state::path("icons"));
+        let _ = std::fs::remove_dir_all(state::path("icons"));
+        if let Ok(meta) = std::fs::metadata(state::path("catalog.json")) {
+            freed += meta.len();
+        }
+        let _ = std::fs::remove_file(state::path("catalog.json"));
+        if let Ok(dir) = std::fs::read_dir(state::path("ipas")) {
+            for e in dir.flatten() {
+                let path = e.path().to_string_lossy().into_owned();
+                if !keep.contains(&path) {
+                    freed += e.metadata().map(|m| m.len()).unwrap_or(0);
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+        logf!("cache: cleared {} MB", freed / 1_000_000);
+        format!("Freed {} MB.", (freed + 500_000) / 1_000_000)
+    }
+
+    pub fn cache_size(&self) -> u64 {
+        dir_size(&state::path("icons")) + dir_size(&state::path("ipas"))
+            + std::fs::metadata(state::path("catalog.json")).map(|m| m.len()).unwrap_or(0)
+    }
+
     /// Options › Update BariStore: the newest build, then a restart into it.
     pub async fn update(&self) -> Result<String, String> {
         let app = self.clone();
         match crate::update::download_and_replace(&move |s| app.step(s)).await? {
             crate::update::Outcome::UpToDate => Ok(format!("BariStore {} is the newest build.", env!("CARGO_PKG_VERSION"))),
             crate::update::Outcome::Updated(version) => {
+                // The supervisor starts the new build at the same address.
                 tokio::spawn(async {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                    logf!("update: {}", crate::update::restart());
+                    std::process::exit(crate::UPDATED);
                 });
-                Ok(format!("Updated to {version}. BariStore restarts and opens again."))
+                Ok(format!("Updated to {version}. BariStore restarts; this page reloads by itself."))
             }
         }
     }
+}
+
+/// Changes when the server restarts: the page reloads itself then.
+fn boot_id() -> &'static str {
+    static BOOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BOOT.get_or_init(|| format!("{}-{}", std::process::id(), std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()))
+}
+
+fn dir_size(dir: &std::path::Path) -> u64 {
+    std::fs::read_dir(dir).map(|d| d.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum()).unwrap_or(0)
 }
 
 /// Where exported files go: Minis's shared folder when it exists (visible in

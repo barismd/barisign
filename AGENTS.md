@@ -27,6 +27,8 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   `v<version>` and the rolling `nightly` that install.sh downloads). Once stable
   and complete, history is squashed and released as 1.0.0.
 - Never sign the user out on our own. Never store the password.
+- No `baristore doctor` command: Options › Log (quick) and Run checks (network,
+  tunnel, sign-in probe) in the page.
 - Code, comments, commits, README in English. The owner talks Turkish.
 - Device tests come in **batches** the owner runs; keep their effort low.
 
@@ -47,8 +49,19 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
 - Tunnel TCP (as jktcp, idevice's device-proven stack): MSS = min(MTU from the
   CDTunnel handshake, 8192) - 60, window scale option sent (shift 0) and the
   peer's honoured, at most 1 MiB in flight; AFC writes 1 MiB per request.
-- The page's origin changes every run (random port), so nothing the page must
-  remember lives in localStorage: settings.json holds theme and setup_done.
+- `baristore` is a supervisor: it runs the server as a child
+  (BARISTORE_SERVE="port token") and restarts it when it dies; iOS takes
+  memory from Minis in the background and Rust aborts on a failed allocation
+  (seen on device). Exit 0 = quit, 75 = updated (supervisor execs the new
+  build with BARISTORE_KEEP, same address). The page reloads when the
+  server's boot id changes. Memory: IPAs are streamed to disk and only
+  Mach-O/plist entries are kept in memory while signing; icon decoding is
+  bounded; two tokio workers.
+- Wi-Fi cannot be read in Minis. A connect to 10.7.0.1 that times out means no
+  route (mobile data or no VPN): say so, never knock 16 000 ports then
+  (siboot's preflight); a refused port does mean "look on other ports".
+- The page's origin is stable per run, but nothing it must remember lives in
+  localStorage: settings.json holds theme and setup_done.
   WKWebView in Minis shows no confirm()/alert(): the page uses its own sheets.
 - The pairing service is usually on 49152 but can be another dynamic port
   (siboot 0.19.1): knock 49153–65535 except 62078.
@@ -74,9 +87,10 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   H(S). Pair-setup keeps unpadded g (device-proven). Known-answer test from
   the old Python sign-in in `src/srp.rs`.
 - Free teams: 10 App IDs at a time (SideStore counts the same); listAppIds
-  gives each one's expiry. When an install needs more, App IDs whose app is
-  not on the iPhone (installation_proxy Browse) are reused, asking first unless
-  Options says so; extensions only take ones under the app's identifier.
+  gives each one's expiry. The install sheet picks "new" or an App ID whose app
+  is not on the iPhone (installation_proxy Browse); when the IDs run out
+  BariStore asks which one to reuse. Extensions only take ones under the
+  app's identifier. The profile is checked for Increased Memory Limit.
   Installed.ids keeps the identifiers so refreshes keep them.
 - StikDebug (com.stik.*) reads Documents/pairingFile.plist; its JIT needs a
   mounted personalized DDI and debugserver, which BariStore does not do.

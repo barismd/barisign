@@ -29,7 +29,15 @@ pub fn kind(bytes: &[u8]) -> &'static str {
 }
 
 fn shrink(bytes: &[u8]) -> Option<Vec<u8>> {
-    let img = image::load_from_memory(bytes).ok()?;
+    // Bounded: Minis's shell has little memory, and iOS takes some back in
+    // the background. A bigger image is kept as it is.
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(2048);
+    limits.max_image_height = Some(2048);
+    limits.max_alloc = Some(24 << 20);
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+    reader.limits(limits);
+    let img = reader.decode().ok()?;
     if img.width() <= SIZE && img.height() <= SIZE {
         return None;
     }
@@ -67,8 +75,8 @@ pub async fn get(http: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
     Ok(stored)
 }
 
-/// Fetches the icons not cached yet, a few at a time, so opening the store
-/// later shows them at once.
+/// Fetches the icons not cached yet, two at a time (memory), so opening the
+/// store later shows them at once.
 pub async fn prefetch(urls: Vec<String>) {
     use futures_util::StreamExt;
     let http = crate::store::client();
@@ -79,7 +87,7 @@ pub async fn prefetch(urls: Vec<String>) {
     let started = std::time::Instant::now();
     let count = missing.len();
     futures_util::stream::iter(missing)
-        .for_each_concurrent(6, |url| {
+        .for_each_concurrent(2, |url| {
             let http = http.clone();
             async move {
                 if let Err(e) = get(&http, &url).await {

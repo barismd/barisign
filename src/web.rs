@@ -14,11 +14,21 @@ use crate::logf;
 const PAGE: &str = include_str!("../ui/index.html");
 const LOGO: &[u8] = include_bytes!("../assets/baristore.svg");
 
-pub async fn serve(app: App) -> Result<String, String> {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.map_err(|e| e.to_string())?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let token = hex::encode(rand::random::<[u8; 16]>());
-    let url = format!("http://127.0.0.1:{port}/{token}/");
+/// Serves the page on 127.0.0.1:`port` under /`token`/ (both chosen by the
+/// supervisor, so a restarted server keeps the page's address).
+pub async fn serve(app: App, port: u16, token: &str) -> Result<(), String> {
+    let mut tries = 0;
+    let listener = loop {
+        match TcpListener::bind(("127.0.0.1", port)).await {
+            Ok(l) => break l,
+            Err(e) if tries < 20 => {
+                tries += 1;
+                logf!("web: port {port}: {e}; retrying");
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            Err(e) => return Err(format!("cannot serve the page on port {port}: {e}")),
+        }
+    };
     let prefix = format!("/{token}");
     tokio::spawn(async move {
         loop {
@@ -30,7 +40,7 @@ pub async fn serve(app: App) -> Result<String, String> {
             });
         }
     });
-    Ok(url)
+    Ok(())
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> std::io::Result<()> {
@@ -86,6 +96,10 @@ async fn handle(mut stream: TcpStream, app: App, prefix: &str, port: u16) -> std
     let Some(route) = path.strip_prefix(prefix) else {
         return respond(&mut stream, "404 Not Found", "text/plain", b"").await;
     };
+    if method == "POST" && route.starts_with("/api/upload") {
+        let reply = upload(&mut stream, &buf[header_end..], length).await;
+        return respond(&mut stream, "200 OK", "application/json", reply.to_string().as_bytes()).await;
+    }
     if length > 1 << 20 {
         return respond(&mut stream, "413 Too Large", "text/plain", b"").await;
     }
@@ -123,6 +137,67 @@ async fn handle(mut stream: TcpStream, app: App, prefix: &str, port: u16) -> std
             respond(&mut stream, "200 OK", "application/json", reply.to_string().as_bytes()).await
         }
         _ => respond(&mut stream, "404 Not Found", "text/plain", b"").await,
+    }
+}
+
+/// Add IPA: the page sends the file's bytes as the request body. They go
+/// straight to ~/.baristore/ipas/ (never all in memory), then the app inside
+/// is read for the install sheet.
+async fn upload(stream: &mut TcpStream, first: &[u8], length: usize) -> Json {
+    use std::io::Write;
+    let fail = |m: &str| json!({"ok": false, "message": m});
+    if length == 0 {
+        return fail("The file is empty.");
+    }
+    let dir = crate::state::path("ipas");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(format!("added-{}.ipa", hex::encode(rand::random::<[u8; 6]>())));
+    let Ok(mut file) = std::fs::File::create(&path) else { return fail("Cannot save the file.") };
+    let mut written = first.len().min(length);
+    if file.write_all(&first[..written]).is_err() {
+        return fail("Cannot save the file.");
+    }
+    let mut chunk = vec![0u8; 256 * 1024];
+    while written < length {
+        let n = match stream.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n.min(length - written),
+        };
+        if file.write_all(&chunk[..n]).is_err() {
+            let _ = std::fs::remove_file(&path);
+            return fail("Cannot save the file (is the iPhone full?).");
+        }
+        written += n;
+    }
+    drop(file);
+    if written < length {
+        let _ = std::fs::remove_file(&path);
+        return fail("The upload stopped before the end.");
+    }
+    match crate::sign::bundle::peek(&path) {
+        Ok(info) => {
+            logf!("upload: {} {} ({} MB)", info.id, info.version, length / 1_000_000);
+            json!({"ok": true, "path": path.to_string_lossy(), "name": info.name, "bundle_id": info.id,
+                   "version": info.version, "size": length})
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&path);
+            fail(&e)
+        }
+    }
+}
+
+fn reuse(r: &Json) -> crate::install::Reuse {
+    crate::install::Reuse {
+        pick: r.get("reuse_id").and_then(Json::as_str).filter(|s| !s.is_empty()).map(str::to_string),
+        extensions: r.get("reuse_extensions").and_then(Json::as_bool).unwrap_or(false),
+    }
+}
+
+fn options(r: &Json) -> Options {
+    Options {
+        remove_extensions: r.get("remove_extensions").and_then(Json::as_bool).unwrap_or(false),
+        increased_memory: r.get("increased_memory").and_then(Json::as_bool).unwrap_or(false),
     }
 }
 
@@ -170,11 +245,15 @@ async fn action(app: &App, r: &Json) -> Json {
     }
     match name.as_str() {
         "check" => {
-            let up = app.check_vpn().await;
-            if up && app.device().await.is_ok() {
-                return ok("connected");
+            if !app.check_vpn().await {
+                return fail(crate::device::session::NO_ROUTE.into());
             }
-            ok(if up { "vpn" } else { "novpn" })
+            if crate::pairing::flow::load_record().is_some() {
+                if let Err(e) = app.device().await {
+                    return fail(e);
+                }
+            }
+            ok("connected")
         }
         "pair" => {
             // A failed run with silent speech is retried with Minis's player.
@@ -207,15 +286,21 @@ async fn action(app: &App, r: &Json) -> Json {
         "install" => {
             let key = s(r, "key");
             let version = r.get("version").and_then(Json::as_u64).unwrap_or(0) as usize;
-            let opts = Options {
-                remove_extensions: r.get("remove_extensions").and_then(Json::as_bool).unwrap_or(false),
-                increased_memory: r.get("increased_memory").and_then(Json::as_bool).unwrap_or(false),
-            };
+            let (opts, reuse) = (options(r), reuse(r));
             let title = s(r, "name");
             app.spawn(&format!("Installing {title}"), Some(r.clone()),
-                      move |a| async move { a.install_version(&key, version, opts).await });
+                      move |a| async move { a.install_version(&key, version, opts, reuse).await });
             ok("started")
         }
+        "install_local" => {
+            let path = s(r, "path");
+            let (opts, reuse) = (options(r), reuse(r));
+            app.spawn(&format!("Installing {}", s(r, "name")), Some(r.clone()),
+                      move |a| async move { a.install_local(&path, opts, reuse).await });
+            ok("started")
+        }
+        "clear_cache" => ok(&app.clear_cache()),
+        "cache_size" => json!({"ok": true, "bytes": app.cache_size()}),
         "refresh" => {
             let id = s(r, "bundle_id");
             app.spawn(&format!("Refreshing {}", s(r, "name")), Some(r.clone()), move |a| async move { a.refresh_app(&id).await });
@@ -237,12 +322,12 @@ async fn action(app: &App, r: &Json) -> Json {
         }
         "export_pairing" => match app.export_pairing() { Ok(m) => ok(&m), Err(e) => fail(e) },
         "settings" => { app.save_settings(r.get("settings").unwrap_or(&Json::Null)); ok("saved") }
-        "doctor" => ok(&crate::doctor::report().await),
+        "log" => ok(&crate::doctor::report(false).await),
+        "checks" => ok(&crate::doctor::report(true).await),
         "reset" => { app.reset().await; ok("reset") }
         "quit" => {
             tokio::spawn(async {
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                println!("BariStore closed. Type baristore to open it again.");
                 std::process::exit(0)
             });
             ok("bye")

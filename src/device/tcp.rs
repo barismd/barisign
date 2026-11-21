@@ -149,6 +149,8 @@ struct Actor {
     remote: Ipv6Addr,
     /// The largest segment the tunnel carries.
     max_mss: usize,
+    /// Scratch list of connection ids for `tick`.
+    tick_ids: Vec<u16>,
     conns: HashMap<u16, Conn>,
     link_tx: mpsc::UnboundedSender<Vec<u8>>,
     cmd_tx: mpsc::UnboundedSender<Cmd>,
@@ -384,9 +386,15 @@ impl Actor {
     }
 
     fn tick(&mut self) {
+        if self.conns.is_empty() {
+            return;
+        }
         let now = Instant::now();
-        let ids: Vec<u16> = self.conns.keys().copied().collect();
-        for id in ids {
+        // Reused: the tick runs every 50 ms for as long as a tunnel is open.
+        let mut ids = std::mem::take(&mut self.tick_ids);
+        ids.clear();
+        ids.extend(self.conns.keys().copied());
+        for &id in &ids {
             if self.conns[&id].closing.is_some() {
                 self.close(id);
                 if !self.conns.contains_key(&id) {
@@ -415,6 +423,7 @@ impl Actor {
                 self.pump(id);
             }
         }
+        self.tick_ids = ids;
     }
 
     /// FIN once everything written has been acknowledged (or after 15 s).
@@ -532,7 +541,7 @@ impl Stack {
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Cmd>();
         let (link_tx, link_rx) = mpsc::unbounded_channel();
         let max_mss = mtu.clamp(1280, 8192) - 60;
-        let mut actor = Actor { local, remote, max_mss, conns: HashMap::new(), link_tx, cmd_tx: cmd_tx.clone(), down: None };
+        let mut actor = Actor { local, remote, max_mss, tick_ids: Vec::new(), conns: HashMap::new(), link_tx, cmd_tx: cmd_tx.clone(), down: None };
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(TICK);
             loop {

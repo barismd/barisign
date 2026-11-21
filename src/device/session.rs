@@ -35,7 +35,7 @@ pub enum OpenError {
 impl std::fmt::Display for OpenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OpenError::NoVpn(why) => write!(f, "LocalDevVPN is not connected ({why})"),
+            OpenError::NoVpn(why) => write!(f, "{why}"),
             OpenError::NotPaired => write!(f, "this iPhone no longer accepts BariStore's pairing; pair again"),
             OpenError::Failed(why) => write!(f, "{why}"),
         }
@@ -73,11 +73,26 @@ fn override_endpoint() -> Option<(String, u16)> {
     Some((h.to_string(), p.parse().ok()?))
 }
 
+/// What a knock on one port found.
+#[derive(PartialEq, Eq)]
+enum Knock {
+    /// The RemotePairing service answered its handshake.
+    Answered,
+    /// Refused, or something else took the connection: look elsewhere.
+    Closed,
+    /// Nothing came back in time: LocalDevVPN (or Wi-Fi) is not carrying it.
+    Silent,
+}
+
 /// Does `port` answer an RPPairing handshake (the RemotePairing service)?
-async fn answers_pairing(host: &str, port: u16) -> bool {
+async fn knock(host: &str, port: u16, answer: Duration) -> Knock {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let Ok(Ok(mut s)) = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect((host, port))).await else {
-        return false;
+    let mut s = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect((host, port))).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) if matches!(e.kind(), std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset) => {
+            return Knock::Closed;
+        }
+        _ => return Knock::Silent,
     };
     let body = serde_json::to_vec(&json!({"message": {"plain": {"_0": {"request": {"_0": {"handshake": {"_0": {
         "hostOptions": {"attemptPairVerify": true},
@@ -87,10 +102,14 @@ async fn answers_pairing(host: &str, port: u16) -> bool {
     frame.extend_from_slice(&(body.len() as u16).to_be_bytes());
     frame.extend_from_slice(&body);
     let mut magic = [0u8; 9];
-    s.write_all(&frame).await.is_ok()
-        && matches!(tokio::time::timeout(Duration::from_secs(3), s.read_exact(&mut magic)).await, Ok(Ok(_)))
-        && &magic == b"RPPairing"
+    let answered = s.write_all(&frame).await.is_ok()
+        && matches!(tokio::time::timeout(answer, s.read_exact(&mut magic)).await, Ok(Ok(_)))
+        && &magic == b"RPPairing";
+    if answered { Knock::Answered } else { Knock::Closed }
 }
+
+pub const NO_ROUTE: &str = "The iPhone does not answer through LocalDevVPN. Wi-Fi must be on (LocalDevVPN does not \
+                        work on mobile data) and LocalDevVPN connected.";
 
 /// Where the RemotePairing service answers. Usually 49152, but iOS takes
 /// the first free dynamic port at boot, so when that one is not it, the
@@ -101,27 +120,36 @@ pub async fn endpoint() -> Result<(String, u16), OpenError> {
         return Ok(e);
     }
     let saved = std::fs::read_to_string(state::path("device-port")).ok()
-        .and_then(|s| s.trim().parse::<u16>().ok());
+        .and_then(|s| s.trim().parse::<u16>().ok()).filter(|p| *p != PAIRING_PORT);
     for port in saved.into_iter().chain([PAIRING_PORT]) {
-        if answers_pairing(LOOPBACK, port).await {
-            return Ok((LOOPBACK.to_string(), port));
+        match knock(LOOPBACK, port, Duration::from_secs(5)).await {
+            Knock::Answered => return Ok((LOOPBACK.to_string(), port)),
+            // Silence is no route at all (siboot): knocking on 16 000 more
+            // ports would only wait longer.
+            Knock::Silent => return Err(OpenError::NoVpn(NO_ROUTE.into())),
+            Knock::Closed => {}
         }
-    }
-    if !vpn_up().await {
-        return Err(OpenError::NoVpn(format!("{LOOPBACK} does not answer")));
     }
     logf!("device: {PAIRING_PORT} is not the pairing service; knocking on the other dynamic ports");
+    let started = std::time::Instant::now();
     let ports: Vec<u16> = (PAIRING_PORT + 1..=u16::MAX).filter(|p| *p != 62078).collect();
     for chunk in ports.chunks(32) {
-        let probes = chunk.iter().map(|&p| async move { (p, answers_pairing(LOOPBACK, p).await) });
-        if let Some((port, _)) = futures_util::future::join_all(probes).await.into_iter().find(|(_, ok)| *ok) {
+        if started.elapsed() > Duration::from_secs(90) {
+            break;
+        }
+        let probes = chunk.iter().map(|&p| async move { (p, knock(LOOPBACK, p, Duration::from_millis(300)).await) });
+        let results = futures_util::future::join_all(probes).await;
+        if let Some((port, _)) = results.iter().find(|(_, k)| *k == Knock::Answered) {
             logf!("device: the pairing service answers on {port}");
             let _ = std::fs::write(state::path("device-port"), port.to_string());
-            return Ok((LOOPBACK.to_string(), port));
+            return Ok((LOOPBACK.to_string(), *port));
+        }
+        if results.iter().all(|(_, k)| *k == Knock::Silent) {
+            return Err(OpenError::NoVpn(NO_ROUTE.into()));
         }
     }
-    Err(OpenError::Failed("LocalDevVPN is connected, but no port answers as the iPhone's pairing service. \
-        Restart the iPhone with Developer Mode on, then try again".into()))
+    Err(OpenError::Failed("LocalDevVPN is connected, but the iPhone's pairing service does not answer. Turn on \
+        Developer Mode, restart the iPhone, connect LocalDevVPN and try again.".into()))
 }
 
 pub struct Tunnel {
@@ -138,7 +166,10 @@ impl Tunnel {
         let mut control = match Control::open(host, pairing_port, record).await {
             Ok(c) => c,
             Err(VerifyError::NotPaired) => return Err(OpenError::NotPaired),
-            Err(VerifyError::Other(why)) if why.contains("LocalDevVPN") => return Err(OpenError::NoVpn(why)),
+            Err(VerifyError::Other(why)) if why.contains("LocalDevVPN") => {
+                logf!("device: {why}");
+                return Err(OpenError::NoVpn(NO_ROUTE.into()));
+            }
             Err(VerifyError::Other(why)) => return Err(OpenError::Failed(format!("pair-verify: {why}"))),
         };
         logf!("device: pair-verify ok");

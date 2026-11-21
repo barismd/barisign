@@ -337,13 +337,15 @@ pub fn cached_catalog() -> Vec<App> {
 pub async fn download(v: &Version, progress: &(dyn Fn(u64, u64) + Send + Sync)) -> Result<std::path::PathBuf, String> {
     use futures_util::StreamExt;
     use sha2::{Digest, Sha256};
+    use std::io::Write;
     let dir = state::path("ipas");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let name = hex::encode(&Sha256::digest(format!("{}|{}|{}", v.url, v.version, v.date))[..12]);
     let path = dir.join(format!("{name}.ipa"));
-    if let Ok(data) = std::fs::read(&path) {
-        let size_ok = v.size == 0 || data.len() as u64 == v.size;
-        let sha_ok = v.sha256.is_empty() || hex::encode(Sha256::digest(&data)) == v.sha256.to_lowercase();
+    if let Ok(meta) = std::fs::metadata(&path) {
+        let size_ok = v.size == 0 || meta.len() == v.size;
+        let sha_ok = v.sha256.is_empty() || std::fs::read(&path)
+            .map(|d| hex::encode(Sha256::digest(&d)) == v.sha256.to_lowercase()).unwrap_or(false);
         if size_ok && sha_ok {
             return Ok(path);
         }
@@ -354,22 +356,34 @@ pub async fn download(v: &Version, progress: &(dyn Fn(u64, u64) + Send + Sync)) 
         return Err(format!("download failed: HTTP {}", resp.status()));
     }
     let total = resp.content_length().unwrap_or(v.size);
-    let mut data = Vec::with_capacity(total as usize);
+    // Streamed to disk: only one chunk is in memory at a time.
+    let partial = dir.join(format!("{name}.part"));
+    let mut file = std::fs::File::create(&partial).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let (mut done, mut head) = (0u64, Vec::new());
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        data.extend_from_slice(&chunk.map_err(|e| format!("download broke: {e}"))?);
-        progress(data.len() as u64, total);
+        let chunk = chunk.map_err(|e| format!("download broke: {e}"))?;
+        if head.len() < 2 {
+            head.extend_from_slice(&chunk[..chunk.len().min(2)]);
+        }
+        hasher.update(&chunk);
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        done += chunk.len() as u64;
+        progress(done, total);
     }
-    if v.size > 0 && data.len() as u64 != v.size {
-        return Err(format!("download incomplete ({} of {} bytes)", data.len(), v.size));
+    drop(file);
+    let fail = |e: String| { let _ = std::fs::remove_file(&partial); Err(e) };
+    if v.size > 0 && done != v.size {
+        return fail(format!("download incomplete ({done} of {} bytes)", v.size));
     }
-    if !v.sha256.is_empty() && hex::encode(Sha256::digest(&data)) != v.sha256.to_lowercase() {
-        return Err("the download does not match its published SHA-256".into());
+    if !v.sha256.is_empty() && hex::encode(hasher.finalize()) != v.sha256.to_lowercase() {
+        return fail("the download does not match its published SHA-256".into());
     }
-    if data.get(..2) != Some(b"PK") {
-        return Err("the download is not an IPA".into());
+    if head.get(..2) != Some(b"PK") {
+        return fail("the download is not an IPA".into());
     }
-    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
     Ok(path)
 }
 
