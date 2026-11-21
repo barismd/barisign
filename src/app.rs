@@ -778,7 +778,7 @@ impl App {
     /// Forgets everything except installed apps on the iPhone itself.
     /// Answers at once: the running task is stopped, and the cached Apple and
     /// iPhone sessions are dropped as soon as a pending connection check
-    /// lets go of them (it can take 100 s; Start again waited for it in alpha.7).
+    /// lets go of them (a first scan can take 300 s; Start again waited for it in alpha.7).
     pub fn reset(&self) {
         self.cancel.notify_waiters();
         let (apple, session) = (self.apple.clone(), self.session.clone());
@@ -788,7 +788,7 @@ impl App {
         });
         for name in ["account.plist", "team", "pairing.plist", "host.plist", "installed.json", "catalog.json",
                      "sources.json", "settings.json", "signing-key.der", "anisette-server", "host-uuid",
-                     "device-port", "silence.wav"] {
+                     "silence.wav"] {
             let _ = std::fs::remove_file(state::path(name));
         }
         let _ = std::fs::remove_dir_all(state::path("ipas"));

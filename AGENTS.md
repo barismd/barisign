@@ -69,9 +69,13 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
 - The pairing service is usually on 49152 but can be another dynamic port
   (siboot 0.19.1): knock 49153–65535 except 62078. Device log 2026-11-21
   (iOS 27.2.1, alpha.8): 49152 took the TCP connection and then never answered
-  the wire-19 handshake (not refused), and the scan found nothing in 45 s.
-  Since alpha.9 the handshake is tried with wire 26 (what iOS 27 sends as a
-  host) and then 19, the scan has 75 s, and the log says why a port did not
+  our handshake (not refused), and the scan found nothing within the 45 s cap
+  that alpha.5 put on the whole check (alpha.3/4 scanned without a limit and
+  alpha.4's Reset began forgetting the saved port: the likely regression; Reset keeps `device-port` again; the
+  pairing code and wire 19 are byte-identical to alpha.3, which worked).
+  Since alpha.9 the scan has 240 s, 64 ports at a time (Minis's descriptor
+  limit), the handshake is also tried with wire 26 (what iOS 27 sends as a
+  host) in case 19 is now ignored, and the log says why a port did not
   answer. Untested on device.
 - iOS 27.2+: every RemoteXPC handshake on a tunnel must present the same host
   UUID (idevice); we keep one per install (`~/.baristore/host-uuid`).

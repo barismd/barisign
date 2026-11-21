@@ -167,7 +167,7 @@ pub async fn endpoint() -> Result<(String, u16, u64), OpenError> {
     logf!("device: {PAIRING_PORT} is not the pairing service; knocking on the other dynamic ports");
     let started = std::time::Instant::now();
     let ports: Vec<u16> = (PAIRING_PORT + 1..=u16::MAX).filter(|p| *p != 62078).collect();
-    for chunk in ports.chunks(128) {
+    for chunk in ports.chunks(64) {
         if started.elapsed() > SCAN_BUDGET {
             logf!("device: stopped knocking after {} s, at port {}", SCAN_BUDGET.as_secs(), chunk[0]);
             break;
@@ -187,10 +187,13 @@ pub async fn endpoint() -> Result<(String, u16, u64), OpenError> {
         Developer Mode, restart the iPhone, connect LocalDevVPN and try again.".into()))
 }
 
-/// What the scan for the pairing service may take; the connection check
-/// (`CONNECT_BUDGET`) leaves room for the tunnel after it.
-const SCAN_BUDGET: Duration = Duration::from_secs(75);
-pub const CONNECT_BUDGET: Duration = Duration::from_secs(100);
+/// What the scan for the pairing service may take. It happens once: the port
+/// found is saved. Until alpha.4 it had no limit (and Reset did not forget
+/// the port); alpha.5 capped the whole check at 45 s, which a scan that
+/// finds nothing early does not fit in. `CONNECT_BUDGET` leaves room for
+/// the tunnel after it.
+const SCAN_BUDGET: Duration = Duration::from_secs(240);
+pub const CONNECT_BUDGET: Duration = Duration::from_secs(300);
 
 pub struct Tunnel {
     pub control: Control,
