@@ -200,7 +200,8 @@ impl Afc {
     {
         let handle = self.fopen(path, WRITE_TRUNCATE).await?;
         let mut sent = 0;
-        for chunk in data.chunks(256 * 1024) {
+        // 1 MiB per write, as libimobiledevice's afcclient and idevice use.
+        for chunk in data.chunks(1 << 20) {
             if let Err(e) = self.op(OP_WRITE, &handle.to_le_bytes(), chunk).await {
                 let _ = self.fclose(handle).await;
                 return Err(e);

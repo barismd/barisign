@@ -59,7 +59,12 @@ pub struct AppId {
     pub identifier: String,
     pub name: String,
     pub features: Dictionary,
+    /// Unix seconds; 0 when Apple gives none (paid teams).
+    pub expires: u64,
 }
+
+/// App IDs a free team may hold at once (they expire 7 days after creation).
+pub const FREE_APP_IDS: usize = 10;
 
 pub struct Portal<'a> {
     pub gs: &'a GrandSlam,
@@ -204,10 +209,7 @@ impl Portal<'_> {
         Ok(list(&r, "appIds").into_iter().map(to_app_id).collect())
     }
 
-    pub async fn ensure_app_id(&self, team: &str, identifier: &str, name: &str) -> Result<AppId, PortalError> {
-        if let Some(existing) = self.app_ids(team).await?.into_iter().find(|a| a.identifier == identifier) {
-            return Ok(existing);
-        }
+    pub async fn add_app_id(&self, team: &str, identifier: &str, name: &str) -> Result<AppId, PortalError> {
         let mut body = Dictionary::new();
         body.insert("identifier".into(), Value::String(identifier.into()));
         body.insert("name".into(), Value::String(clean_name(name)));
@@ -297,6 +299,11 @@ fn to_app_id(d: &Dictionary) -> AppId {
         identifier: s(d, "identifier"),
         name: s(d, "name"),
         features: d.get("features").and_then(Value::as_dictionary).cloned().unwrap_or_default(),
+        expires: match d.get("expirationDate") {
+            Some(Value::Date(t)) => std::time::SystemTime::from(*t).duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs()).unwrap_or(0),
+            _ => 0,
+        },
     }
 }
 

@@ -6,9 +6,9 @@ An app store for iPhone and iPad that needs no computer. It runs in
 [Open Minis](https://apps.apple.com/app/id6759188481), signs apps with your
 own free Apple ID and installs them on the same device.
 
-> **Status: 0.10 alpha.** Tested on Linux against independent implementations.
-> On a device so far: LocalDevVPN check and pairing work (iOS 27). Apple ID
-> sign-in, signing and installing are still being tested.
+> **Status: 0.10 alpha.** On a device (iOS 27): pairing, Apple ID sign-in with
+> two-factor codes, signing and installing work. Refresh and the newer options
+> are still being tested.
 
 ## What you need
 
@@ -27,37 +27,46 @@ In Open Minis's terminal:
 wget -qO- https://raw.githubusercontent.com/barismd/BariStore/main/install.sh | sh
 ```
 
-After that, `baristore` opens the store over the terminal. `baristore update`
-installs the newest build; `baristore doctor` prints a report to paste when
-something goes wrong (it contains no password, token or key).
+After that, `baristore` opens the store over the terminal; press Return (or
+Ctrl-C) in the terminal, or Options › Quit, to close it. `baristore update` (or
+Options › Update BariStore) installs the newest build; `baristore doctor` (or
+Options › Copy diagnostics) gives a report to paste when something goes wrong
+(no password, token or key in it).
 
 ## First run
 
 The store walks you through it:
 
 1. **LocalDevVPN and Developer Mode**: BariStore checks the loopback VPN answers.
-2. **Pairing**: Minis opens a player that plays silence so iOS keeps it
-   running in the background; swipe it down, it keeps playing in a small
-   bubble. Open Settings › Privacy & Security › Developer Mode, tap **Pair with
-   BariStore** and enter your passcode: the 6-digit code arrives then, as a
-   notification, and you type it in Settings.
+2. **Pairing**: open Settings › Privacy & Security › Developer Mode (it
+   appears there once pairing starts, even on an iPhone that never had it),
+   tap **Pair with BariStore** and enter your passcode: the 6-digit code
+   arrives as a notification, and you type it in Settings. BariStore keeps
+   running meanwhile with inaudible speech; nothing covers the screen.
 3. **Developer Mode** is read over the new connection; if it is off, BariStore
    can show the switch or turn it on (the iPhone restarts).
 4. **Apple ID** sign-in, two-factor code included. BariStore never signs you out.
 
 ## Using it
 
-- **Featured**: search, add AltSources, and BariStore's picks: AltStore Classic,
+- **Featured**: search, Sources (add, remove, and add back the suggested
+  ones), and BariStore's picks: AltStore Classic,
   SideStore, LiveContainer + SideStore and LiveContainer, stable and nightly,
   resolved live from each project's GitHub releases. When an app is offered by
   several sources you choose which one to install from.
-- **My Apps**: what BariStore installed, days left, refresh, delete, put the
-  pairing file into SideStore / LiveContainer / AltStore. SideStore, AltStore and
+- **My Apps**: what BariStore installed, days left, refresh one or all,
+  delete, put the pairing file into SideStore / LiveContainer / AltStore /
+  StikDebug; your App IDs, how many are left, and which are free to reuse. SideStore, AltStore and
   LiveContainer + SideStore also get the signing certificate
   (`ALTCertificate.p12`), so they can refresh themselves without asking Apple
   for a new one.
 - **Options**: Apple ID, pairing-file export, install defaults (Increased
-  Memory Limit, remove extensions), sources, appearance, diagnostics, reset.
+  Memory Limit, remove extensions, reuse the App IDs of deleted apps, also for
+  extensions), appearance, update, diagnostics, reset, quit.
+
+JIT: install **StikDebug** from Featured (StikDebug source). BariStore gives it
+the pairing file, and StikDebug mounts the developer disk image and enables JIT
+for the apps that support it.
 
 Opening the store needs no network. Installing and refreshing check LocalDevVPN,
 the pairing and the Apple ID first, say what is missing, and let you retry.

@@ -541,6 +541,7 @@ pub async fn login(email: &str, password: &str, ask: &CodeAsker, status: &(dyn F
     let email = email.trim().to_lowercase();
     let mut last = LoginError::Other("no anisette server answered".into());
     let mut refused: Vec<Claim> = Vec::new();
+    let mut attempts = 0;
     let saved = Route::saved();
     for server in candidate_servers().await {
         let http = http_client();
@@ -569,7 +570,9 @@ pub async fn login(email: &str, password: &str, ask: &CodeAsker, status: &(dyn F
                 }
             };
             let host = server.trim_start_matches("https://");
-            status(format!("Signing in through {host} as {}", claim.name()));
+            attempts += 1;
+            status(if attempts == 1 { "Signing in to Apple".into() }
+                   else { format!("Signing in to Apple (attempt {attempts})") });
             logf!("gsa: trying {host} as {} ({})", claim.name(), gs.info.client_info);
             match login_on(&gs, &email, password, ask).await {
                 Ok(account) => {

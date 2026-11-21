@@ -19,7 +19,8 @@ pub struct Source {
     pub error: String,
 }
 
-/// Open-source, widely used AltSources preloaded on first run.
+/// Open-source, widely used AltSources: preloaded on first run, and offered
+/// again under Sources › Suggested once removed.
 pub const DEFAULT_SOURCES: &[(&str, &str)] = &[
     ("https://community-apps.sidestore.io/sidecommunity.json", "SideStore Community"),
     ("https://stikdebug.xyz/index.json", "StikDebug"),
@@ -65,6 +66,16 @@ pub fn sources() -> Vec<Source> {
         Some(list) => list,
         None => DEFAULT_SOURCES.iter().map(|(u, n)| Source { url: u.to_string(), name: n.to_string(), error: String::new() }).collect(),
     }
+}
+
+/// Default sources the user's list does not have.
+pub fn suggested(list: &[Source]) -> Vec<Source> {
+    DEFAULT_SOURCES.iter().filter(|(u, _)| !list.iter().any(|s| s.url == *u))
+        .map(|(u, n)| Source { url: u.to_string(), name: n.to_string(), error: String::new() }).collect()
+}
+
+pub fn default_name(url: &str) -> Option<&'static str> {
+    DEFAULT_SOURCES.iter().find(|(u, _)| *u == url).map(|(_, n)| *n)
 }
 
 pub fn save_sources(list: &[Source]) {
@@ -142,7 +153,7 @@ struct Pick {
 const PICKS: &[Pick] = &[
     Pick { name: "SideStore", bundle_id: "com.SideStore.SideStore", repo: "SideStore/SideStore", asset: "SideStore.ipa",
            developer: "SideStore Team", subtitle: "Sideload apps and refresh them on your iPhone", nightly: true,
-           icon: "https://raw.githubusercontent.com/SideStore/SideStore/develop/AltStore/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png" },
+           icon: "https://raw.githubusercontent.com/SideStore/SideStore/develop/AltStore/Resources/Icons.xcassets/AppIcon.appiconset/180.png" },
     Pick { name: "LiveContainer + SideStore", bundle_id: "com.kdt.livecontainer", repo: "LiveContainer/LiveContainer",
            asset: "LiveContainer+SideStore.ipa", developer: "LiveContainer", nightly: true,
            subtitle: "Run apps inside one container, with SideStore built in",
@@ -153,7 +164,8 @@ const PICKS: &[Pick] = &[
            icon: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/main/screenshots/AppIcon1024.png" },
     Pick { name: "AltStore Classic", bundle_id: "com.rileytestut.AltStore", repo: "altstoreio/AltStore", asset: ".ipa",
            developer: "Riley Testut", subtitle: "The original alternative app store", nightly: false,
-           icon: "" },
+           // AltStore 2.0's icon, at the commit that added it (the branch moved).
+           icon: "https://raw.githubusercontent.com/altstoreio/AltStore/252bea18795f8beef2e1ea5aa8ea4d36427f675c/AltStore/Resources/Assets.xcassets/AppIcon.appiconset/AltStore-180.png" },
 ];
 
 fn release_version(rel: &Json, asset: &Json, channel: &str, pick: &Pick) -> Version {

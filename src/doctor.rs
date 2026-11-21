@@ -28,7 +28,7 @@ pub async fn report() -> String {
     let _ = writeln!(out, "system      {uname}");
     let _ = writeln!(out, "alpine      {}", std::fs::read_to_string("/etc/alpine-release").unwrap_or_default().trim());
     let _ = writeln!(out, "home        {}", state::home().display());
-    for tool in ["minis-bonjour", "apple-player", "apple-notification", "minis-open"] {
+    for tool in ["minis-bonjour", "apple-speak", "apple-player", "apple-notification", "minis-open"] {
         let _ = writeln!(out, "{tool:<19} {}", if minis::available(tool) { "yes" } else { "MISSING" });
     }
     if let Ok(entries) = std::fs::read_dir("/var/minis") {

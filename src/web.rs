@@ -34,8 +34,14 @@ pub async fn serve(app: App) -> Result<String, String> {
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> std::io::Result<()> {
+    respond_cached(stream, status, kind, body, "no-store").await
+}
+
+async fn respond_cached(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8], cache: &str)
+    -> std::io::Result<()>
+{
     let head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n\
+        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: {cache}\r\n\
          X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n", body.len());
     stream.write_all(head.as_bytes()).await?;
     stream.write_all(body).await?;
@@ -91,8 +97,16 @@ async fn handle(mut stream: TcpStream, app: App, prefix: &str, port: u16) -> std
         }
         body.extend_from_slice(&chunk[..n]);
     }
-    let route = route.split('?').next().unwrap_or("");
+    let (route, query) = route.split_once('?').unwrap_or((route, ""));
     match (method, route) {
+        ("GET", "/icon") => {
+            let url = query.split('&').find_map(|p| p.strip_prefix("u=")).map(percent_decode).unwrap_or_default();
+            match crate::icons::get(&crate::store::client(), &url).await {
+                Ok(bytes) => respond_cached(&mut stream, "200 OK", crate::icons::kind(&bytes), &bytes,
+                                            "private, max-age=604800").await,
+                Err(_) => respond(&mut stream, "404 Not Found", "text/plain", b"").await,
+            }
+        }
         ("GET", "/") | ("GET", "") => respond(&mut stream, "200 OK", "text/html; charset=utf-8", PAGE.as_bytes()).await,
         ("GET", "/logo.svg") => respond(&mut stream, "200 OK", "image/svg+xml", LOGO).await,
         ("GET", "/api/state") => {
@@ -109,6 +123,37 @@ async fn handle(mut stream: TcpStream, app: App, prefix: &str, port: u16) -> std
             respond(&mut stream, "200 OK", "application/json", reply.to_string().as_bytes()).await
         }
         _ => respond(&mut stream, "404 Not Found", "text/plain", b"").await,
+    }
+}
+
+/// Decodes %XX escapes (as encodeURIComponent writes them).
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match (bytes[i], bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(hi), Some(lo)) => {
+                out.push(hi << 4 | lo);
+                i += 3;
+            }
+            (b, _, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn percent_decoding() {
+        assert_eq!(super::percent_decode("https%3A%2F%2Fa.b%2Fx%20y.png"), "https://a.b/x y.png");
+        assert_eq!(super::percent_decode("100%"), "100%");
+        assert_eq!(super::percent_decode("%zz%4"), "%zz%4");
     }
 }
 
@@ -131,7 +176,12 @@ async fn action(app: &App, r: &Json) -> Json {
             }
             ok(if up { "vpn" } else { "novpn" })
         }
-        "pair" => { app.spawn("Pairing", Some(json!({"action": "pair"})), |a| async move { a.pair().await }); ok("started") }
+        "pair" => {
+            // A failed run with silent speech is retried with Minis's player.
+            let player = r.get("player").and_then(Json::as_bool).unwrap_or(false);
+            app.spawn("Pairing", Some(json!({"action": "pair", "player": true})), move |a| async move { a.pair(player).await });
+            ok("started")
+        }
         "devmode_status" => { app.spawn("Developer Mode", Some(r.clone()), |a| async move { a.developer_mode(None).await }); ok("started") }
         "devmode_show" => { app.spawn("Developer Mode", Some(r.clone()), |a| async move { a.developer_mode(Some(0)).await }); ok("started") }
         "devmode_on" => { app.spawn("Developer Mode", None, |a| async move { a.developer_mode(Some(1)).await }); ok("started") }
@@ -140,7 +190,7 @@ async fn action(app: &App, r: &Json) -> Json {
             if email.is_empty() || password.is_empty() {
                 return fail("Enter your Apple ID email and password".into());
             }
-            app.spawn("Apple ID", None, move |a| async move { a.login(email, password).await });
+            app.spawn("Signing in", None, move |a| async move { a.login(email, password).await });
             ok("started")
         }
         "sign_out" => { app.sign_out().await; ok("signed out") }
@@ -168,15 +218,17 @@ async fn action(app: &App, r: &Json) -> Json {
         }
         "refresh" => {
             let id = s(r, "bundle_id");
-            app.spawn("Refreshing", Some(r.clone()), move |a| async move { a.refresh_app(&id).await });
+            app.spawn(&format!("Refreshing {}", s(r, "name")), Some(r.clone()), move |a| async move { a.refresh_app(&id).await });
             ok("started")
         }
-        "refresh_all" => { app.spawn("Refreshing apps", Some(r.clone()), |a| async move { a.refresh_all().await }); ok("started") }
+        "refresh_all" => { app.spawn("Refreshing all apps", Some(r.clone()), |a| async move { a.refresh_all().await }); ok("started") }
         "delete" => {
             let id = s(r, "bundle_id");
-            app.spawn("Removing", Some(r.clone()), move |a| async move { a.delete_app(&id).await });
+            app.spawn(&format!("Deleting {}", s(r, "name")), Some(r.clone()), move |a| async move { a.delete_app(&id).await });
             ok("started")
         }
+        "app_ids" => match app.load_app_ids().await { Ok(()) => ok(""), Err(e) => fail(e) },
+        "update" => { app.spawn("Updating BariStore", Some(r.clone()), |a| async move { a.update().await }); ok("started") }
         "device_apps" => match app.load_device_apps().await { Ok(()) => ok(""), Err(e) => fail(e) },
         "place_pairing" => {
             let id = s(r, "bundle_id");
@@ -187,7 +239,14 @@ async fn action(app: &App, r: &Json) -> Json {
         "settings" => { app.save_settings(r.get("settings").unwrap_or(&Json::Null)); ok("saved") }
         "doctor" => ok(&crate::doctor::report().await),
         "reset" => { app.reset().await; ok("reset") }
-        "quit" => { tokio::spawn(async { tokio::time::sleep(std::time::Duration::from_millis(300)).await; std::process::exit(0) }); ok("bye") }
+        "quit" => {
+            tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                println!("BariStore closed. Type baristore to open it again.");
+                std::process::exit(0)
+            });
+            ok("bye")
+        }
         _ => fail(format!("unknown action {name}")),
     }
 }

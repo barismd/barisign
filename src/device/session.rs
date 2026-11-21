@@ -181,9 +181,10 @@ impl Tunnel {
         let (Some(client), Some(server), Some(rsd_port)) = (client, server, rsd_port) else {
             return Err(OpenError::Failed(format!("incomplete CDTunnel answer: {info}")));
         };
-        logf!("device: tunnel {client} -> {server}, RSD port {rsd_port}");
+        let mtu = info.pointer("/clientParameters/mtu").and_then(Json::as_u64).unwrap_or(1280) as usize;
+        logf!("device: tunnel {client} -> {server}, RSD port {rsd_port}, MTU {mtu}");
 
-        let (stack, mut outgoing) = Stack::start(client, server);
+        let (stack, mut outgoing) = Stack::start(client, server, mtu);
         let inbound = stack.clone();
         tokio::spawn(async move {
             let mut assembler = Reassembler::default();

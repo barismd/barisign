@@ -44,4 +44,6 @@ if [ -z "$LINK" ]; then
     echo "Add it to your PATH:  export PATH=\"\$HOME/.baristore/bin:\$PATH\""
 fi
 echo "Next time, type: baristore"
+# Read the terminal, not the pipe this script came through (Return quits).
+if [ -r /dev/tty ]; then exec "$BIN_DIR/baristore" </dev/tty; fi
 exec "$BIN_DIR/baristore"

@@ -5,10 +5,12 @@
 
 use plist::{Dictionary, Value};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::apple::gsa::{Account, GrandSlam};
-use crate::apple::portal::{DevCert, Portal, Team};
+use crate::apple::portal::{AppId, DevCert, Portal, Team, FREE_APP_IDS};
 use crate::device::{services, session::Session};
 use crate::sign::bundle::{self, Ipa, Kind, Plan, Signing};
 use crate::sign::codesign::Identity;
@@ -35,6 +37,10 @@ pub struct Installed {
     pub installed_at: u64,
     pub options: Options,
     pub icon_url: String,
+    /// Identifier each app/extension bundle was installed under (bundle dir
+    /// inside the IPA -> identifier), so a refresh keeps them.
+    #[serde(default)]
+    pub ids: BTreeMap<String, String>,
 }
 
 pub fn registry_path() -> std::path::PathBuf {
@@ -75,18 +81,127 @@ pub fn new_identifier(original: &str, team: &str) -> String {
     if original.ends_with(&format!(".{team}")) { original.to_string() } else { format!("{original}.{team}") }
 }
 
+/// Asks the user to pick one of `options` (title, message, options).
+pub type Asker = dyn Fn(String, String, Vec<String>) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> + Send + Sync;
+
+/// What to do when the App IDs run out (Options › Install options).
+#[derive(Clone, Copy, Default)]
+pub struct Reuse {
+    /// Reuse App IDs of apps no longer on the iPhone without asking.
+    pub auto: bool,
+    /// Also reuse them for app extensions.
+    pub extensions: bool,
+}
+
 pub struct Context<'a> {
     pub gs: &'a GrandSlam,
     pub account: &'a Account,
     pub team: &'a Team,
     pub udid: &'a str,
     pub device_name: &'a str,
+    pub session: &'a Session,
+    pub ask: &'a Asker,
+    pub reuse: Reuse,
+    /// On a refresh: the app's identifier and its bundles' identifiers.
+    pub previous: Option<(&'a str, &'a BTreeMap<String, String>)>,
 }
 
-/// Prepares App IDs/profiles and signs. Returns the signed IPA and the main
-/// app's new bundle id and profile expiry.
+pub struct Prepared {
+    pub ipa: Vec<u8>,
+    pub main_id: String,
+    pub expires: u64,
+    pub version: String,
+    pub ids: BTreeMap<String, String>,
+}
+
+const REUSE: &str = "Reuse App IDs";
+
+fn date(unix: u64) -> String {
+    let (y, m, d) = der::civil_from_days((unix / 86400) as i64);
+    format!("{y}-{m:02}-{d:02}")
+}
+
+/// The identifier each app/extension bundle gets: the previous install's,
+/// else the original with the team appended; extensions stay under the app.
+fn identifiers(apps: &[&bundle::Bundle], main: &bundle::Bundle, main_new: &str,
+               previous: Option<&BTreeMap<String, String>>) -> BTreeMap<String, String> {
+    apps.iter().map(|b| {
+        let id = if b.dir == main.dir {
+            main_new.to_string()
+        } else if let Some(kept) = previous.and_then(|p| p.get(&b.dir)).filter(|id| id.starts_with(&format!("{main_new}."))) {
+            kept.clone()
+        } else if let Some(rest) = b.id.strip_prefix(&format!("{}.", main.id)) {
+            format!("{main_new}.{rest}")
+        } else {
+            format!("{main_new}.{}", b.id.rsplit('.').next().unwrap_or("extension"))
+        };
+        (b.dir.clone(), id)
+    }).collect()
+}
+
+/// Makes the App IDs fit a free team's 10: when more are needed than are
+/// left, App IDs of apps no longer on the iPhone are reused (asking first
+/// unless the settings say so). The app takes one whole; its extensions take
+/// unused App IDs under it when the settings allow, else new ones.
+async fn fit_app_ids(ctx: &Context<'_>, apps: &[&bundle::Bundle], main: &bundle::Bundle,
+                     ids: &mut BTreeMap<String, String>, existing: &[AppId],
+                     status: &(dyn Fn(String) + Send + Sync)) -> Result<(), String> {
+    let known = |id: &str| existing.iter().any(|a| a.identifier == id);
+    let missing = |ids: &BTreeMap<String, String>| ids.values().filter(|id| !known(id)).count();
+    let left = FREE_APP_IDS.saturating_sub(existing.len());
+    if missing(ids) <= left {
+        return Ok(());
+    }
+    status("Looking for App IDs to reuse".into());
+    let on_device: Vec<String> = services::installed_apps(ctx.session).await?.iter()
+        .filter_map(|d| d.get("CFBundleIdentifier").and_then(Value::as_string).map(str::to_string)).collect();
+    let in_use = |id: &str| on_device.iter().any(|d| id == d || id.starts_with(&format!("{d}.")));
+    let mut free: Vec<&AppId> = existing.iter().filter(|a| !in_use(&a.identifier)).collect();
+    let next = existing.iter().map(|a| a.expires).filter(|e| *e > 0).min();
+    let out_of_ids = |ids: &BTreeMap<String, String>| {
+        let when = next.map(|e| format!(" The next one frees up on {}.", date(e))).unwrap_or_default();
+        format!("Not enough App IDs: this app needs {}, {left} of {FREE_APP_IDS} are left.{when}                  Turning on Remove extensions needs fewer.", missing(ids))
+    };
+    if free.is_empty() {
+        return Err(out_of_ids(ids));
+    }
+    if !ctx.reuse.auto {
+        let message = format!("This app needs {} new App IDs and {left} are left. {} App IDs belong to apps that are                                no longer on this iPhone and can be reused.", missing(ids), free.len());
+        let pick = (ctx.ask)("Not enough App IDs".into(), message, vec![REUSE.into(), "Cancel".into()]).await;
+        if pick.as_deref() != Some(REUSE) {
+            return Err("Cancelled".into());
+        }
+    }
+    if !known(&ids[&main.dir]) {
+        // The free App ID with the most free ones under it, for the extensions.
+        let children = |a: &AppId| free.iter().filter(|c| c.identifier.starts_with(&format!("{}.", a.identifier))).count();
+        let pick = free.iter().copied().max_by_key(|a| children(a)).unwrap();
+        logf!("install: reusing App ID {} for {}", pick.identifier, main.name);
+        free.retain(|a| a.identifier != pick.identifier);
+        *ids = identifiers(apps, main, &pick.identifier, None);
+    }
+    if ctx.reuse.extensions {
+        let main_new = ids[&main.dir].clone();
+        for b in apps.iter().filter(|b| b.dir != main.dir) {
+            if known(&ids[&b.dir]) {
+                continue;
+            }
+            if let Some(pos) = free.iter().position(|a| a.identifier.starts_with(&format!("{main_new}."))) {
+                let pick = free.remove(pos);
+                logf!("install: reusing App ID {} for {}", pick.identifier, b.name);
+                ids.insert(b.dir.clone(), pick.identifier.clone());
+            }
+        }
+    }
+    if missing(ids) > left {
+        return Err(out_of_ids(ids));
+    }
+    Ok(())
+}
+
+/// Prepares App IDs/profiles and signs.
 pub async fn prepare_and_sign(ctx: &Context<'_>, ipa_bytes: &[u8], opts: &Options,
-                              status: &(dyn Fn(String) + Send + Sync)) -> Result<(Vec<u8>, String, u64, String), String> {
+                              status: &(dyn Fn(String) + Send + Sync)) -> Result<Prepared, String> {
     let portal = Portal { gs: ctx.gs, account: ctx.account };
     let team = ctx.team.id.as_str();
     let mut ipa = Ipa::read(ipa_bytes)?;
@@ -96,11 +211,18 @@ pub async fn prepare_and_sign(ctx: &Context<'_>, ipa_bytes: &[u8], opts: &Option
     }
     let bundles = ipa.bundles()?;
     let main = ipa.main_app()?;
-    let main_new = new_identifier(&main.id, team);
+    let mut apps: Vec<&bundle::Bundle> = bundles.iter().filter(|b| b.kind != Kind::Framework).collect();
+    apps.sort_by_key(|b| b.depth());
+    let main_new = ctx.previous.map(|(id, ids)| ids.get(&main.dir).cloned().unwrap_or_else(|| id.to_string()))
+        .unwrap_or_else(|| new_identifier(&main.id, team));
+    let mut ids = identifiers(&apps, &main, &main_new, ctx.previous.map(|(_, ids)| ids));
 
     status("Registering this iPhone".into());
     portal.ensure_device(team, ctx.udid, ctx.device_name).await.map_err(|e| e.to_string())?;
-    status("Getting the signing certificate".into());
+    status("App IDs".into());
+    let existing = portal.app_ids(team).await.map_err(|e| e.to_string())?;
+    fit_app_ids(ctx, &apps, &main, &mut ids, &existing, status).await?;
+    status("Signing certificate".into());
     let cert = portal.certificate(team).await.map_err(|e| e.to_string())?;
     let leaf = cert.der.clone();
     let leaf_info = der::cert_info(&leaf)?;
@@ -110,34 +232,31 @@ pub async fn prepare_and_sign(ctx: &Context<'_>, ipa_bytes: &[u8], opts: &Option
     let mut plan_bundles = HashMap::new();
     let mut info_edits: HashMap<String, Dictionary> = HashMap::new();
     let mut expires = u64::MAX;
-    for b in bundles.iter().filter(|b| b.kind != Kind::Framework) {
-        let new_id = if b.dir == main.dir {
-            main_new.clone()
-        } else if let Some(rest) = b.id.strip_prefix(&format!("{}.", main.id)) {
-            format!("{main_new}.{rest}")
-        } else {
-            format!("{main_new}.{}", b.id.rsplit('.').next().unwrap_or("extension"))
+    for b in &apps {
+        let new_id = ids[&b.dir].clone();
+        let app_id = match existing.iter().find(|a| a.identifier == new_id) {
+            Some(a) => a.clone(),
+            None => {
+                status(format!("New App ID for {}", b.name));
+                portal.add_app_id(team, &new_id, &b.name).await
+                    .map_err(|e| if e.code == 9401 || e.message.contains("maximum") {
+                        format!("Apple has no App ID left for {} ({e}). Turning on Remove extensions needs fewer.", b.name)
+                    } else { e.to_string() })?
+            }
         };
-        status(format!("App ID for {}", b.name));
-        let mut app_id = portal.ensure_app_id(team, &new_id, &b.name).await
-            .map_err(|e| if e.code == 9401 || e.message.contains("maximum") {
-                format!("{e}. A free Apple ID can create 10 App IDs per 7 days; try again later or turn on \
-                         \"Remove extensions\" for this app.")
-            } else { e.to_string() })?;
         if let Some(group) = &group {
+            status(format!("App group for {}", b.name));
             if portal.assign_group(team, &app_id, group).await.map_err(|e| e.to_string())? {
                 let mut d = Dictionary::new();
                 d.insert("ALTAppGroups".into(), Value::Array(vec![Value::String(group.clone())]));
                 info_edits.insert(b.dir.clone(), d);
-                app_id = portal.app_ids(team).await.map_err(|e| e.to_string())?
-                    .into_iter().find(|a| a.id == app_id.id).unwrap_or(app_id);
             }
         }
         if opts.increased_memory && b.dir == main.dir {
-            status("Adding Increased Memory Limit".into());
+            status("Increased Memory Limit".into());
             if let Err(e) = portal.add_increased_memory(team, &app_id).await {
                 logf!("install: increased memory refused: {e}");
-                status(format!("Increased Memory Limit was refused: {e}"));
+                status(format!("Apple refused Increased Memory Limit: {e}"));
             }
         }
         status(format!("Profile for {}", b.name));
@@ -184,9 +303,12 @@ pub async fn prepare_and_sign(ctx: &Context<'_>, ipa_bytes: &[u8], opts: &Option
         add_files,
     };
     status("Signing".into());
-    bundle::sign(&mut ipa, &plan, &mut |n, t| status(format!("Signing {n}/{t}")))?;
+    let started = std::time::Instant::now();
+    bundle::sign(&mut ipa, &plan, &mut |n, t| status(format!("Signing {n} of {t}")))?;
     let out = ipa.write()?;
-    Ok((out, main_new, if expires == u64::MAX { 0 } else { expires }, main.version))
+    logf!("install: signed and packed in {:.1} s", started.elapsed().as_secs_f64());
+    Ok(Prepared { ipa: out, main_id: ids[&main.dir].clone(), expires: if expires == u64::MAX { 0 } else { expires },
+                  version: main.version, ids })
 }
 
 /// AltStore-family apps refresh themselves with the certificate they were
@@ -222,7 +344,8 @@ fn alt_certificate(bundles: &[bundle::Bundle], main: &bundle::Bundle, cert: &Dev
 /// once their preferences say isPairingReset = false and
 /// activePairingProtocol = rppairing; older SideStore and LiveContainer's
 /// built-in one read ALTPairingFile.mobiledevicepairing; AltStore Classic
-/// 2.3.1+ reads Documents/ALTPairingFile.plist (not the Beta).
+/// 2.3.1+ reads Documents/ALTPairingFile.plist (not the Beta); StikDebug
+/// reads Documents/pairingFile.plist (its PairingFileStore).
 pub async fn place_pairing_file(session: &Session, installed_id: &str, original_id: &str,
                                 record: &pairing::record::PairingRecord) -> Result<bool, String> {
     let (files, prefs): (&[&str], Option<String>) = if original_id.contains(".Beta") {
@@ -236,6 +359,9 @@ pub async fn place_pairing_file(session: &Session, installed_id: &str, original_
          Some("/Documents/SideStore/Library/Preferences/com.SideStore.SideStore.plist".into()))
     } else if original_id.starts_with("com.rileytestut.AltStore") {
         (&["/Documents/ALTPairingFile.plist"], None)
+    } else if original_id.starts_with("com.stik.") {
+        // StikDebug copies Documents/pairingFile.plist into its own store.
+        (&["/Documents/pairingFile.plist"], None)
     } else {
         return Ok(false);
     };
@@ -277,8 +403,8 @@ pub async fn place_pairing_file(session: &Session, installed_id: &str, original_
 /// Install signed bytes and remember the app.
 #[allow(clippy::too_many_arguments)]
 pub async fn install_signed(session: &Session, signed: &[u8], entry: Installed,
-                            status: &(dyn Fn(String) + Send + Sync)) -> Result<(), String> {
-    services::install(session, signed, &mut |stage, pct| status(format!("{stage} {pct}%"))).await?;
+                            status: &(dyn Fn(&str, u32) + Send + Sync)) -> Result<(), String> {
+    services::install(session, signed, &mut |stage, pct| status(stage, pct)).await?;
     let mut list = installed();
     list.retain(|i| i.bundle_id != entry.bundle_id);
     list.push(Installed { installed_at: now(), ..entry });

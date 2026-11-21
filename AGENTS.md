@@ -32,17 +32,24 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
 
 ## Facts we rely on (and where they come from)
 
-- Minis keeps running in Settings only while `apple-player` plays (siboot;
-  same mechanism proven for a-Shell's `play` on device). Its audio sheet can be
-  swiped down: playback goes on in a floating bubble (Open Minis
-  `MinisAudioPreviewView.onDisappear`). No player-free keep-alive exists for
-  terminal commands.
+- Minis keeps running in Settings while it plays audio. `apple-player` (siboot;
+  proven the same way for a-Shell's `play`) covers the screen with a sheet the
+  owner does not want; `apple-speak speak --volume 0` uses the same audio
+  session as Minis's own keep-alive (playback, mix with others) with no screen,
+  so pairing uses it, repeated (each call returns after the speech or 60 s).
+  Untested on device; a failed pairing is retried with the player.
 - The "Pair with …" entry asks for the passcode, then sends pair-setup M1; the
   code is made and notified at M1 (owner: an earlier notification is gone by then).
 - Developer Mode may be missing from Settings on a phone that never had it:
   offering a pairing (the pairable-host advert) makes iOS show it (Apple's
   docs, and the owner's a-Shell build revealed it this way). After pairing,
   AMFI action 0/1 shows or turns it on.
+- Tunnel TCP (as jktcp, idevice's device-proven stack): MSS = min(MTU from the
+  CDTunnel handshake, 8192) - 60, window scale option sent (shift 0) and the
+  peer's honoured, at most 1 MiB in flight; AFC writes 1 MiB per request.
+- The page's origin changes every run (random port), so nothing the page must
+  remember lives in localStorage: settings.json holds theme and setup_done.
+  WKWebView in Minis shows no confirm()/alert(): the page uses its own sheets.
 - The pairing service is usually on 49152 but can be another dynamic port
   (siboot 0.19.1): knock 49153–65535 except 62078.
 - iOS 27.2+: every RemoteXPC handshake on a tunnel must present the same host
@@ -66,6 +73,13 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   device 2026-11-21). The session data (spd) is keyed on S, falling back to
   H(S). Pair-setup keeps unpadded g (device-proven). Known-answer test from
   the old Python sign-in in `src/srp.rs`.
+- Free teams: 10 App IDs at a time (SideStore counts the same); listAppIds
+  gives each one's expiry. When an install needs more, App IDs whose app is
+  not on the iPhone (installation_proxy Browse) are reused, asking first unless
+  Options says so; extensions only take ones under the app's identifier.
+  Installed.ids keeps the identifiers so refreshes keep them.
+- StikDebug (com.stik.*) reads Documents/pairingFile.plist; its JIT needs a
+  mounted personalized DDI and debugserver, which BariStore does not do.
 - SideStore/AltStore refresh with the certificate in their bundle:
   `ALTCertificate.p12` (password = portal machineId) + `ALTCertificateID` =
   serial (SideStore CertificateProvisioningFlow; isideload). LC+SS: in the
@@ -78,7 +92,8 @@ Linux-verified: SRP pair-setup against idevice-srp, GrandSlam SRP against the
 device-proven Python sign-in (known answer), pairing host against a
 mock iPhone, TLS-PSK against openssl s_server, TCP stack against smoltcp, tunnel
 against a mock device, CSR and PKCS#12 with openssl (3.x and 1.1.1), signatures
-with rcodesign. **Device-verified (owner, 0.1.0):** LocalDevVPN check, pairing.
+with rcodesign. **Device-verified (owner):** LocalDevVPN check, pairing (0.1.0); Apple sign-in
+with 2FA, signing and installing an app (0.10.0-alpha.3).
 Everything else: say "untested on device" until the owner confirms.
 
 ## Layout
@@ -86,8 +101,9 @@ Everything else: say "untested on device" until the owner confirms.
 `src/pairing` pairable host · `src/device` tunnel, TCP, XPC, services ·
 `src/apple` anisette, GrandSlam, portal · `src/sign` code signing ·
 `src/install.rs` App IDs → profiles → sign → install → pairing file ·
-`src/store.rs` catalog · `src/app.rs` state/tasks · `src/web.rs` + `ui/index.html`
-the page · `src/doctor.rs` report. CI: `.github/workflows/release.yml` publishes
+`src/store.rs` catalog · `src/icons.rs` icon cache · `src/app.rs` state/tasks ·
+`src/web.rs` + `ui/index.html` the page · `src/doctor.rs` report ·
+`src/update.rs` self-update. CI: `.github/workflows/release.yml` publishes
 the `nightly` release that `install.sh` downloads.
 
 ## Rules

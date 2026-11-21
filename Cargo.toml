@@ -1,6 +1,6 @@
 [package]
 name = "baristore"
-version = "0.10.0-alpha.3"
+version = "0.10.0-alpha.4"
 edition = "2021"
 description = "An app store for iPhone and iPad that runs in Open Minis: pairs, signs and installs on the device itself"
 license = "MIT"
@@ -36,6 +36,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [profile.release]
 opt-level = 3

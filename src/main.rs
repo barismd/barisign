@@ -3,6 +3,7 @@ mod apple;
 mod der;
 mod device;
 mod doctor;
+mod icons;
 mod install;
 mod log;
 mod minis;
@@ -13,6 +14,7 @@ mod srp;
 mod store;
 mod web;
 mod state;
+mod update;
 
 use std::process::ExitCode;
 
@@ -41,12 +43,16 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}", doctor::report().await);
             Ok(())
         }
-        Some("update") => {
-            let status = std::process::Command::new("sh").arg("-c")
-                .arg("wget -qO- https://raw.githubusercontent.com/barismd/BariStore/main/install.sh | sh")
-                .status().map_err(|e| e.to_string())?;
-            if status.success() { Ok(()) } else { Err("the update did not finish".into()) }
-        }
+        Some("update") => match update::download_and_replace(&|step| println!("{step}")).await? {
+            update::Outcome::UpToDate => {
+                println!("BariStore {} is the newest build.", env!("CARGO_PKG_VERSION"));
+                Ok(())
+            }
+            update::Outcome::Updated(version) => {
+                println!("Updated to {version}. Opening the store…");
+                Err(update::restart())
+            }
+        },
         Some("--version") | Some("-V") => {
             println!("baristore {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -71,10 +77,26 @@ async fn open_store() -> Result<(), String> {
     if !minis::open(&url) {
         println!("Open this address in Minis's browser: {url}");
     }
-    println!("The store is open over the terminal. Keep Minis open while installing.");
-    println!("Press Ctrl-C here to quit.");
-    let _ = tokio::signal::ctrl_c().await;
+    println!("The store is open. Keep Minis open while installing.");
+    println!("To quit: press Return here (or Ctrl-C), or Options › Quit in the store.");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = return_pressed() => {}
+    }
+    println!("BariStore closed. Type baristore to open it again.");
     Ok(())
+}
+
+/// Resolves when a line is typed in the terminal. When there is no terminal
+/// input (stdin at its end, as after `| sh`), it never resolves.
+async fn return_pressed() {
+    let line = tokio::task::spawn_blocking(|| {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).unwrap_or(0)
+    }).await.unwrap_or(0);
+    if line == 0 {
+        std::future::pending::<()>().await;
+    }
 }
 
 /// Developer commands for interop tests (debug builds only).

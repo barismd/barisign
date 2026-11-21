@@ -14,11 +14,29 @@ pub struct Entry {
     pub data: Vec<u8>,
     pub mode: u32,
     pub symlink: bool,
+    /// Index in the original archive while the bytes are unchanged: the
+    /// entry is then copied over compressed as it was, not compressed again.
+    raw: Option<usize>,
+    /// SHA-1 and SHA-256 of `data`, computed once: a parent bundle seals the
+    /// files of its nested bundles too.
+    digests: std::cell::OnceCell<(Vec<u8>, Vec<u8>)>,
+}
+
+impl Entry {
+    fn new(data: Vec<u8>, mode: u32, symlink: bool, raw: Option<usize>) -> Entry {
+        Entry { data, mode, symlink, raw, digests: std::cell::OnceCell::new() }
+    }
+
+    fn digests(&self) -> &(Vec<u8>, Vec<u8>) {
+        self.digests.get_or_init(|| (Sha1::digest(&self.data).to_vec(), Sha256::digest(&self.data).to_vec()))
+    }
 }
 
 pub struct Ipa {
     pub files: BTreeMap<String, Entry>,
     order: Vec<String>,
+    /// The archive as read, for copying unchanged entries.
+    source: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,9 +111,9 @@ impl Ipa {
             let mut data = Vec::with_capacity(f.size() as usize);
             f.read_to_end(&mut data).map_err(|e| e.to_string())?;
             order.push(name.clone());
-            files.insert(name, Entry { data, mode, symlink });
+            files.insert(name, Entry::new(data, mode, symlink, Some(i)));
         }
-        Ok(Ipa { files, order })
+        Ok(Ipa { files, order, source: bytes.to_vec() })
     }
 
     pub fn bundles(&self) -> Result<Vec<Bundle>, String> {
@@ -160,7 +178,13 @@ impl Ipa {
         if !self.files.contains_key(path) {
             self.order.push(path.to_string());
         }
-        self.files.insert(path.to_string(), Entry { data, mode, symlink: false });
+        self.files.insert(path.to_string(), Entry::new(data, mode, false, None));
+    }
+
+    /// New bytes for an existing file (keeps its mode).
+    fn replace(&mut self, path: &str, data: Vec<u8>) {
+        let mode = self.files.get(path).map(|e| e.mode).unwrap_or(0o755);
+        self.put(path, data, mode);
     }
 
     fn write_info(&mut self, dir: &str, info: &Dictionary) -> Result<(), String> {
@@ -198,12 +222,13 @@ impl Ipa {
                 }
                 continue;
             }
+            let (sha1, sha256) = entry.digests();
             if !omit_both {
-                files.insert(rel.to_string(), Value::Data(Sha1::digest(&entry.data).to_vec()));
+                files.insert(rel.to_string(), Value::Data(sha1.clone()));
             }
             if !omit_v2 && !omit_both {
                 let mut d = Dictionary::new();
-                d.insert("hash2".into(), Value::Data(Sha256::digest(&entry.data).to_vec()));
+                d.insert("hash2".into(), Value::Data(sha256.clone()));
                 files2.insert(rel.to_string(), Value::Dictionary(d));
             }
         }
@@ -242,9 +267,15 @@ impl Ipa {
     }
 
     pub fn write(&self) -> Result<Vec<u8>, String> {
-        let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let mut source = zip::ZipArchive::new(Cursor::new(&self.source[..])).map_err(|e| e.to_string())?;
+        let mut out = zip::ZipWriter::new(Cursor::new(Vec::with_capacity(self.source.len() + (1 << 20))));
         for path in &self.order {
             let Some(entry) = self.files.get(path) else { continue };
+            if let Some(index) = entry.raw {
+                let file = source.by_index_raw(index).map_err(|e| e.to_string())?;
+                out.raw_copy_file(file).map_err(|e| e.to_string())?;
+                continue;
+            }
             if entry.symlink {
                 let target = String::from_utf8_lossy(&entry.data).into_owned();
                 out.add_symlink(path, target, zip::write::SimpleFileOptions::default())
@@ -336,7 +367,7 @@ pub fn sign(ipa: &mut Ipa, plan: &Plan, progress: &mut dyn FnMut(usize, usize)) 
             };
             let target = Target { identifier: &identifier, entitlements: None, info_plist: None, code_resources: None };
             let signed = codesign::sign_macho(&data, &target, &plan.identity).map_err(|e| format!("{path}: {e}"))?;
-            ipa.files.get_mut(&path).unwrap().data = signed;
+            ipa.replace(&path, signed);
         }
         let resources = ipa.code_resources(&b.dir, &b.executable);
         let mode = ipa.files.get(&format!("{}/_CodeSignature/CodeResources", b.dir)).map(|e| e.mode).unwrap_or(0o644);
@@ -346,7 +377,7 @@ pub fn sign(ipa: &mut Ipa, plan: &Plan, progress: &mut dyn FnMut(usize, usize)) 
         let target = Target { identifier: &b.id, entitlements, info_plist: info_raw.as_deref(), code_resources: Some(&resources) };
         let data = ipa.files[&main].data.clone();
         let signed = codesign::sign_macho(&data, &target, &plan.identity).map_err(|e| format!("{main}: {e}"))?;
-        ipa.files.get_mut(&main).unwrap().data = signed;
+        ipa.replace(&main, signed);
         progress(n + 1, total);
     }
     verify(ipa)

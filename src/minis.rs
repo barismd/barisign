@@ -6,8 +6,12 @@
 //! * minis-bonjour advertise <type> <name> <port> [k=v...]: Minis publishes the
 //!   service with the iOS Bonjour API and forwards each connection to <port>
 //!   inside the shell. `stop <id>` withdraws it.
-//! * apple-player play <file>: plays through Minis's player with the playback
-//!   audio session, which keeps Minis running while the user is in Settings.
+//! * apple-speak speak --text --volume 0: speech through the playback audio
+//!   session with mix-with-others, the session Minis's own background
+//!   keep-alive uses, and no screen of its own: keeps Minis running while the
+//!   user is in Settings.
+//! * apple-player play <file>: the same through Minis's player, which also
+//!   covers the screen with its sheet (the fallback).
 //! * apple-notification schedule --title --body --after 1: a local notification.
 //! * minis-open <url>: shows a page in a sheet over the terminal.
 
@@ -133,6 +137,64 @@ pub async fn withdraw_stale(service: &str) {
                     let _ = call("minis-bonjour", &["stop", id]).await;
                 }
             }
+        }
+    }
+}
+
+/// Keeps Minis running while the user is in Settings; stops on drop.
+pub enum KeepAlive {
+    /// Inaudible speech, repeated: nothing on screen.
+    Speech(tokio::task::JoinHandle<()>),
+    /// Silence through Minis's player: its sheet covers the screen.
+    Player(Player),
+}
+
+/// Spoken at volume 0 and the slowest rate: each `speak` lasts about a
+/// minute, and the next one is queued as it ends (the command returns when
+/// the speech ends, or after 60 s).
+const QUIET_TEXT: &str = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen \
+    fifteen sixteen seventeen eighteen nineteen twenty twenty one twenty two twenty three twenty four twenty five";
+
+impl KeepAlive {
+    pub async fn start(player: bool, dir: &Path) -> Result<KeepAlive, MinisError> {
+        if player || !available("apple-speak") {
+            return Ok(KeepAlive::Player(Player::start(dir).await?));
+        }
+        Ok(KeepAlive::Speech(tokio::spawn(async {
+            loop {
+                let args = ["speak", "--text", QUIET_TEXT, "--volume", "0", "--rate", "0.05", "--voice", "en-US"];
+                if let Err(e) = call("apple-speak", &args).await {
+                    crate::logf!("keep-alive: apple-speak: {e}");
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                }
+            }
+        })))
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            KeepAlive::Speech(_) => "silent speech",
+            KeepAlive::Player(_) => "Minis's player",
+        }
+    }
+
+    /// Restarts the player if iOS paused it (speech restarts itself).
+    pub async fn keep_going(&self) {
+        if let KeepAlive::Player(p) = self {
+            let status = p.status().await;
+            if status != "playing" {
+                crate::logf!("keep-alive: player is {status}; resuming");
+                p.resume().await;
+            }
+        }
+    }
+}
+
+impl Drop for KeepAlive {
+    fn drop(&mut self) {
+        if let KeepAlive::Speech(task) = self {
+            task.abort();
+            call_now("apple-speak", &["stop"]);
         }
     }
 }

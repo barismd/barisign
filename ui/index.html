@@ -7,75 +7,92 @@
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
 :root {
-  --brand: #15337F; --brand-deep: #0A1B4D; --brand-soft: #E4EAF8; --accent: #15337F;
-  --bg: #F3F5FA; --card: #FFFFFF; --text: #0E1525; --muted: #5E6779; --line: #E3E7F0;
-  --good: #1F9D55; --warn: #C27803; --bad: #D0342C; --chip: #EEF1F8;
+  --brand: #15337F; --brand-soft: #E4EAF8; --accent: #15337F;
+  --bg: #F3F5FA; --card: #FFFFFF; --raised: #FFFFFF; --text: #0E1525; --muted: #5E6779; --line: #E3E7F0;
+  --good: #1F9D55; --warn: #B26A00; --bad: #D0342C; --chip: #EEF1F8;
   --shadow: 0 1px 2px rgba(10,27,77,.06), 0 6px 20px rgba(10,27,77,.06);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0A0F1E; --card: #131A2E; --text: #EEF1F8; --muted: #9AA3B8; --line: #222B44;
-  --chip: #1B2340; --brand-soft: #1B2A55; --accent: #9DB4FF; --shadow: none; color-scheme: dark; } }
+  --bg: #0A0F1E; --card: #131A2E; --raised: #182038; --text: #EEF1F8; --muted: #9AA3B8; --line: #263052;
+  --chip: #1F2846; --brand-soft: #1B2A55; --accent: #9DB4FF; --warn: #E8A33D; --shadow: none; color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #0A0F1E; --card: #131A2E; --text: #EEF1F8; --muted: #9AA3B8; --line: #222B44;
-  --chip: #1B2340; --brand-soft: #1B2A55; --accent: #9DB4FF; --shadow: none; color-scheme: dark; }
+  --bg: #0A0F1E; --card: #131A2E; --raised: #182038; --text: #EEF1F8; --muted: #9AA3B8; --line: #263052;
+  --chip: #1F2846; --brand-soft: #1B2A55; --accent: #9DB4FF; --warn: #E8A33D; --shadow: none; color-scheme: dark; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
 html, body { margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
 body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+body.locked { overflow: hidden; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
 input { font: inherit; font-size: max(16px, 1em); color: var(--text); }
-html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
 .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
-header.top { padding: calc(14px + env(safe-area-inset-top)) 0 6px; display: flex; align-items: center; gap: 12px; }
+header.top { padding: calc(14px + env(safe-area-inset-top)) 0 8px; display: flex; align-items: center; gap: 12px; }
 header.top img { width: 40px; height: 40px; }
-h1 { font-size: 32px; letter-spacing: -.02em; margin: 6px 0 10px; }
-h2 { font-size: 21px; margin: 26px 0 10px; letter-spacing: -.01em; }
+header.top h1 { flex: 1; }
+h1 { font-size: 30px; letter-spacing: -.02em; margin: 0; }
+h2 { font-size: 20px; margin: 24px 0 10px; letter-spacing: -.01em; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
-.card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 12px; }
-.row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 4px 16px; margin-bottom: 12px; }
+.card.pad { padding: 14px 16px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
 .row + .row { border-top: 1px solid var(--line); }
 .grow { flex: 1; min-width: 0; }
 .ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.icon { position: relative; width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(#15337F, #0A1B4D);
+.icon { position: relative; width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(#1A3D96, #0A1B4D);
   flex: none; overflow: hidden; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 22px; }
-.icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.icon.big { width: 96px; height: 96px; border-radius: 22px; font-size: 38px; }
-.pill { background: var(--chip); color: var(--accent); font-weight: 700; font-size: 15px; padding: 6px 16px; border-radius: 999px; }
+.icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--card); }
+.icon.big { width: 80px; height: 80px; border-radius: 19px; font-size: 32px; }
+.pill { background: var(--chip); color: var(--accent); font-weight: 700; font-size: 15px; padding: 6px 16px; border-radius: 999px; white-space: nowrap; }
+.pill.quiet { font-weight: 600; color: var(--text); }
 .btn { display: block; width: 100%; text-align: center; padding: 14px; border-radius: 14px; font-weight: 600;
   background: linear-gradient(#1A3D96, #15337F); color: #fff; margin-top: 10px; }
 .btn.secondary { background: var(--chip); color: var(--text); }
 .btn.danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
 .btn:disabled { opacity: .5; }
-.search { width: 100%; padding: 12px 14px; border-radius: 12px; border: 0; background: var(--chip); outline: none; }
+.link { color: var(--accent); font-weight: 600; padding: 12px 0; display: block; width: 100%; text-align: left; }
+.link.bad { color: var(--bad); }
+.row > .link { padding: 0; }
+.search { width: 100%; padding: 11px 14px; border-radius: 12px; border: 0; background: var(--chip); outline: none; }
 .field { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card);
   margin-top: 8px; outline: none; }
-.field:focus { border-color: var(--brand); }
-.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.chip { background: var(--chip); border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--muted); }
+.field:focus { border-color: var(--accent); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.chip { background: var(--chip); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
 .chip.warn { color: var(--warn); } .chip.good { color: var(--good); } .chip.bad { color: var(--bad); }
-.hero { border-radius: 22px; padding: 18px; color: #fff; background:
+.hero { border-radius: 22px; padding: 4px 16px; color: #fff; background:
   radial-gradient(120% 90% at 20% 0%, rgba(255,255,255,.16), transparent 60%), linear-gradient(#15337F, #0A1B4D); }
 .hero .row + .row { border-color: rgba(255,255,255,.14); }
 .hero .muted { color: rgba(255,255,255,.75); }
 .hero .pill { background: rgba(255,255,255,.16); color: #fff; }
-nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--card) 88%, transparent);
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--card) 90%, transparent);
   backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px);
   border-top: 1px solid var(--line); display: flex; justify-content: space-around; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); z-index: 5; }
+nav.tabs[hidden] { display: none; }
 nav.tabs button { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--muted); padding: 4px 18px; }
 nav.tabs button.on { color: var(--accent); }
 nav.tabs svg { width: 26px; height: 26px; margin-bottom: 2px; }
-.sheet-bg { position: fixed; inset: 0; background: rgba(5,10,25,.45); z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
-.sheet { background: var(--bg); width: 100%; max-width: 720px; max-height: 92vh; overflow: auto; border-radius: 22px 22px 0 0;
-  padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); animation: up .22s ease-out; }
-@keyframes up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
-.grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 12px; }
-.bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin-top: 12px; }
+/* Sheets: a header that stays, a body that scrolls, actions that stay. */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 10; display: flex; align-items: flex-end; justify-content: center;
+  padding-top: calc(28px + env(safe-area-inset-top)); animation: fade .18s ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet { background: var(--raised); width: 100%; max-width: 720px; max-height: 100%; display: flex; flex-direction: column;
+  border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.25); animation: up .22s ease-out; overflow: hidden; }
+@keyframes up { from { transform: translateY(40px); } to { transform: none; } }
+.sheet-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.sheet-head h2 { margin: 0; flex: 1; font-size: 19px; min-width: 0; }
+.sheet-close { width: 32px; height: 32px; border-radius: 50%; background: var(--chip); color: var(--muted); font-size: 17px; flex: none;
+  display: grid; place-items: center; }
+.sheet-body { padding: 4px 16px 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; min-height: 0; }
+.sheet-foot { padding: 6px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); flex: none; }
+.sheet-foot .btn:first-child { margin-top: 6px; }
+.bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin-top: 14px; }
 .bar > i { display: block; height: 100%; background: linear-gradient(90deg, #2A55C6, #15337F); width: 0; transition: width .3s; }
 .bar.indet > i { width: 35%; animation: slide 1.2s infinite ease-in-out; }
 @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
-.code { font: 700 44px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .12em; text-align: center; margin: 16px 0 6px; }
+.code { font: 700 44px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .12em; text-align: center; margin: 14px 0 4px; }
 .steps { counter-reset: s; padding: 0; margin: 0; list-style: none; }
 .steps li { counter-increment: s; display: flex; gap: 12px; padding: 12px 0; }
 .steps li + li { border-top: 1px solid var(--line); }
@@ -83,34 +100,43 @@ nav.tabs svg { width: 26px; height: 26px; margin-bottom: 2px; }
   display: grid; place-items: center; font-weight: 700; font-size: 14px; color: var(--muted); }
 .steps li.done::before { content: "✓"; background: var(--good); color: #fff; }
 .steps li.now::before { background: var(--brand); color: #fff; }
+ol.how { margin: 10px 0 0; padding-left: 20px; }
+ol.how li { margin: 6px 0; }
 .switch { position: relative; width: 51px; height: 31px; flex: none; }
-.switch input { opacity: 0; width: 0; height: 0; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 31px; transition: .2s; }
 .switch span::after { content: ""; position: absolute; width: 27px; height: 27px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
 .switch input:checked + span { background: var(--good); }
 .switch input:checked + span::after { transform: translateX(20px); }
-.seg { display: flex; background: var(--chip); border-radius: 10px; padding: 2px; }
-.seg button { flex: 1; padding: 7px; border-radius: 8px; font-size: 14px; }
-.seg button.on { background: var(--card); box-shadow: var(--shadow); font-weight: 600; }
+.switch input:disabled + span { opacity: .45; }
+.seg { display: flex; background: var(--chip); border-radius: 10px; padding: 2px; margin: 12px 0; }
+.seg button { flex: 1; padding: 8px; border-radius: 8px; font-size: 14px; }
+.seg button.on { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; }
 .choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 14px; margin-top: 8px; }
-.choice.on { border-color: var(--brand); background: var(--brand-soft); }
+.choice.on { border-color: var(--accent); background: var(--brand-soft); }
 .radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); flex: none; margin-top: 2px; }
-.choice.on .radio { border: 6px solid var(--brand); }
-textarea.log { width: 100%; height: 280px; font: 12px/1.35 ui-monospace, Menlo, monospace; background: var(--card); color: var(--text);
-  border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-.empty { text-align: center; padding: 30px 10px; color: var(--muted); }
+.choice.on .radio { border: 6px solid var(--accent); }
+textarea.log { width: 100%; height: 300px; font: 12px/1.35 ui-monospace, Menlo, monospace; background: var(--card); color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-top: 10px; }
+.empty { text-align: center; padding: 24px 10px; color: var(--muted); }
 .notice { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--card); border-radius: 10px; margin: 10px 0; font-size: 14px; }
 .notice.bad { border-color: var(--bad); }
+.note { color: var(--warn); font-size: 13px; margin-top: 4px; }
+details summary { color: var(--accent); font-weight: 600; padding: 12px 0; cursor: pointer; }
+.toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
+  max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgba(0,0,0,.25); animation: fade .2s; }
 a { color: var(--accent); }
 </style>
 </head>
 <body>
 <div id="root"></div>
+<nav class="tabs" id="tabs" hidden></nav>
 <script>
 "use strict";
 const T = location.pathname.replace(/\/$/, "");
-let S = null, C = { apps: [], sources: [], refreshing: false };
-let tab = "featured", query = "", detail = null, sheet = null, busySend = false;
+let S = null, C = { apps: [], sources: [], suggested: [], refreshing: false };
+let tab = "featured", query = "", detail = null, sheet = null;
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -122,306 +148,417 @@ async function act(action, extra = {}) {
     const j = await r.json();
     await poll();
     return j;
-  } catch (e) { return { ok: false, message: String(e) }; }
+  } catch (e) { return { ok: false, message: "BariStore is not running. Type baristore in Minis to open it again." }; }
+}
+function toast(msg) {
+  document.querySelectorAll(".toast").forEach((t) => t.remove());
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
 }
 
-function applyTheme() {
-  const t = S?.settings?.theme || "system";
+// ---------------------------------------------------------------- helpers
+function applyTheme(t) {
+  t = t || S?.settings?.theme || "system";
   if (t === "system") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", t);
 }
-
+function iconUrl(u) { return u ? "icon?u=" + encodeURIComponent(u) : ""; }
 function iconHtml(app, big) {
   const letter = esc((app.name || "?").trim().charAt(0).toUpperCase());
-  const img = app.icon || app.icon_url;
-  return `<div class="icon${big ? " big" : ""}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${letter}</div>`;
+  const img = iconUrl(app.icon || app.icon_url);
+  return `<div class="icon${big ? " big" : ""}">${letter}${img ? `<img src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ""}</div>`;
 }
+function plural(n, one, many) { return `${n} ${n === 1 ? one : many || one + "s"}`; }
+function daysLeft(expires) { return expires ? Math.floor((expires * 1000 - Date.now()) / 86400000) : null; }
+function dateText(unix) { return unix ? new Date(unix * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""; }
 const tabIcons = {
   featured: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.1 6.1-.6z"/></svg>',
   apps: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
   options: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
 };
-
-function daysLeft(expires) {
-  if (!expires) return null;
-  return Math.floor((expires * 1000 - Date.now()) / 86400000);
+function header(title, extra = "") {
+  return `<header class="top"><img src="logo.svg" alt=""><h1>${title}</h1>${extra}</header>`;
+}
+function toggleRow(id, label, note, on, disabled) {
+  return `<div class="row"><div class="grow"><div>${label}</div><div class="muted small">${note}</div></div>
+    <label class="switch"><input type="checkbox" data-id="${id}" ${on ? "checked" : ""} ${disabled ? "disabled" : ""}
+      onchange="toggled(this.dataset.id, this.checked)"><span></span></label></div>`;
+}
+function toggled(id, value) {
+  if (id.startsWith("opt:")) { opts[id.slice(4)] = value; return; }
+  act("settings", { settings: { [id]: value } });
 }
 
 // ---------------------------------------------------------------- setup
-function needsSetup() { return S && (!S.setup.paired || !S.setup.signed_in); }
+function needsSetup() { return S && (!S.setup.paired || !S.setup.signed_in || !S.settings.setup_done); }
+
+function pairingHow() {
+  const player = S.pairing_keepalive === "Minis's player";
+  return `<ol class="how small">
+    ${player ? "<li>Swipe Minis's player down. It keeps playing in a small bubble: leave it.</li>" : ""}
+    <li>Open <b>Settings › Privacy & Security › Developer Mode</b>. If Developer Mode was not there before, it is now.</li>
+    <li>At the bottom, tap <b>Pair with BariStore</b> and enter your passcode.</li>
+    <li>The 6-digit code comes as a notification. Type it in Settings.</li>
+    <li>Come back to Minis.</li></ol>`;
+}
 
 function setupView() {
   const st = S.setup;
   const vpn = st.vpn === true, paired = st.paired, dm = st.devmode, signed = st.signed_in;
   const step = !vpn && !paired ? 1 : !paired ? 2 : dm === false ? 3 : !signed ? 4 : 5;
   const li = (n, title, body) => `<li class="${n < step ? "done" : n === step ? "now" : ""}"><div class="grow"><b>${title}</b>${n === step ? `<div class="muted small" style="margin-top:4px">${body}</div>` : ""}</div></li>`;
-  const s1 = `Install <b>LocalDevVPN</b> from the App Store, open it and connect. Wi-Fi on.
-     Developer Mode may be off, and may not be in Settings yet: it appears once pairing starts.
+  const s1 = `Install <b>LocalDevVPN</b> from the App Store, open it and connect. Wi-Fi must be on.
      <button class="btn" onclick="check()">Check again</button>
-     ${st.vpn === false ? '<div class="notice bad">LocalDevVPN does not answer yet.</div>' : ""}`;
-  const s2 = `BariStore pairs this iPhone with itself. After you tap Start, Minis opens a player that plays silence so
-     BariStore keeps running: swipe it down, it keeps playing. Then go to Settings › Privacy & Security › Developer Mode
-     (if it was not there before, it is now: iOS shows it while a pairing is offered),
-     scroll to the bottom and tap <b>Pair with BariStore</b>. After your passcode the 6-digit code comes as a notification.
-     <button class="btn" onclick="act('pair')">Start pairing</button>`;
-  const s3 = `Developer Mode is off. Show the switch in Settings (no restart), or turn it on now (the iPhone restarts;
-     iOS refuses this while a passcode is set, then flip the switch yourself).
+     ${st.vpn === false ? '<div class="notice bad">LocalDevVPN is not connected yet.</div>' : ""}`;
+  const s2 = `BariStore pairs this iPhone with itself. It keeps running in the background while you are in Settings.
+     ${pairingHow()}<button class="btn" onclick="act('pair')">Start pairing</button>`;
+  const s3 = `Developer Mode is off. Show its switch in Settings, or turn it on now (the iPhone restarts; with a passcode set,
+     iOS only shows the switch).
      <button class="btn" onclick="act('devmode_show')">Show the switch</button>
-     <button class="btn secondary" onclick="if(confirm('The iPhone will restart. Continue?')) act('devmode_on')">Turn on now</button>`;
-  const s4 = `Sign in with your Apple ID. A free account is enough.
-     <input class="field" id="email" type="email" autocomplete="username" autocapitalize="none" placeholder="Apple ID email" value="${esc(st.email)}">
+     <button class="btn secondary" onclick="ask({title:'Restart the iPhone?', message:'Turning Developer Mode on restarts the iPhone. Open BariStore again afterwards.', ok:'Restart and turn on', run:()=>act('devmode_on')})">Turn on now</button>`;
+  const s4 = `Sign in with your Apple ID. A free one is enough.
+     <input class="field" id="email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Apple ID email" value="${esc(st.email)}">
      <input class="field" id="password" type="password" autocomplete="current-password" placeholder="Password">
      <button class="btn" onclick="login()">Sign in</button>
-     <div class="small muted" style="margin-top:10px">Your password never leaves this iPhone: Apple's SRP sign-in turns it into a one-time
-     proof here. The anisette server that supplies Apple's device-identity headers never sees your Apple ID, password or tokens.</div>`;
+     <div class="small muted" style="margin-top:10px">Your password stays on this iPhone and is never saved. The anisette server
+     that vouches for this device never sees your Apple ID.</div>`;
   return `<div class="wrap">
     <header class="top"><img src="logo.svg" alt=""><div><div style="font-weight:700;font-size:20px">BariStore</div><div class="muted small">Set up this iPhone</div></div></header>
-    <div class="card"><ol class="steps">
-      ${li(1, "LocalDevVPN and Developer Mode", s1)}
+    <div class="card pad"><ol class="steps">
+      ${li(1, "LocalDevVPN", s1)}
       ${li(2, "Pair this iPhone", s2)}
       ${li(3, "Developer Mode", s3)}
       ${li(4, "Apple ID", s4)}
-      ${li(5, "Ready", `<button class="btn" onclick="finishSetup()">Open the store</button>`)}
+      ${li(5, "Done", `<button class="btn" onclick="act('settings',{settings:{setup_done:true}})">Open the store</button>`)}
     </ol></div>
     ${paired ? `<div class="small muted" style="text-align:center">Paired with ${esc(st.device_name || "this iPhone")}</div>` : ""}
   </div>`;
 }
 async function check() { await act("check"); if (S.setup.paired) act("devmode_status"); }
-function login() { act("login", { email: $("#email").value, password: $("#password").value }); }
-function finishSetup() { localStorage.setItem("setupSeen", "1"); render(); }
+function login() {
+  const email = $("#email").value.trim(), password = $("#password").value;
+  if (!email || !password) { toast("Enter your Apple ID email and password."); return; }
+  act("login", { email, password });
+}
 
 // ---------------------------------------------------------------- featured
+function matches(a) {
+  const q = query.trim().toLowerCase();
+  return !q || [a.name, a.developer, a.subtitle, a.bundle_id].some((x) => (x || "").toLowerCase().includes(q));
+}
 function versionsLabel(a) {
   const chans = a.versions.map((v) => v.channel).filter(Boolean);
   if (chans.length) return chans.join(" · ");
   return a.versions.length > 1 ? `${a.versions.length} sources` : esc(a.versions[0]?.source || "");
 }
 function appRow(a) {
+  const installed = (S.installed || []).some((i) => i.original_id === a.bundle_id);
   return `<div class="row" data-key="${esc(a.key)}" onclick="openApp(this.dataset.key)">${iconHtml(a)}
     <div class="grow"><div class="ell" style="font-weight:600">${esc(a.name)}</div>
     <div class="ell muted small">${esc(a.subtitle || a.developer || "")}</div>
     <div class="ell muted small">${versionsLabel(a)}</div></div>
-    <button class="pill" data-key="${esc(a.key)}" onclick="event.stopPropagation();openApp(this.dataset.key)">GET</button></div>`;
+    <button class="pill" data-key="${esc(a.key)}" onclick="event.stopPropagation();openApp(this.dataset.key)">${installed ? "VIEW" : "GET"}</button></div>`;
 }
 function featuredView() {
-  const q = query.trim().toLowerCase();
-  const match = (a) => !q || [a.name, a.developer, a.subtitle, a.bundle_id].some((x) => (x || "").toLowerCase().includes(q));
-  const picks = C.apps.filter((a) => a.featured && match(a));
-  const rest = C.apps.filter((a) => !a.featured && match(a)).sort((a, b) => a.name.localeCompare(b.name));
-  const errors = C.sources.filter((s) => s.error);
   return `<div class="wrap">
-    <header class="top"><img src="logo.svg" alt=""><h1 style="margin:0">Featured</h1></header>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input class="search" placeholder="Search apps" value="${esc(query)}" oninput="query=this.value;renderList()">
-      <button class="pill" style="white-space:nowrap" onclick="addSource()">+ Source</button>
-    </div>
-    <div id="list">${listHtml(picks, rest, errors)}</div>
+    ${header("Featured", `<button class="pill quiet" onclick="openSheet({kind:'sources'})">Sources</button>`)}
+    <input class="search" type="search" placeholder="Search apps" value="${esc(query)}" oninput="query=this.value;renderList()">
+    <div id="list">${listHtml()}</div>
   </div>`;
 }
-function listHtml(picks, rest, errors) {
+function listHtml() {
+  const picks = C.apps.filter((a) => a.featured && matches(a));
+  const rest = C.apps.filter((a) => !a.featured && matches(a)).sort((a, b) => a.name.localeCompare(b.name));
+  const errors = C.sources.filter((s) => s.error);
   return `${picks.length ? `<h2>BariStore picks</h2><div class="hero">${picks.map(appRow).join("")}</div>` : ""}
     <h2>All apps ${C.refreshing ? '<span class="muted small">updating…</span>' : ""}</h2>
     <div class="card">${rest.length ? rest.map(appRow).join("") : `<div class="empty">${C.refreshing ? "Loading sources…" : "No apps match."}</div>`}</div>
-    ${errors.map((s) => `<div class="notice small">${esc(s.name)}: ${esc(s.error)}</div>`).join("")}`;
+    ${errors.length ? `<div class="notice small">${errors.map((s) => `${esc(s.name)}: ${esc(s.error)}`).join("<br>")}</div>` : ""}`;
 }
-function renderList() {
-  const q = query.trim().toLowerCase();
-  const match = (a) => !q || [a.name, a.developer, a.subtitle, a.bundle_id].some((x) => (x || "").toLowerCase().includes(q));
-  $("#list").innerHTML = listHtml(C.apps.filter((a) => a.featured && match(a)),
-    C.apps.filter((a) => !a.featured && match(a)).sort((a, b) => a.name.localeCompare(b.name)), C.sources.filter((s) => s.error));
+function renderList() { const l = $("#list"); if (l) l.innerHTML = listHtml(); }
+
+function sourcesSheet() {
+  const rows = C.sources.map((s) => `<div class="row"><div class="grow"><div class="ell">${esc(s.name)}</div>
+      <div class="ell muted small">${esc(s.url)}</div>${s.error ? `<div class="note">${esc(s.error)}</div>` : ""}</div>
+      <button class="pill quiet" data-url="${esc(s.url)}" data-name="${esc(s.name)}" onclick="removeSource(this.dataset.url, this.dataset.name)">Remove</button></div>`).join("");
+  const suggested = (C.suggested || []).map((s) => `<div class="row"><div class="grow"><div class="ell">${esc(s.name)}</div>
+      <div class="ell muted small">${esc(s.url)}</div></div>
+      <button class="pill" data-url="${esc(s.url)}" onclick="addSource(this.dataset.url)">Add</button></div>`).join("");
+  return {
+    title: "Sources",
+    body: `<p class="muted small">AltSources (AltStore and SideStore format) whose apps appear in Featured.</p>
+      <div class="card">${rows || '<div class="empty">No sources.</div>'}</div>
+      ${suggested ? `<h2>Suggested</h2><div class="card">${suggested}</div>` : ""}
+      <h2>Add by address</h2>
+      <input class="field" id="srcurl" type="url" autocapitalize="none" spellcheck="false" placeholder="https://example.com/apps.json">
+      <button class="btn" onclick="addSource($('#srcurl').value)">Add source</button>`,
+  };
 }
-function addSource() {
-  sheet = { kind: "source" };
-  renderSheet();
+async function addSource(url) {
+  const r = await act("source_add", { url: (url || "").trim() });
+  if (!r.ok) { toast(r.message); return; }
+  toast("Source added. Loading its apps…");
+  loadCatalog();
+}
+function removeSource(url, name) {
+  ask({ title: `Remove ${name}?`, message: "Its apps leave Featured. Installed apps stay.", ok: "Remove", danger: true,
+    run: async () => { await act("source_remove", { url }); loadCatalog(); openSheet({ kind: "sources" }); } });
 }
 
 // ---------------------------------------------------------------- detail
-let pickVersion = 0, optExt = false, optMem = false;
+let pickVersion = 0, opts = {};
 function openApp(key) {
   detail = C.apps.find((a) => a.key === key);
-  pickVersion = 0; optExt = !!S.settings.remove_extensions; optMem = !!S.settings.increased_memory;
-  sheet = { kind: "detail" };
-  renderSheet();
+  if (!detail) return;
+  pickVersion = 0;
+  opts = { remove_extensions: !!S.settings.remove_extensions, increased_memory: !!S.settings.increased_memory };
+  openSheet({ kind: "detail" });
 }
-function detailHtml() {
+function detailSheet() {
   const a = detail;
-  const multi = a.versions.length > 1;
   const v = a.versions[pickVersion] || a.versions[0];
   const installed = (S.installed || []).find((i) => i.original_id === a.bundle_id);
-  return `<div class="grab"></div>
-    <div style="display:flex;gap:14px;align-items:center">${iconHtml(a, true)}
-      <div class="grow"><div style="font-size:22px;font-weight:700">${esc(a.name)}</div>
-      <div class="muted">${esc(a.developer)}</div>
-      ${installed ? `<div class="chip good" style="display:inline-block;margin-top:6px">Installed ${esc(installed.version)}</div>` : ""}</div></div>
-    ${a.subtitle ? `<p>${esc(a.subtitle)}</p>` : ""}
-    <h2 style="margin-top:16px">${multi ? "Choose a version" : "Version"}</h2>
-    ${a.versions.map((x, i) => `<div class="choice ${i === pickVersion ? "on" : ""}" onclick="pickVersion=${i};renderSheet()">
+  const versions = a.versions.map((x, i) => `<div class="choice ${i === pickVersion ? "on" : ""}" data-i="${i}" onclick="pickVersion=+this.dataset.i;renderSheet()">
       <div class="radio"></div><div class="grow"><div style="font-weight:600">${esc(x.channel ? x.channel[0].toUpperCase() + x.channel.slice(1) : x.source)}
       <span class="muted" style="font-weight:400">${esc(x.version)}</span></div>
       <div class="muted small">${esc(x.source)}${x.date ? " · " + esc(x.date) : ""}${x.size ? " · " + Math.round(x.size / 1e6) + " MB" : ""}</div>
-      ${x.warning ? `<div class="small" style="color:var(--warn);margin-top:4px">${esc(x.warning)}</div>` : ""}</div></div>`).join("")}
-    <h2 style="margin-top:18px">Options</h2>
-    <div class="card">
-      <div class="row"><div class="grow"><div>Remove extensions</div><div class="muted small">Saves App IDs (a free Apple ID gets 10 a week); widgets and share sheets stop working.</div></div>
-        <label class="switch"><input type="checkbox" ${optExt ? "checked" : ""} onchange="optExt=this.checked"><span></span></label></div>
-      <div class="row"><div class="grow"><div>Increased Memory Limit</div><div class="muted small">Asks Apple for more memory (emulators, LiveContainer). Not every iPhone supports it.</div></div>
-        <label class="switch"><input type="checkbox" ${optMem ? "checked" : ""} onchange="optMem=this.checked"><span></span></label></div>
-    </div>
-    <button class="btn" onclick="install()">${installed ? "Install again" : "Install"}</button>
-    <button class="btn secondary" onclick="closeSheet()">Close</button>
-    ${a.description ? `<p class="muted small" style="white-space:pre-wrap">${esc(a.description).slice(0, 1200)}</p>` : ""}
-    ${v && v.notes ? `<details><summary class="muted small">Release notes</summary><p class="small" style="white-space:pre-wrap">${esc(v.notes)}</p></details>` : ""}`;
+      ${x.warning ? `<div class="note">${esc(x.warning)}</div>` : ""}</div></div>`).join("");
+  return {
+    title: "",
+    head: `${iconHtml(a, true)}<div class="grow"><div style="font-size:20px;font-weight:700" class="ell">${esc(a.name)}</div>
+      <div class="muted small ell">${esc(a.developer)}</div>
+      ${installed ? `<div class="chips"><span class="chip good">Installed ${esc(installed.version)}</span></div>` : ""}</div>`,
+    body: `${a.subtitle ? `<p>${esc(a.subtitle)}</p>` : ""}
+      <h2>${a.versions.length > 1 ? "Choose a version" : "Version"}</h2>${versions}
+      <h2>Options</h2>
+      <div class="card">
+        ${toggleRow("opt:remove_extensions", "Remove extensions", "Uses fewer App IDs (a free Apple ID has 10). Widgets and share sheets of this app stop working.", opts.remove_extensions)}
+        ${toggleRow("opt:increased_memory", "Increased Memory Limit", "More memory for emulators and LiveContainer, where the iPhone supports it.", opts.increased_memory)}
+      </div>
+      ${a.description ? `<h2>About</h2><p class="muted small" style="white-space:pre-wrap">${esc(a.description.slice(0, 1500))}</p>` : ""}
+      ${v && v.notes ? `<details><summary>Release notes</summary><p class="small muted" style="white-space:pre-wrap">${esc(v.notes)}</p></details>` : ""}`,
+    foot: `<button class="btn" onclick="install()">${installed ? "Install again" : "Install"}</button>`,
+  };
 }
 function install() {
   const a = detail;
-  sheet = null; renderSheet();
-  act("install", { key: a.key, version: pickVersion, name: a.name, remove_extensions: optExt, increased_memory: optMem });
+  closeSheet();
+  act("install", { key: a.key, version: pickVersion, name: a.name, ...opts });
 }
 
 // ---------------------------------------------------------------- my apps
 function myAppsView() {
   const list = (S.installed || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const apps = list.map((i) => {
+    const d = daysLeft(i.expires);
+    const cls = d === null ? "" : d < 1 ? "bad" : d < 3 ? "warn" : "good";
+    const label = d === null ? "" : d < 0 ? "Expired" : d < 1 ? "Expires today" : `${plural(d, "day")} left`;
+    return `<div class="row">${iconHtml(i)}<div class="grow"><div class="ell" style="font-weight:600">${esc(i.name)}</div>
+      <div class="ell muted small">${esc(i.version)}</div>
+      <div class="chips">${label ? `<span class="chip ${cls}">${label}</span>` : ""}${i.options.increased_memory ? '<span class="chip">More memory</span>' : ""}${i.options.remove_extensions ? '<span class="chip">No extensions</span>' : ""}</div></div>
+      <button class="pill" data-id="${esc(i.bundle_id)}" data-name="${esc(i.name)}" onclick="act('refresh',{bundle_id:this.dataset.id,name:this.dataset.name})">Refresh</button>
+      <button class="pill quiet" data-id="${esc(i.bundle_id)}" onclick="openSheet({kind:'appmenu',id:this.dataset.id})" aria-label="More">•••</button></div>`;
+  }).join("");
   return `<div class="wrap">
-    <header class="top"><img src="logo.svg" alt=""><h1 style="margin:0">My Apps</h1></header>
-    ${list.length ? `<button class="btn secondary" onclick="act('refresh_all')">Refresh apps that expire soon</button>` : ""}
-    <div class="card" style="margin-top:14px">${list.length ? list.map((i) => {
-      const d = daysLeft(i.expires);
-      const cls = d === null ? "" : d < 1 ? "bad" : d < 3 ? "warn" : "good";
-      const label = d === null ? "" : d < 0 ? "Expired" : d < 1 ? "Expires today" : `${d} day${d === 1 ? "" : "s"} left`;
-      return `<div class="row">${iconHtml(i)}<div class="grow"><div class="ell" style="font-weight:600">${esc(i.name)}</div>
-        <div class="ell muted small">${esc(i.version)} · ${esc(i.bundle_id)}</div>
-        <div class="chips"><span class="chip ${cls}">${label}</span>${i.options.increased_memory ? '<span class="chip">More memory</span>' : ""}${i.options.remove_extensions ? '<span class="chip">No extensions</span>' : ""}</div></div>
-        <div style="display:flex;flex-direction:column;gap:6px"><button class="pill" data-id="${esc(i.bundle_id)}" onclick="act('refresh',{bundle_id:this.dataset.id})">Refresh</button>
-        <button class="pill" data-id="${esc(i.bundle_id)}" onclick="appMenu(this.dataset.id)">•••</button></div></div>`;
-    }).join("") : `<div class="empty">Apps you install from BariStore appear here.<br>A free Apple ID keeps them for 7 days; refresh before that.</div>`}</div>
-    <div class="small muted" style="text-align:center">A free Apple ID can have 3 sideloaded apps installed at a time. BariStore itself does not count: it runs in Minis.</div>
+    ${header("My Apps", list.length ? `<button class="pill" onclick="act('refresh_all')">Refresh all</button>` : "")}
+    <div class="card">${apps || `<div class="empty">Apps you install from BariStore appear here.<br>A free Apple ID keeps them for 7 days: refresh them before that.</div>`}</div>
+    <div class="small muted" style="text-align:center;margin-bottom:6px">A free Apple ID can have 3 of these apps at a time. BariStore itself runs in Minis and does not count.</div>
+    ${appIdsHtml()}
   </div>`;
 }
-function appMenu(id) { sheet = { kind: "appmenu", id }; renderSheet(); }
+function appIdsHtml() {
+  if (!S.setup.signed_in) return "";
+  const ids = S.app_ids;
+  if (!ids || !ids.list) {
+    return `<h2>App IDs</h2><div class="card"><div class="empty">${appIdsError
+      ? `${esc(appIdsError)}<br><button class="link" style="text-align:center" onclick="appIdsError='';render()">Try again</button>`
+      : "Loading your App IDs…"}</div></div>`;
+  }
+  const rows = ids.list.slice().sort((a, b) => a.expires - b.expires).map((a) => `<div class="row"><div class="grow">
+      <div class="ell">${esc(a.app || a.name)}</div><div class="ell muted small">${esc(a.identifier)}</div></div>
+      <div class="small muted" style="text-align:right">${a.app ? "" : '<div class="note" style="margin:0">Free to reuse</div>'}${a.expires ? "until " + esc(dateText(a.expires)) : ""}</div></div>`).join("");
+  return `<h2>App IDs <span class="muted small" style="font-weight:400">${ids.left} of ${ids.max} left</span></h2>
+    <div class="card">${rows || '<div class="empty">No App IDs yet.</div>'}</div>
+    <div class="small muted" style="text-align:center">Each app and each of its extensions needs one. They free up 7 days after they were made.</div>`;
+}
+function appMenuSheet(id) {
+  const i = (S.installed || []).find((x) => x.bundle_id === id) || { name: id, bundle_id: id };
+  return {
+    title: i.name,
+    body: `<div class="muted small" style="margin-top:8px">${esc(i.bundle_id)}</div>
+      <div class="card" style="margin-top:12px">
+        <button class="link" data-id="${esc(id)}" onclick="closeSheet();act('place_pairing',{bundle_id:this.dataset.id})">Give it the pairing file again</button>
+        <button class="link bad" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="deleteApp(this.dataset.id, this.dataset.name)">Delete app</button>
+      </div>`,
+  };
+}
+function deleteApp(id, name) {
+  ask({ title: `Delete ${name}?`, message: "It is removed from this iPhone with its data.", ok: "Delete", danger: true,
+    run: () => act("delete", { bundle_id: id, name }) });
+}
 
 // ---------------------------------------------------------------- options
 function optionsView() {
   const st = S.setup, set = S.settings;
   const theme = set.theme || "system";
-  const seg = (v, l) => `<button class="${theme === v ? "on" : ""}" onclick="saveSetting('theme','${v}')">${l}</button>`;
-  const toggle = (k, label, note) => `<div class="row"><div class="grow"><div>${label}</div><div class="muted small">${note}</div></div>
-    <label class="switch"><input type="checkbox" ${set[k] ? "checked" : ""} onchange="saveSetting('${k}',this.checked)"><span></span></label></div>`;
+  const seg = (v, l) => `<button class="${theme === v ? "on" : ""}" data-v="${v}" onclick="setTheme(this.dataset.v)">${l}</button>`;
   return `<div class="wrap">
-    <header class="top"><img src="logo.svg" alt=""><h1 style="margin:0">Options</h1></header>
+    ${header("Options")}
     <h2>Apple ID</h2>
-    <div class="card">${st.signed_in ? `<div class="row"><div class="grow"><div>${esc(st.email)}</div><div class="muted small">${esc(st.team_name || st.team)}</div></div></div>
-      <button class="btn secondary" onclick="if(confirm('Sign out of this Apple ID in BariStore?')) act('sign_out')">Sign out</button>`
-      : `<div class="muted">Not signed in.</div><button class="btn" onclick="localStorage.removeItem('setupSeen');render()">Sign in</button>`}</div>
+    <div class="card">${st.signed_in ? `<div class="row"><div class="grow"><div class="ell">${esc(st.email)}</div><div class="muted small">${esc(st.team_name || st.team)}</div></div></div>
+      <div class="row"><button class="link bad" onclick="ask({title:'Sign out?', message:'BariStore forgets this Apple ID session. Installed apps stay.', ok:'Sign out', danger:true, run:()=>act('sign_out')})">Sign out</button></div>`
+      : `<div class="row"><div class="grow muted">Not signed in.</div><button class="pill" onclick="act('settings',{settings:{setup_done:false}})">Sign in</button></div>`}</div>
     <h2>Pairing</h2>
     <div class="card"><div class="row"><div class="grow"><div>${st.paired ? "Paired" : "Not paired"}</div>
       <div class="muted small">${esc(st.device_name || "")}${st.devmode === false ? " · Developer Mode off" : ""}</div></div></div>
-      <button class="btn secondary" onclick="act('export_pairing').then(r=>alert(r.message))" ${st.paired ? "" : "disabled"}>Export pairing file</button>
-      <button class="btn secondary" onclick="act('pair')">Pair again</button></div>
+      ${st.paired ? `<div class="row"><button class="link" onclick="exportPairing()">Export pairing file</button></div>` : ""}
+      <div class="row"><button class="link" onclick="act('pair')">Pair again</button></div></div>
     <h2>Install options</h2>
-    <div class="card">${toggle("increased_memory", "Increased Memory Limit by default", "Applied to new installs; you can still change it per app.")}
-      ${toggle("remove_extensions", "Remove extensions by default", "Fewer App IDs used per app.")}</div>
-    <h2>Sources</h2>
-    <div class="card">${C.sources.map((s) => `<div class="row"><div class="grow"><div class="ell">${esc(s.name)}</div><div class="ell muted small">${esc(s.url)}</div>
-      ${s.error ? `<div class="small" style="color:var(--warn)">${esc(s.error)}</div>` : ""}</div>
-      <button class="pill" data-url="${esc(s.url)}" onclick="if(confirm('Remove this source?')) act('source_remove',{url:this.dataset.url}).then(loadCatalog)">Remove</button></div>`).join("") || '<div class="empty">No sources</div>'}
-      <button class="btn secondary" onclick="addSource()">Add source</button></div>
+    <div class="card">
+      ${toggleRow("remove_extensions", "Remove extensions", "Default for new installs: fewer App IDs, no widgets.", set.remove_extensions)}
+      ${toggleRow("increased_memory", "Increased Memory Limit", "Default for new installs.", set.increased_memory)}
+      ${toggleRow("reuse_app_ids", "Reuse App IDs of deleted apps", "When no App ID is left, use one of an app that is no longer on this iPhone without asking. Otherwise BariStore asks.", set.reuse_app_ids)}
+      ${toggleRow("reuse_for_extensions", "Reuse them for extensions too", "Extensions also take unused App IDs instead of new ones.", set.reuse_for_extensions)}
+    </div>
     <h2>Appearance</h2>
-    <div class="card"><div class="seg">${seg("system", "System")}${seg("light", "Light")}${seg("dark", "Dark")}</div></div>
+    <div class="seg">${seg("system", "System")}${seg("light", "Light")}${seg("dark", "Dark")}</div>
     <h2>About</h2>
-    <div class="card"><div class="row"><div class="grow">BariStore</div><div class="muted">${esc(S.version)}</div></div>
-      <button class="btn secondary" onclick="doctor()">Diagnostics to copy</button>
-      <button class="btn danger" onclick="if(confirm('Forget the Apple ID session, pairing, sources and app list? Apps stay on the iPhone.')) act('reset').then(()=>{localStorage.clear();render()})">Reset BariStore</button></div>
-    <p class="small muted" style="text-align:center">MIT licence. No accounts, no analytics: BariStore talks only to Apple, the anisette server, and the sources you add.</p>
+    <div class="card">
+      <div class="row"><div class="grow">BariStore</div><div class="muted">${esc(S.version)}</div></div>
+      <div class="row"><button class="link" onclick="act('update')">Update BariStore</button></div>
+      <div class="row"><button class="link" onclick="doctor()">Copy diagnostics to clipboard</button></div>
+      <div class="row"><button class="link bad" onclick="ask({title:'Reset BariStore?', message:'BariStore forgets the Apple ID session, the pairing, sources, settings and its app list, and starts setup again. Apps stay on the iPhone.', ok:'Reset', danger:true, run:reset})">Reset BariStore</button></div>
+      <div class="row"><button class="link bad" onclick="quit()">Quit BariStore</button></div>
+    </div>
+    <p class="small muted" style="text-align:center">MIT licence. No accounts, no analytics: BariStore talks only to Apple, the anisette server and the sources you add.</p>
   </div>`;
 }
-function saveSetting(k, v) { act("settings", { settings: { [k]: v } }).then(() => { applyTheme(); render(); }); }
+function setTheme(t) { applyTheme(t); S.settings.theme = t; render(); act("settings", { settings: { theme: t } }); }
+async function exportPairing() { const r = await act("export_pairing"); toast(r.message); }
+async function reset() { await act("reset"); tab = "featured"; sheet = null; render(); toast("BariStore is reset."); }
+async function quit() {
+  await act("quit");
+  document.body.classList.remove("locked");
+  $("#tabs").hidden = true;
+  $("#root").innerHTML = `<div class="wrap"><div class="empty" style="padding-top:30vh"><img src="logo.svg" alt="" width="56"><p>BariStore is closed.<br>Close this page. Type <b>baristore</b> in Minis to open it again.</p></div></div>`;
+  S = null;
+}
 async function doctor() {
-  sheet = { kind: "doctor", text: "Collecting…" }; renderSheet();
+  toast("Collecting diagnostics…");
   const r = await act("doctor");
-  sheet = { kind: "doctor", text: r.message }; renderSheet();
+  try { await navigator.clipboard.writeText(r.message); toast("Diagnostics copied. Paste them where you asked for help."); }
+  catch (e) { openSheet({ kind: "doctor", text: r.message }); }
 }
 
 // ---------------------------------------------------------------- sheets
+function openSheet(s) { sheet = s; renderSheet(); }
 function closeSheet() { sheet = null; renderSheet(); }
-function renderSheet() {
-  let html = "";
-  const q = S?.question, task = S?.task;
-  if (q) {
-    html = `<div class="grab"></div><h2 style="margin-top:0">${esc(q.title)}</h2><p class="muted">${esc(q.message)}</p>` +
-      (q.kind === "choice" ? q.options.map((o) => `<button class="btn secondary" onclick="answer(${q.id}, this.dataset.v)" data-v="${esc(o)}">${esc(o)}</button>`).join("")
-        : `<input class="field" id="answer" inputmode="${q.kind === "code" ? "numeric" : "text"}" autocomplete="one-time-code" maxlength="${q.kind === "code" ? 6 : 200}"
-            style="font-size:28px;text-align:center;letter-spacing:.3em" oninput="if(this.value.length===6&&'${q.kind}'==='code')answer(${q.id},this.value)">
-           <button class="btn" onclick="answer(${q.id}, $('#answer').value)">Continue</button>
-           ${(q.options || []).includes("sms") ? `<button class="btn secondary" onclick="answer(${q.id}, 'sms')">No code on my devices? Send a text message</button>` : ""}`) +
-      `<button class="btn secondary" onclick="answer(${q.id}, null)">Cancel</button>`;
-  } else if (task) {
-    const pct = task.progress;
-    const code = S.pairing_code;
-    html = `<div class="grab"></div><h2 style="margin-top:0">${esc(task.title)}</h2>
-      ${code && !task.done ? `<div class="muted">Your pairing code</div><div class="code">${esc(code.slice(0, 3))} ${esc(code.slice(3))}</div>` : ""}
-      ${S.pairing_waiting && !task.done ? `<ol class="small muted"><li>Swipe Minis's player down. It keeps playing in a small bubble; leave it.</li>
-        <li>Open Settings › Privacy & Security › Developer Mode, scroll to the bottom, tap <b>Pair with BariStore</b>.</li>
-        <li>Enter your passcode. The pairing code comes then, as a notification at the top: type it in Settings.</li>
-        <li>Come back to Minis when Settings says it paired.</li></ol>` : ""}
-      ${task.error ? `<div class="notice bad">${esc(task.error)}</div>` : `<p>${esc(task.step || "Working…")}</p>`}
+/** An in-page confirmation (the browser's own dialogs do not show in Minis). */
+function ask({ title, message, ok, danger, run }) { openSheet({ kind: "confirm", title, message, ok, danger, run }); }
+function confirmed() { const run = sheet?.run; closeSheet(); if (run) run(); }
+
+function taskSheet(task) {
+  const pct = task.progress;
+  const code = S.pairing_code;
+  const pairing = S.pairing_waiting && !task.done;
+  return {
+    title: task.title, closable: task.done,
+    body: `${code && !task.done ? `<div class="muted small" style="text-align:center;margin-top:12px">Pairing code</div><div class="code">${esc(code.slice(0, 3))} ${esc(code.slice(3))}</div>` : ""}
+      ${task.error ? `<div class="notice bad" style="white-space:pre-wrap">${esc(task.error)}</div>` : `<p>${esc(task.step || "Working…")}</p>`}
       ${task.done ? "" : `<div class="bar ${pct == null ? "indet" : ""}"><i style="width:${pct ?? 35}%"></i></div>`}
-      ${task.done ? `${task.error && task.retry ? `<button class="btn" onclick="retry()">Try again</button>` : ""}
-        <button class="btn ${task.error ? "secondary" : ""}" onclick="act('dismiss')">${task.error ? "Close" : "Done"}</button>` : ""}`;
-  } else if (sheet?.kind === "detail" && detail) {
-    html = detailHtml();
-  } else if (sheet?.kind === "source") {
-    html = `<div class="grab"></div><h2 style="margin-top:0">Add a source</h2>
-      <p class="muted small">An AltSource address (AltStore / SideStore format), starting with https://.</p>
-      <input class="field" id="srcurl" type="url" autocapitalize="none" placeholder="https://example.com/apps.json">
-      <button class="btn" onclick="act('source_add',{url:$('#srcurl').value}).then(r=>{if(!r.ok)alert(r.message);else{closeSheet();loadCatalog();}})">Add</button>
-      <button class="btn secondary" onclick="closeSheet()">Cancel</button>`;
-  } else if (sheet?.kind === "appmenu") {
-    const i = (S.installed || []).find((x) => x.bundle_id === sheet.id) || { name: sheet.id };
-    html = `<div class="grab"></div><h2 style="margin-top:0">${esc(i.name)}</h2>
-      <button class="btn secondary" data-id="${esc(sheet.id)}" onclick="act('place_pairing',{bundle_id:this.dataset.id});closeSheet()">Put the pairing file in this app</button>
-      <button class="btn danger" data-id="${esc(sheet.id)}" data-name="${esc(i.name)}" onclick="if(confirm('Delete '+this.dataset.name+' from this iPhone?')){act('delete',{bundle_id:this.dataset.id});closeSheet()}">Delete app</button>
-      <button class="btn secondary" onclick="closeSheet()">Close</button>`;
-  } else if (sheet?.kind === "doctor") {
-    html = `<div class="grab"></div><h2 style="margin-top:0">Diagnostics</h2>
-      <p class="muted small">No password, token or key is in here. Copy it and paste it where you asked for help.</p>
-      <textarea class="log" id="doc" readonly>${esc(sheet.text)}</textarea>
-      <button class="btn" onclick="copyDoc()">Copy</button><button class="btn secondary" onclick="closeSheet()">Close</button>`;
+      ${pairing && !code ? pairingHow() : ""}`,
+    foot: task.done ? `${task.error && task.retry ? `<button class="btn" onclick="retry()">Try again</button>` : ""}
+      <button class="btn ${task.error ? "secondary" : ""}" onclick="act('dismiss')">${task.error ? "Close" : "Done"}</button>` : "",
+  };
+}
+function questionSheet(q) {
+  const code = q.kind === "code";
+  const body = q.kind === "choice"
+    ? q.options.map((o) => `<button class="btn ${o === "Cancel" ? "secondary" : ""}" data-v="${esc(o)}" onclick="answer(${q.id}, this.dataset.v)">${esc(o)}</button>`).join("")
+    : `<input class="field" id="answer" inputmode="${code ? "numeric" : "text"}" autocomplete="one-time-code" maxlength="${code ? 6 : 200}"
+         style="font-size:28px;text-align:center;letter-spacing:.3em" oninput="if(${code}&&this.value.length===6)answer(${q.id},this.value)">
+       <button class="btn" onclick="answer(${q.id}, $('#answer').value)">Continue</button>
+       ${(q.options || []).includes("sms") ? `<button class="btn secondary" onclick="answer(${q.id}, 'sms')">No code? Send a text message</button>` : ""}
+       <button class="btn secondary" onclick="answer(${q.id}, null)">Cancel</button>`;
+  return { title: q.title, body: `<p class="muted">${esc(q.message)}</p>${body}` };
+}
+function sheetParts() {
+  const q = S?.question, task = S?.task;
+  if (q) return { key: "q" + q.id, ...questionSheet(q) };
+  if (task) return { key: "t", ...taskSheet(task) };
+  if (!sheet) return null;
+  switch (sheet.kind) {
+    case "detail": return detail ? { key: "detail", closable: true, ...detailSheet() } : null;
+    case "sources": return { key: "sources", closable: true, ...sourcesSheet() };
+    case "appmenu": return { key: "appmenu", closable: true, ...appMenuSheet(sheet.id) };
+    case "confirm": return { key: "confirm", closable: true, title: sheet.title,
+      body: `<p class="muted">${esc(sheet.message)}</p>`,
+      foot: `<button class="btn ${sheet.danger ? "danger" : ""}" onclick="confirmed()">${esc(sheet.ok)}</button>
+        <button class="btn secondary" onclick="closeSheet()">Cancel</button>` };
+    case "doctor": return { key: "doctor", closable: true, title: "Diagnostics",
+      body: `<p class="muted small">No password, token or key is in here. Select all and copy.</p><textarea class="log" readonly>${esc(sheet.text)}</textarea>` };
   }
+  return null;
+}
+function renderSheet() {
+  const p = sheetParts();
   let bg = $(".sheet-bg");
-  if (!html) { if (bg) bg.remove(); return; }
-  if (!bg) { bg = document.createElement("div"); bg.className = "sheet-bg"; bg.innerHTML = '<div class="sheet"></div>'; document.body.appendChild(bg);
-    bg.addEventListener("click", (e) => { if (e.target === bg && !S.task && !S.question) closeSheet(); }); }
+  if (!p) { if (bg) bg.remove(); document.body.classList.remove("locked"); return; }
+  if (!bg) {
+    bg = document.createElement("div"); bg.className = "sheet-bg"; bg.innerHTML = '<div class="sheet"></div>';
+    document.body.appendChild(bg);
+    bg.addEventListener("click", (e) => { if (e.target === bg && bg.dataset.closable === "1") closeSheet(); });
+  }
+  document.body.classList.add("locked");
+  bg.dataset.closable = p.closable ? "1" : "";
   const sh = bg.firstChild;
-  const key = q ? "q" + q.id : task ? "t" : sheet?.kind;
-  const focused = document.activeElement && sh.contains(document.activeElement);
-  if (sh.dataset.key === key && focused && (q || sheet?.kind === "source")) return; // never re-render under typing hands
-  if (sh.dataset.html !== html) { sh.innerHTML = html; sh.dataset.html = html; sh.dataset.key = key;
-    if (q && q.kind !== "choice") setTimeout(() => $("#answer")?.focus(), 50); }
+  const focused = document.activeElement && sh.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+  if (sh.dataset.key === p.key && focused) return; // never re-render under typing hands
+  const html = `<div class="sheet-head">${p.head || `<h2>${esc(p.title)}</h2>`}${p.closable ? '<button class="sheet-close" onclick="closeSheet()" aria-label="Close">✕</button>' : ""}</div>
+    <div class="sheet-body">${p.body || ""}</div>${p.foot ? `<div class="sheet-foot">${p.foot}</div>` : ""}`;
+  if (sh.dataset.html === html) return;
+  const scroll = sh.dataset.key === p.key ? sh.querySelector(".sheet-body")?.scrollTop || 0 : 0;
+  sh.innerHTML = html; sh.dataset.html = html;
+  if (sh.dataset.key !== p.key && p.key.startsWith("q")) setTimeout(() => $("#answer")?.focus(), 60);
+  sh.dataset.key = p.key;
+  sh.querySelector(".sheet-body").scrollTop = scroll;
 }
 function answer(id, value) { act("answer", { id, value }); }
 function retry() { const r = S?.task?.retry; if (r) act("dismiss").then(() => act(r.action, r)); }
-function copyDoc() {
-  const t = $("#doc"); t.select();
-  (navigator.clipboard?.writeText(t.value) || Promise.reject()).then(() => alert("Copied"), () => { document.execCommand("copy"); alert("Copied"); });
-}
 
 // ---------------------------------------------------------------- shell
 function render() {
   if (!S) return;
   applyTheme();
-  const setup = needsSetup() || !localStorage.getItem("setupSeen");
-  const root = $("#root");
-  if (setup && document.activeElement && root.contains(document.activeElement) && document.activeElement.tagName === "INPUT") {
-    // keep the form the user is typing in
-  } else if (setup) {
-    root.innerHTML = setupView();
-  } else {
-    const view = tab === "featured" ? featuredView() : tab === "apps" ? myAppsView() : optionsView();
-    const typing = document.activeElement?.classList?.contains("search");
-    if (!typing) root.innerHTML = view + `<nav class="tabs">${["featured", "apps", "options"].map((t) =>
-      `<button class="${tab === t ? "on" : ""}" onclick="tab='${t}';render();window.scrollTo(0,0)">${tabIcons[t]}${t === "featured" ? "Featured" : t === "apps" ? "My Apps" : "Options"}</button>`).join("")}</nav>`;
+  const root = $("#root"), tabs = $("#tabs");
+  const setup = needsSetup();
+  // Leave a form alone while someone types in it.
+  const typing = document.activeElement && root.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+  if (!typing) {
+    const html = setup ? setupView() : tab === "featured" ? featuredView() : tab === "apps" ? myAppsView() : optionsView();
+    // Only touch the page when it changed: replacing it reloads every icon.
+    if (root.dataset.html !== html) { root.innerHTML = html; root.dataset.html = html; }
   }
+  tabs.hidden = setup;
+  const nav = ["featured", "apps", "options"].map((t) =>
+    `<button class="${tab === t ? "on" : ""}" data-t="${t}" onclick="switchTab(this.dataset.t)">${tabIcons[t]}${t === "featured" ? "Featured" : t === "apps" ? "My Apps" : "Options"}</button>`).join("");
+  if (tabs.dataset.html !== nav) { tabs.innerHTML = nav; tabs.dataset.html = nav; }
   renderSheet();
+  loadAppIds();
+}
+function switchTab(t) {
+  tab = t;
+  render();
+  window.scrollTo(0, 0);
+}
+let appIdsError = "", appIdsLoading = false;
+/** My Apps lists the App IDs: asked for when shown and not known yet. */
+async function loadAppIds() {
+  if (appIdsLoading || appIdsError || tab !== "apps" || needsSetup() || !S.setup.signed_in || S.app_ids) return;
+  appIdsLoading = true;
+  const r = await act("app_ids");
+  appIdsLoading = false;
+  if (!r.ok) { appIdsError = r.message || "Could not load the App IDs."; render(); }
 }
 let lastState = "";
 async function poll() {
@@ -433,8 +570,8 @@ async function poll() {
   } catch (e) { /* the server is restarting or gone */ }
 }
 async function loadCatalog() {
-  C = await api("/api/catalog");
-  if (S && !needsSetup() && tab === "featured" && !document.activeElement?.classList?.contains("search")) render();
+  try { C = await api("/api/catalog"); } catch (e) { return; }
+  if (S) render();
   if (C.refreshing) setTimeout(loadCatalog, 1500);
 }
 (async () => {
@@ -442,7 +579,7 @@ async function loadCatalog() {
   await loadCatalog();
   act("catalog_refresh").then(() => setTimeout(loadCatalog, 800));
   if (S.setup.paired) act("check");
-  setInterval(poll, 900);
+  setInterval(() => { if (S) poll(); }, 900);
 })();
 </script>
 </body>

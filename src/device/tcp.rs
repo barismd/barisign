@@ -4,9 +4,11 @@
 //! actor never blocks on the network.
 //!
 //! Scope: active open, in-order delivery with an out-of-order queue, our window
-//! fixed at 64 KiB, no window scaling (we never send the option, so the peer's
-//! is ignored per RFC 7323), MSS from the SYN-ACK, timer-based retransmission
-//! of the oldest unacknowledged segment with exponential back-off.
+//! fixed at 64 KiB (window scale option with shift 0), the peer's window scaled
+//! as its SYN-ACK says (RFC 7323), at most 1 MiB in flight, MSS from the
+//! tunnel MTU (at most 8192 - 60, as idevice's jktcp sets it) and the SYN-ACK,
+//! timer-based retransmission of the oldest unacknowledged segment with
+//! exponential back-off.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::Ipv6Addr;
@@ -20,6 +22,10 @@ const PSH: u8 = 0x08;
 const ACK: u8 = 0x10;
 const OUR_WINDOW: u16 = 65535;
 const SEND_BUFFER: usize = 1 << 20;
+/// Bytes in flight at most, whatever the peer's window says.
+const SEND_WINDOW: usize = 1 << 20;
+/// Before the SYN-ACK names one: the IPv6 minimum MTU minus headers.
+const DEFAULT_MSS: usize = 1220;
 const TICK: Duration = Duration::from_millis(50);
 
 fn lt(a: u32, b: u32) -> bool {
@@ -29,24 +35,61 @@ fn le(a: u32, b: u32) -> bool {
     a == b || lt(a, b)
 }
 
+/// RFC 1071 checksum over `parts`; every part but the last must have an
+/// even length (the pseudo-header fields do), so 16-bit words never straddle.
 fn checksum(parts: &[&[u8]]) -> u16 {
-    let mut sum: u32 = 0;
-    let mut odd: Option<u8> = None;
+    let mut sum: u64 = 0;
     for part in parts {
-        for &byte in *part {
-            match odd.take() {
-                Some(hi) => sum += u32::from(u16::from_be_bytes([hi, byte])),
-                None => odd = Some(byte),
-            }
+        let mut words = part.chunks_exact(2);
+        for w in &mut words {
+            sum += u64::from(u16::from_be_bytes([w[0], w[1]]));
         }
-    }
-    if let Some(hi) = odd {
-        sum += u32::from(u16::from_be_bytes([hi, 0]));
+        if let [hi] = words.remainder() {
+            sum += u64::from(u16::from_be_bytes([*hi, 0]));
+        }
     }
     while sum > 0xFFFF {
         sum = (sum & 0xFFFF) + (sum >> 16);
     }
     !(sum as u16)
+}
+
+/// Bytes written but not yet acknowledged. Acknowledged bytes are dropped
+/// by moving a start offset; the buffer is compacted only when that offset
+/// passes half of it, so an ACK never moves the whole buffer.
+#[derive(Default)]
+struct SendBuf {
+    buf: Vec<u8>,
+    start: usize,
+}
+
+impl SendBuf {
+    fn len(&self) -> usize {
+        self.buf.len() - self.start
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn range(&self, from: usize, to: usize) -> &[u8] {
+        &self.buf[self.start + from..self.start + to]
+    }
+
+    fn push(&mut self, data: &[u8]) {
+        self.buf.extend_from_slice(data);
+    }
+
+    fn consume(&mut self, n: usize) {
+        self.start += n.min(self.len());
+        if self.start == self.buf.len() {
+            self.buf.clear();
+            self.start = 0;
+        } else if self.start > 256 * 1024 && self.start * 2 > self.buf.len() {
+            self.buf.drain(..self.start);
+            self.start = 0;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -78,8 +121,10 @@ struct Conn {
     snd_nxt: u32,
     rcv_nxt: u32,
     peer_window: u32,
+    /// The peer's window scale (from its SYN-ACK; 0 when it sent none).
+    peer_shift: u8,
     mss: usize,
-    out: Vec<u8>,          // bytes from snd_una on (in flight + unsent)
+    out: SendBuf,          // bytes from snd_una on (in flight + unsent)
     ooo: BTreeMap<u32, Vec<u8>>,
     rto: Duration,
     retransmit_at: Instant,
@@ -102,6 +147,8 @@ impl Conn {
 struct Actor {
     local: Ipv6Addr,
     remote: Ipv6Addr,
+    /// The largest segment the tunnel carries.
+    max_mss: usize,
     conns: HashMap<u16, Conn>,
     link_tx: mpsc::UnboundedSender<Vec<u8>>,
     cmd_tx: mpsc::UnboundedSender<Cmd>,
@@ -153,13 +200,14 @@ impl Actor {
         let mut sent = c.in_flight();
         let mut seq = c.snd_nxt;
         let mut segments = Vec::new();
+        let window = (c.peer_window as usize).min(SEND_WINDOW);
         while sent < c.out.len() {
-            let room = (c.peer_window as usize).saturating_sub(sent);
+            let room = window.saturating_sub(sent);
             if room == 0 {
                 break;
             }
             let n = (c.out.len() - sent).min(c.mss).min(room);
-            segments.push((seq, c.out[sent..sent + n].to_vec()));
+            segments.push((seq, c.out.range(sent, sent + n).to_vec()));
             seq = seq.wrapping_add(n as u32);
             sent += n;
         }
@@ -211,14 +259,20 @@ impl Actor {
         let now = Instant::now();
         let conn = Conn {
             remote_port: port, state: State::SynSent, iss, snd_una: iss, snd_nxt: iss.wrapping_add(1),
-            rcv_nxt: 0, peer_window: 65535, mss: 1280, out: Vec::new(), ooo: BTreeMap::new(),
+            rcv_nxt: 0, peer_window: 65535, peer_shift: 0, mss: DEFAULT_MSS, out: SendBuf::default(), ooo: BTreeMap::new(),
             rto: Duration::from_millis(400), retransmit_at: now + Duration::from_secs(1),
             syn_deadline: now + Duration::from_secs(10), fin_sent: false, fin_received: false, closing: None,
             connect_reply: Some(reply), to_app, from_app: Some(from_app), writers: Vec::new(),
         };
-        // MSS 1280 - 60: comfortably inside the tunnel MTU.
-        self.segment(id, &conn, SYN, iss, &[], &[2, 4, 0x04, 0xC4]);
+        self.segment(id, &conn, SYN, iss, &[], &self.syn_options());
         self.conns.insert(id, conn);
+    }
+
+    /// MSS (our receive size: the tunnel's) and window scale 0, which lets
+    /// the peer scale its own window.
+    fn syn_options(&self) -> [u8; 8] {
+        let [hi, lo] = (self.max_mss as u16).to_be_bytes();
+        [2, 4, hi, lo, 1, 3, 3, 0]
     }
 
     fn packet(&mut self, p: &[u8]) {
@@ -260,8 +314,9 @@ impl Actor {
         if c.state == State::SynSent {
             if flags & SYN != 0 && flags & ACK != 0 && ack == c.iss.wrapping_add(1) {
                 if let Some(mss) = tcp_option(&t[20..off], 2).filter(|v| v.len() == 2) {
-                    c.mss = (u16::from_be_bytes([mss[0], mss[1]]) as usize).clamp(536, 1400);
+                    c.mss = (u16::from_be_bytes([mss[0], mss[1]]) as usize).clamp(536, self.max_mss);
                 }
+                c.peer_shift = tcp_option(&t[20..off], 3).and_then(|v| v.first().copied()).unwrap_or(0).min(14);
                 c.snd_una = ack;
                 c.rcv_nxt = seq.wrapping_add(1);
                 c.peer_window = window;
@@ -282,14 +337,13 @@ impl Actor {
         }
         if flags & ACK != 0 && le(c.snd_una, ack) && le(ack, c.snd_nxt) {
             let acked = ack.wrapping_sub(c.snd_una) as usize;
-            let data_acked = acked.min(c.out.len());
-            c.out.drain(..data_acked);
+            c.out.consume(acked);
             c.snd_una = ack;
             if acked > 0 {
                 c.rto = Duration::from_millis(400);
                 c.retransmit_at = Instant::now() + c.rto;
             }
-            c.peer_window = window;
+            c.peer_window = window << c.peer_shift;
             Self::release_writers(c);
             if c.closing.is_some() && c.out.is_empty() {
                 self.close(dst);
@@ -344,7 +398,7 @@ impl Actor {
                 if now > c.syn_deadline {
                     self.fail(id, "the iPhone did not answer the TCP connection (service port closed?)");
                 } else if now >= c.retransmit_at {
-                    self.segment(id, c, SYN, c.iss, &[], &[2, 4, 0x04, 0xC4]);
+                    self.segment(id, c, SYN, c.iss, &[], &self.syn_options());
                     let c = self.conns.get_mut(&id).unwrap();
                     c.retransmit_at = now + Duration::from_secs(1);
                 }
@@ -353,7 +407,7 @@ impl Actor {
             let in_flight = c.in_flight();
             if in_flight > 0 && now >= c.retransmit_at {
                 let n = in_flight.min(c.mss);
-                self.segment(id, c, ACK | PSH, c.snd_una, &c.out[..n], &[]);
+                self.segment(id, c, ACK | PSH, c.snd_una, c.out.range(0, n), &[]);
                 let c = self.conns.get_mut(&id).unwrap();
                 c.rto = (c.rto * 2).min(Duration::from_secs(4));
                 c.retransmit_at = now + c.rto;
@@ -472,11 +526,13 @@ pub struct Stack {
 
 impl Stack {
     /// `incoming` delivers raw IPv6 packets from the link; packets to send go
-    /// to the returned receiver (the link writer drains it).
-    pub fn start(local: Ipv6Addr, remote: Ipv6Addr) -> (Stack, mpsc::UnboundedReceiver<Vec<u8>>) {
+    /// to the returned receiver (the link writer drains it). `mtu` is the
+    /// tunnel's (CDTunnel handshake).
+    pub fn start(local: Ipv6Addr, remote: Ipv6Addr, mtu: usize) -> (Stack, mpsc::UnboundedReceiver<Vec<u8>>) {
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Cmd>();
         let (link_tx, link_rx) = mpsc::unbounded_channel();
-        let mut actor = Actor { local, remote, conns: HashMap::new(), link_tx, cmd_tx: cmd_tx.clone(), down: None };
+        let max_mss = mtu.clamp(1280, 8192) - 60;
+        let mut actor = Actor { local, remote, max_mss, conns: HashMap::new(), link_tx, cmd_tx: cmd_tx.clone(), down: None };
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(TICK);
             loop {
@@ -487,7 +543,7 @@ impl Stack {
                         Some(Cmd::Write { id, data, done }) => {
                             match actor.conns.get_mut(&id) {
                                 Some(c) if c.state == State::Established => {
-                                    c.out.extend_from_slice(&data);
+                                    c.out.push(&data);
                                     if c.out.len() < SEND_BUFFER {
                                         let _ = done.send(Ok(()));
                                     } else {
@@ -559,6 +615,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn checksum_over_parts_with_an_odd_tail() {
+        let a = [0x12u8, 0x34, 0x56, 0x78];
+        let b = [0x9au8, 0xbc, 0xde];
+        let whole: Vec<u8> = a.iter().chain(b.iter()).copied().collect();
+        assert_eq!(checksum(&[&a, &b]), checksum(&[&whole]));
+        // 1234 + 5678 + 9abc + de00 = 1_e168 -> e169 -> !e169 = 1e96
+        assert_eq!(checksum(&[&whole]), 0x1e96);
+    }
+
+    #[test]
     fn checksum_matches_rfc1071_example() {
         // RFC 1071 §3 example words: 0001 f203 f4f5 f6f7 -> sum ddf2 -> ~ = 220d
         assert_eq!(checksum(&[&[0x00, 0x01, 0xf2, 0x03, 0xf4, 0xf5, 0xf6, 0xf7]]), 0x220d);
@@ -593,6 +659,7 @@ mod interop {
     struct Dev {
         rx: VecDeque<Vec<u8>>,
         tx: Vec<Vec<u8>>,
+        mtu: usize,
     }
     struct Rx(Vec<u8>);
     struct Tx<'a>(&'a mut Vec<Vec<u8>>);
@@ -618,23 +685,34 @@ mod interop {
         fn capabilities(&self) -> DeviceCapabilities {
             let mut c = DeviceCapabilities::default();
             c.medium = Medium::Ip;
-            c.max_transmission_unit = 1500;
+            c.max_transmission_unit = self.mtu;
             c
         }
     }
 
     #[tokio::test]
     async fn echo_through_smoltcp() {
+        echo(1500, 65536, 300_000).await;
+    }
+
+    /// Jumbo segments (the tunnel's MTU) and a peer window above 64 KiB,
+    /// which only works when window scaling is honoured.
+    #[tokio::test]
+    async fn echo_with_big_segments_and_scaled_window() {
+        echo(9000, 1 << 20, 3_000_000).await;
+    }
+
+    async fn echo(mtu: usize, buffer: usize, total: u32) {
         let ours: Ipv6Addr = "fd00::2".parse().unwrap();
         let theirs: Ipv6Addr = "fd00::1".parse().unwrap();
-        let (stack, mut link_rx) = Stack::start(ours, theirs);
+        let (stack, mut link_rx) = Stack::start(ours, theirs, 16000);
         let peer_stack = stack.clone();
         tokio::spawn(async move {
-            let mut dev = Dev { rx: VecDeque::new(), tx: Vec::new() };
+            let mut dev = Dev { rx: VecDeque::new(), tx: Vec::new(), mtu };
             let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, SInstant::now());
             iface.update_ip_addrs(|a| { a.push(IpCidr::new(IpAddress::Ipv6(theirs), 64)).unwrap(); });
             let mut socket = tcp::Socket::new(
-                tcp::SocketBuffer::new(vec![0; 65536]), tcp::SocketBuffer::new(vec![0; 65536]));
+                tcp::SocketBuffer::new(vec![0; buffer]), tcp::SocketBuffer::new(vec![0; buffer]));
             socket.listen(5000).unwrap();
             let mut sockets = SocketSet::new(vec![]);
             let handle = sockets.add(socket);
@@ -658,7 +736,7 @@ mod interop {
         });
 
         let mut conn = stack.connect(5000).await.expect("connect");
-        let data: Vec<u8> = (0..300_000u32).map(|i| (i * 7 % 251) as u8).collect();
+        let data: Vec<u8> = (0..total).map(|i| (i * 7 % 251) as u8).collect();
         let got = {
             let mut sent = 0;
             let mut got = Vec::new();
