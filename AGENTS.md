@@ -20,9 +20,8 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   AltStore, SideStore, LiveContainer+SideStore, LiveContainer, stable + nightly),
   My Apps (installed, refresh, delete, per-app options), Options (Apple ID,
   pairing export, info, theme, reset, install defaults: Increased Memory Limit,
-  remove extensions). JIT: wanted if possible (owner, 2026-11-21); needs a
-  mounted personalized DDI (TSS) + debugserver, as StikDebug does; iOS 26+ JIT
-  works only in apps built for it. Not built yet.
+  remove extensions). JIT (owner, 2026-11-21): built in `src/device/jit.rs`,
+  untested on device.
 - Versions: experimental builds go to `main` as 0.10.0-alpha.N (CI publishes
   `v<version>` and the rolling `nightly` that install.sh downloads). Once stable
   and complete, history is squashed and released as 1.0.0.
@@ -92,8 +91,16 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   BariStore asks which one to reuse. Extensions only take ones under the
   app's identifier. The profile is checked for Increased Memory Limit.
   Installed.ids keeps the identifiers so refreshes keep them.
-- StikDebug (com.stik.*) reads Documents/pairingFile.plist; its JIT needs a
-  mounted personalized DDI and debugserver, which BariStore does not do.
+- StikDebug (com.stik.*) reads Documents/pairingFile.plist.
+- JIT as StikDebug does it: iOS 26.4+ installs the DDI as a cryptex through
+  cryptexd (read-personalization-id, get-nonce with the identity's
+  Cryptex1,NonceDomain, a Cryptex1 ticket from TSS gs.apple.com, install with
+  five XPC file transfers), files from doronz88/DeveloperDiskImage
+  Xcode_iOS_DDI_Cryptex (manifest checked 2026-11-21). Then CoreDevice
+  appservice launches the app stopped, debugserver attaches; apps StikDebug
+  lists for universal.js / legacy.js get brk #0xf00d / #0x69 served (16 KiB
+  pages each touched with M addr,1:69), others detach at once. universal.js's
+  "new breakpoints" command (app-supplied JavaScript) is not supported.
 - SideStore/AltStore refresh with the certificate in their bundle:
   `ALTCertificate.p12` (password = portal machineId) + `ALTCertificateID` =
   serial (SideStore CertificateProvisioningFlow; isideload). LC+SS: in the

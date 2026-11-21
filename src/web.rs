@@ -312,6 +312,11 @@ async fn action(app: &App, r: &Json) -> Json {
             app.spawn(&format!("Deleting {}", s(r, "name")), Some(r.clone()), move |a| async move { a.delete_app(&id).await });
             ok("started")
         }
+        "jit" => {
+            let id = s(r, "bundle_id");
+            app.spawn(&format!("JIT for {}", s(r, "name")), Some(r.clone()), move |a| async move { a.enable_jit(&id).await });
+            ok("started")
+        }
         "app_ids" => match app.load_app_ids().await { Ok(()) => ok(""), Err(e) => fail(e) },
         "update" => { app.spawn("Updating BariStore", Some(r.clone()), |a| async move { a.update().await }); ok("started") }
         "device_apps" => match app.load_device_apps().await { Ok(()) => ok(""), Err(e) => fail(e) },

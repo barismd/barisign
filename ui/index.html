@@ -456,6 +456,7 @@ function appMenuSheet(id) {
       </div>
       <div class="card">
         <div class="row"><button class="link" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="closeSheet();act('refresh',{bundle_id:this.dataset.id,name:this.dataset.name})">Refresh</button></div>
+        <div class="row"><button class="link" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="closeSheet();act('jit',{bundle_id:this.dataset.id,name:this.dataset.name})">Open with JIT</button></div>
         <div class="row"><button class="link" data-id="${esc(id)}" onclick="closeSheet();act('place_pairing',{bundle_id:this.dataset.id})">Give it the pairing file again</button></div>
         <div class="row"><button class="link bad" data-id="${esc(id)}" data-name="${esc(i.name)}" onclick="deleteApp(this.dataset.id, this.dataset.name)">Delete app</button></div>
       </div>`,

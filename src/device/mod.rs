@@ -4,6 +4,7 @@
 pub mod rppairing;
 pub mod services;
 pub mod session;
+pub mod jit;
 pub mod tcp;
 pub mod tls_psk;
 pub mod xpc;

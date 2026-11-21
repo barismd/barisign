@@ -8,6 +8,11 @@
 //! root 0x201, then the "Handshake" dictionary with one fixed host UUID
 //! (iOS 27.2+ tears down a tunnel's services when a second connection
 //! presents a different one). Message id is always 1.
+//!
+//! Large payloads (cryptexd's disk image) go as XPC file transfers: the
+//! message names them (type 0x1A000, transfer id + size), then each is pushed
+//! on its own stream (5, 7, …) after a preamble (flags 0x100001), honouring
+//! the peer's HTTP/2 flow-control windows (as idevice's xpc/http2 do).
 
 use plist::{Dictionary, Value};
 use super::tcp::TcpConn;
@@ -22,6 +27,8 @@ const GOAWAY: u8 = 7;
 const WINDOW_UPDATE: u8 = 8;
 const ACK: u8 = 1;
 const END_HEADERS: u8 = 4;
+const END_STREAM: u8 = 1;
+const DEFAULT_WINDOW: i64 = 65_535;
 const ROOT: u32 = 1;
 const REPLY: u32 = 3;
 const MAX_FRAME: usize = 16384;
@@ -31,6 +38,8 @@ const PAYLOAD_MAGIC: u32 = 0x4213_3742;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Xpc {
+    /// A payload pushed on its own stream after the message (cryptexd).
+    FileTransfer { id: u64, size: u64 },
     Null,
     Bool(bool),
     Int(i64),
@@ -51,6 +60,24 @@ fn pad4(out: &mut Vec<u8>) {
 }
 
 impl Xpc {
+    /// A plist value as XPC (non-negative integers become uint64, which is
+    /// what cryptexd and CoreDevice expect).
+    pub fn from_plist(v: &Value) -> Xpc {
+        match v {
+            Value::Boolean(b) => Xpc::Bool(*b),
+            Value::Integer(i) => match i.as_unsigned() {
+                Some(u) => Xpc::Uint(u),
+                None => Xpc::Int(i.as_signed().unwrap_or(0)),
+            },
+            Value::Real(r) => Xpc::Double(*r),
+            Value::String(s) => Xpc::String(s.clone()),
+            Value::Data(d) => Xpc::Data(d.clone()),
+            Value::Array(items) => Xpc::Array(items.iter().map(Xpc::from_plist).collect()),
+            Value::Dictionary(d) => Xpc::Dict(d.iter().map(|(k, v)| (k.clone(), Xpc::from_plist(v))).collect()),
+            _ => Xpc::Null,
+        }
+    }
+
     fn encode_into(&self, out: &mut Vec<u8>) {
         let tag = |out: &mut Vec<u8>, t: u32| out.extend_from_slice(&t.to_le_bytes());
         match self {
@@ -74,6 +101,11 @@ impl Xpc {
                 pad4(out);
             }
             Xpc::Uuid(u) => { tag(out, 0xA000); out.extend_from_slice(u); }
+            Xpc::FileTransfer { id, size } => {
+                tag(out, 0x1A000);
+                out.extend_from_slice(&id.to_le_bytes());
+                Xpc::Dict(vec![("s".into(), Xpc::Uint(*size))]).encode_into(out);
+            }
             Xpc::Array(items) => {
                 tag(out, 0xE000);
                 let mut body = (items.len() as u32).to_le_bytes().to_vec();
@@ -123,6 +155,7 @@ impl Xpc {
             Xpc::Data(d) => Value::Data(d.clone()),
             Xpc::String(s) => Value::String(s.clone()),
             Xpc::Uuid(u) => Value::String(uuid::Uuid::from_bytes(*u).to_string()),
+            Xpc::FileTransfer { size, .. } => Value::Integer((*size).into()),
             Xpc::Array(items) => Value::Array(items.iter().map(Xpc::to_plist).collect()),
             Xpc::Dict(entries) => {
                 let mut d = Dictionary::new();
@@ -206,11 +239,15 @@ fn decode(data: &[u8], at: &mut usize, depth: u32) -> Result<Xpc, String> {
 }
 
 fn wrapper(flags: u32, body: Option<&Xpc>) -> Vec<u8> {
+    wrapper_id(flags, body, 1)
+}
+
+fn wrapper_id(flags: u32, body: Option<&Xpc>, id: u64) -> Vec<u8> {
     let payload = body.map(Xpc::encode_payload).unwrap_or_default();
     let mut out = WRAPPER_MAGIC.to_le_bytes().to_vec();
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    out.extend_from_slice(&1u64.to_le_bytes());
+    out.extend_from_slice(&id.to_le_bytes());
     out.extend_from_slice(&payload);
     out
 }
@@ -219,6 +256,12 @@ pub struct RemoteXpc {
     conn: TcpConn,
     root: Vec<u8>,
     reply: Vec<u8>,
+    /// What the peer lets us send: on the connection, per stream, and the
+    /// window a new stream starts with.
+    conn_window: i64,
+    stream_windows: std::collections::HashMap<u32, i64>,
+    initial_window: i64,
+    next_file_stream: u32,
 }
 
 impl RemoteXpc {
@@ -232,14 +275,47 @@ impl RemoteXpc {
     }
 
     async fn data(&mut self, stream: u32, payload: &[u8]) -> std::io::Result<()> {
-        for chunk in payload.chunks(MAX_FRAME) {
-            self.frame(DATA, 0, stream, chunk).await?;
+        self.data_flags(stream, payload, false).await.map_err(std::io::Error::other)
+    }
+
+    /// DATA frames within the peer's windows (reading frames until it grants
+    /// more), the last one with END_STREAM when `end`.
+    async fn data_flags(&mut self, stream: u32, payload: &[u8], end: bool) -> Result<(), String> {
+        let io = |e: std::io::Error| format!("RemoteXPC: {e}");
+        if payload.is_empty() {
+            return self.frame(DATA, if end { END_STREAM } else { 0 }, stream, &[]).await.map_err(io);
+        }
+        let count = payload.chunks(MAX_FRAME).count();
+        for (i, chunk) in payload.chunks(MAX_FRAME).enumerate() {
+            let need = chunk.len() as i64;
+            loop {
+                let stream_window = *self.stream_windows.entry(stream).or_insert(self.initial_window);
+                if self.conn_window >= need && stream_window >= need {
+                    break;
+                }
+                self.read_frame().await?;
+            }
+            self.conn_window -= need;
+            *self.stream_windows.get_mut(&stream).unwrap() -= need;
+            let flags = if end && i + 1 == count { END_STREAM } else { 0 };
+            self.frame(DATA, flags, stream, chunk).await.map_err(io)?;
         }
         Ok(())
     }
 
+    /// Pushes one file transfer the last message announced.
+    pub async fn send_file(&mut self, transfer_id: u64, data: &[u8]) -> Result<(), String> {
+        let stream = self.next_file_stream;
+        self.next_file_stream += 2;
+        self.frame(HEADERS, END_HEADERS, stream, &[]).await.map_err(|e| format!("RemoteXPC: {e}"))?;
+        self.data_flags(stream, &wrapper_id(0x0010_0001, None, transfer_id), false).await?;
+        self.data_flags(stream, data, false).await?;
+        self.data_flags(stream, &[], true).await
+    }
+
     pub async fn connect(conn: TcpConn) -> Result<RemoteXpc, String> {
-        let mut x = RemoteXpc { conn, root: Vec::new(), reply: Vec::new() };
+        let mut x = RemoteXpc { conn, root: Vec::new(), reply: Vec::new(), conn_window: DEFAULT_WINDOW,
+                                stream_windows: Default::default(), initial_window: DEFAULT_WINDOW, next_file_stream: 5 };
         let io = |e: std::io::Error| format!("RemoteXPC: {e}");
         x.conn.write_all(PREFACE).await.map_err(io)?;
         let mut settings = Vec::new();
@@ -313,7 +389,27 @@ impl RemoteXpc {
         let stream = u32::from_be_bytes(header[5..9].try_into().unwrap()) & 0x7FFF_FFFF;
         let payload = if len > 0 { self.conn.read_exact(len).await.map_err(io)? } else { Vec::new() };
         match kind {
-            SETTINGS if flags & ACK == 0 => self.frame(SETTINGS, ACK, 0, &[]).await.map_err(io)?,
+            SETTINGS if flags & ACK == 0 => {
+                for setting in payload.chunks_exact(6) {
+                    if u16::from_be_bytes([setting[0], setting[1]]) == 4 {
+                        let new = u32::from_be_bytes(setting[2..6].try_into().unwrap()) as i64;
+                        let delta = new - self.initial_window;
+                        self.initial_window = new;
+                        for w in self.stream_windows.values_mut() {
+                            *w += delta;
+                        }
+                    }
+                }
+                self.frame(SETTINGS, ACK, 0, &[]).await.map_err(io)?
+            }
+            WINDOW_UPDATE if payload.len() == 4 => {
+                let inc = (u32::from_be_bytes(payload[..4].try_into().unwrap()) & 0x7FFF_FFFF) as i64;
+                if stream == 0 {
+                    self.conn_window += inc;
+                } else {
+                    *self.stream_windows.entry(stream).or_insert(self.initial_window) += inc;
+                }
+            }
             PING if flags & ACK == 0 => self.frame(PING, ACK, 0, &payload).await.map_err(io)?,
             DATA => {
                 if !payload.is_empty() {
@@ -327,6 +423,8 @@ impl RemoteXpc {
                     _ => {}
                 }
             }
+            // A finished file-transfer stream is reset by the device: normal.
+            RST_STREAM if stream >= 5 => {}
             RST_STREAM => return Err(format!("the iPhone reset XPC stream {stream}")),
             GOAWAY => return Err(format!(
                 "the iPhone closed RemoteXPC: {}", String::from_utf8_lossy(payload.get(8..).unwrap_or(&[])))),
@@ -381,5 +479,27 @@ mod tests {
             ("empty".into(), Xpc::Dict(vec![])),
         ]);
         assert_eq!(Xpc::decode_payload(&v.encode_payload()).unwrap(), v);
+    }
+
+    #[test]
+    fn file_transfer_is_encoded_as_idevice_does() {
+        // type 0x1A000, the transfer id, then {"s": size} (idevice xpc/format.rs).
+        let mut out = Vec::new();
+        Xpc::FileTransfer { id: 2, size: 0x1234 }.encode_into(&mut out);
+        assert_eq!(&out[..4], &0x1A000u32.to_le_bytes());
+        assert_eq!(&out[4..12], &2u64.to_le_bytes());
+        let mut inner = Vec::new();
+        Xpc::Dict(vec![("s".into(), Xpc::Uint(0x1234))]).encode_into(&mut inner);
+        assert_eq!(&out[12..], &inner[..]);
+    }
+
+    #[test]
+    fn plist_values_become_xpc() {
+        let mut d = Dictionary::new();
+        d.insert("n".into(), Value::Integer(3u64.into()));
+        d.insert("neg".into(), Value::Integer((-1i64).into()));
+        d.insert("b".into(), Value::Boolean(true));
+        assert_eq!(Xpc::from_plist(&Value::Dictionary(d)),
+                   Xpc::Dict(vec![("n".into(), Xpc::Uint(3)), ("neg".into(), Xpc::Int(-1)), ("b".into(), Xpc::Bool(true))]));
     }
 }

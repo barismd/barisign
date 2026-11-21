@@ -663,6 +663,28 @@ impl App {
         Ok(())
     }
 
+    /// JIT for an app BariStore installed: the developer disk image (once),
+    /// then the app started under the debugger.
+    pub async fn enable_jit(&self, bundle_id: &str) -> Result<String, String> {
+        let name = install::installed().into_iter().find(|i| i.bundle_id == bundle_id).map(|i| i.name)
+            .ok_or("BariStore did not install this app.")?;
+        let s = self.device().await?;
+        if services::developer_mode(&s).await? == Some(false) {
+            return Err("Developer Mode is off. Turn it on in Settings › Privacy & Security, then try again.".into());
+        }
+        let app = self.clone();
+        let progress = move |text: String| app.step(text);
+        self.step("Checking the developer disk image");
+        let s = if crate::device::jit::ensure_ddi(&s, &progress).await? {
+            // The debugger service appears with the image: ask RSD again.
+            *self.session.lock().await = None;
+            self.device().await?
+        } else {
+            s
+        };
+        crate::device::jit::enable(&s, bundle_id, &name, &progress).await
+    }
+
     pub async fn delete_app(&self, bundle_id: &str) -> Result<String, String> {
         let s = self.device().await?;
         self.step("Deleting");

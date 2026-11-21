@@ -68,9 +68,12 @@ The store walks you through it:
   sheet also lets you reuse the App ID of an app that is no longer on the
   iPhone (and its extensions' ones).
 
-JIT: install **StikDebug** from Featured (StikDebug source). BariStore gives it
-the pairing file, and StikDebug mounts the developer disk image and enables JIT
-for the apps that support it.
+JIT: My Apps › an app › **Open with JIT**. The first time, BariStore installs
+Apple's developer disk image (downloaded once, signed for this iPhone by
+Apple), then starts the app under the debugger, the way StikDebug does. Apps
+built for iOS 26's JIT (MeloNX, Amethyst, UTM, …) get their JIT pages served;
+others are detached at once. StikDebug itself can also be installed from
+Featured; BariStore gives it the pairing file.
 
 Opening the store needs no network. Installing and refreshing check LocalDevVPN,
 the pairing and the Apple ID first, say what is missing, and let you retry.

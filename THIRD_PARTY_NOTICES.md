@@ -37,14 +37,15 @@ publishes. Used to trust gsa.apple.com and to complete code-signing chains.
 
 | Project | Licence | Used for |
 |---|---|---|
-| [jkcoxson/idevice](https://github.com/jkcoxson/idevice) | MIT | RemotePairing, TLS-PSK tunnel, RemoteXPC, services; its TCP stack `jktcp` for MSS/window choices |
+| [jkcoxson/idevice](https://github.com/jkcoxson/idevice) | MIT | RemotePairing, TLS-PSK tunnel, RemoteXPC (file transfers, flow control), services, cryptexd, TSS, CoreDevice app service, debugserver; its TCP stack `jktcp` for MSS/window choices |
 | [nab138/isideload](https://github.com/nab138/isideload) | MIT | anisette v3, GrandSlam, developer services, app groups, Increased Memory Limit, ALTCertificate.p12 placement |
 | [nab138/iloader](https://github.com/nab138/iloader) | MIT | the advertised client info fallback (2.4.2) |
 | [SideStore/SideStore](https://github.com/SideStore/SideStore) | AGPL-3.0 | behaviour only: how it finds its signing certificate (ALTCertificateID, ALTCertificate.p12) |
 | [FrizzleM/siboot](https://github.com/FrizzleM/siboot) | MIT (stated in Cargo.toml; no LICENSE file) | how Open Minis keeps a pairing alive (minis-bonjour, apple-player) |
 | [OpenMinis/OpenMinis](https://github.com/OpenMinis/OpenMinis) | GPL-3.0 | documented interface of the `minis-*` / `apple-*` commands; behaviour of the player sheet and of `apple-speak`'s audio session |
 | FrizzleM/SideInstaller | non-commercial | documented behaviour only: where SideStore / LiveContainer / AltStore read a pairing file; which client info Apple accepts (Oct–Nov 2026) |
-| StikDebug/StikDebug | AGPL-3.0 | documented behaviour only: pairing-file destinations (Documents/pairingFile.plist); JIT needs a mounted DDI |
+| StikDebug/StikDebug | AGPL-3.0 | behaviour only: pairing-file destination, which DDI and where from, the JIT flow and what universal.js / legacy.js do (reimplemented, not copied) |
+| [doronz88/DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) | Apple's images | downloaded at use time, not redistributed |
 
 The apps BariStore offers (AltStore, SideStore, LiveContainer and every app in a
 user's AltSources) are downloaded from their publishers at install time; none
