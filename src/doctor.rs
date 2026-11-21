@@ -1,4 +1,5 @@
-//! `baristore doctor`: one block of plain text to paste when something fails.
+//! Options › Log: one block of plain text to paste when something fails, with
+//! the recent log; "Run checks" adds network, tunnel and sign-in checks.
 //! Never contains the password, tokens, keys or the pairing record; the email
 //! and UDID are shortened.
 
@@ -21,9 +22,9 @@ async fn reach(url: &str) -> String {
     }
 }
 
-pub async fn report() -> String {
+pub async fn report(checks: bool) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "BariStore {} doctor", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(out, "BariStore {} {}", env!("CARGO_PKG_VERSION"), if checks { "checks" } else { "log" });
     let uname = std::process::Command::new("uname").arg("-a").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
     let _ = writeln!(out, "system      {uname}");
     let _ = writeln!(out, "alpine      {}", std::fs::read_to_string("/etc/alpine-release").unwrap_or_default().trim());
@@ -36,14 +37,16 @@ pub async fn report() -> String {
         let _ = writeln!(out, "/var/minis  {}", names.join(" "));
     }
     let _ = writeln!(out, "LocalDevVPN {}", if session::vpn_up().await { "answers" } else { "NO ANSWER" });
-    let _ = writeln!(out, "pairing svc {}", match session::endpoint().await {
-        Ok((host, port)) => format!("{host}:{port}"),
-        Err(e) => e.to_string(),
-    });
+    if checks {
+        let _ = writeln!(out, "pairing svc {}", match session::endpoint().await {
+            Ok((host, port)) => format!("{host}:{port}"),
+            Err(e) => e.to_string(),
+        });
+    }
     match flow::load_record() {
         Some(r) => {
             let _ = writeln!(out, "pairing     yes, {} ({}), udid {}", r.peer.name, r.peer.model, short(&r.peer.udid, 8));
-            if session::vpn_up().await {
+            if checks && session::vpn_up().await {
                 match tokio::time::timeout(Duration::from_secs(40), session::Session::open(&r)).await {
                     Ok(Ok(s)) => {
                         let dm = crate::device::services::developer_mode(&s).await;
@@ -63,16 +66,18 @@ pub async fn report() -> String {
         None => { let _ = writeln!(out, "Apple ID    not signed in"); }
     }
     let _ = writeln!(out, "team        {}", std::fs::read_to_string(state::path("team")).unwrap_or_default().lines().next().unwrap_or("-"));
-    for server in apple::anisette::SERVERS {
-        let _ = writeln!(out, "anisette    {server:<32} {}", reach(&format!("{server}/v3/client_info")).await);
+    if checks {
+        for server in apple::anisette::SERVERS {
+            let _ = writeln!(out, "anisette    {server:<32} {}", reach(&format!("{server}/v3/client_info")).await);
+        }
+        // A made-up account through the first server: tells which client
+        // Apple takes from this network today.
+        for claim in apple::anisette::Claim::ALL {
+            let verdict = apple::gsa::probe(apple::anisette::SERVERS[0], claim).await;
+            let _ = writeln!(out, "sign-in     as {:<12} {verdict}", claim.name());
+        }
+        let _ = writeln!(out, "github      {}", reach("https://api.github.com/repos/SideStore/SideStore/releases?per_page=1").await);
     }
-    // A made-up account through the first server that answers: tells which
-    // client Apple takes from this network today.
-    for claim in apple::anisette::Claim::ALL {
-        let verdict = apple::gsa::probe(apple::anisette::SERVERS[0], claim).await;
-        let _ = writeln!(out, "sign-in     as {:<12} {verdict}", claim.name());
-    }
-    let _ = writeln!(out, "github      {}", reach("https://api.github.com/repos/SideStore/SideStore/releases?per_page=1").await);
     let apps = install::installed();
     let _ = writeln!(out, "installed   {} app(s)", apps.len());
     for a in apps {
@@ -82,7 +87,7 @@ pub async fn report() -> String {
     let _ = writeln!(out, "--- last log lines ---");
     let log = std::fs::read_to_string(state::path("baristore.log")).unwrap_or_default();
     let lines: Vec<&str> = log.lines().collect();
-    for line in &lines[lines.len().saturating_sub(60)..] {
+    for line in &lines[lines.len().saturating_sub(200)..] {
         let _ = writeln!(out, "{line}");
     }
     out

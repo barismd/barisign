@@ -27,6 +27,12 @@ impl Entry {
         Entry { data, mode, symlink, raw, digests: std::cell::OnceCell::new() }
     }
 
+    /// An unchanged file whose bytes are not kept: only its digests (for
+    /// CodeResources) and its place in the original archive.
+    fn hashed(mode: u32, raw: usize, digests: (Vec<u8>, Vec<u8>)) -> Entry {
+        Entry { data: Vec::new(), mode, symlink: false, raw: Some(raw), digests: std::cell::OnceCell::from(digests) }
+    }
+
     fn digests(&self) -> &(Vec<u8>, Vec<u8>) {
         self.digests.get_or_init(|| (Sha1::digest(&self.data).to_vec(), Sha256::digest(&self.data).to_vec()))
     }
@@ -92,28 +98,89 @@ fn is_bundle_dir(name: &str) -> Option<Kind> {
     }
 }
 
+/// The app an IPA file holds, read without unpacking it.
+pub struct Peek {
+    pub name: String,
+    pub id: String,
+    pub version: String,
+}
+
+pub fn peek(path: &std::path::Path) -> Result<Peek, String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|_| "This file is not an IPA.".to_string())?;
+    let name = (0..zip.len()).filter_map(|i| zip.name_for_index(i).map(str::to_string))
+        .find(|n| n.starts_with("Payload/") && n.ends_with(".app/Info.plist") && n.matches('/').count() == 2)
+        .ok_or("This IPA has no app in Payload/.")?;
+    let mut data = Vec::new();
+    zip.by_name(&name).map_err(|e| e.to_string())?.read_to_end(&mut data).map_err(|e| e.to_string())?;
+    let info = plist::from_bytes::<Value>(&data).ok().and_then(Value::into_dictionary)
+        .ok_or("The app's Info.plist cannot be read.")?;
+    let text = |k: &str| info.get(k).and_then(Value::as_string).unwrap_or("").to_string();
+    let id = text("CFBundleIdentifier");
+    if id.is_empty() {
+        return Err("The app has no bundle identifier.".into());
+    }
+    let name = [text("CFBundleDisplayName"), text("CFBundleName"), text("CFBundleExecutable")]
+        .into_iter().find(|s| !s.is_empty()).unwrap_or_default();
+    Ok(Peek { name, id, version: text("CFBundleShortVersionString") })
+}
+
 impl Ipa {
-    pub fn read(bytes: &[u8]) -> Result<Ipa, String> {
-        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("not an IPA (zip): {e}"))?;
+    /// Reads an IPA. Only what signing changes or reads is kept in memory
+    /// (Mach-O files, plists, profiles, symlinks); every other file is hashed
+    /// as it is read and later copied from `bytes` as it was, so a big app
+    /// does not need its whole unpacked size in memory.
+    pub fn read(bytes: Vec<u8>) -> Result<Ipa, String> {
         let mut files = BTreeMap::new();
         let mut order = Vec::new();
-        for i in 0..zip.len() {
-            let mut f = zip.by_index(i).map_err(|e| e.to_string())?;
-            if f.is_dir() {
-                continue;
+        {
+            let mut zip = zip::ZipArchive::new(Cursor::new(&bytes[..])).map_err(|e| format!("not an IPA (zip): {e}"))?;
+            for i in 0..zip.len() {
+                let mut f = zip.by_index(i).map_err(|e| e.to_string())?;
+                if f.is_dir() {
+                    continue;
+                }
+                let name = f.name().to_string();
+                if name.split('/').any(|p| p == "..") || name.starts_with('/') {
+                    return Err(format!("unsafe path in IPA: {name}"));
+                }
+                let mode = f.unix_mode().unwrap_or(0o644);
+                let symlink = mode & 0o170000 == 0o120000;
+                let mut head = [0u8; 4];
+                let mut got = 0;
+                while got < 4 {
+                    let n = f.read(&mut head[got..]).map_err(|e| e.to_string())?;
+                    if n == 0 {
+                        break;
+                    }
+                    got += n;
+                }
+                let keep = symlink || codesign::is_macho(&head[..got]) || name.ends_with(".plist")
+                    || name.ends_with(".mobileprovision");
+                order.push(name.clone());
+                if keep {
+                    let mut data = Vec::with_capacity(f.size() as usize);
+                    data.extend_from_slice(&head[..got]);
+                    f.read_to_end(&mut data).map_err(|e| e.to_string())?;
+                    files.insert(name, Entry::new(data, mode, symlink, Some(i)));
+                } else {
+                    let (mut sha1, mut sha256) = (Sha1::new(), Sha256::new());
+                    sha1.update(&head[..got]);
+                    sha256.update(&head[..got]);
+                    let mut buf = vec![0u8; 64 * 1024];
+                    loop {
+                        let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+                        if n == 0 {
+                            break;
+                        }
+                        sha1.update(&buf[..n]);
+                        sha256.update(&buf[..n]);
+                    }
+                    files.insert(name, Entry::hashed(mode, i, (sha1.finalize().to_vec(), sha256.finalize().to_vec())));
+                }
             }
-            let name = f.name().to_string();
-            if name.split('/').any(|p| p == "..") || name.starts_with('/') {
-                return Err(format!("unsafe path in IPA: {name}"));
-            }
-            let mode = f.unix_mode().unwrap_or(0o644);
-            let symlink = mode & 0o170000 == 0o120000;
-            let mut data = Vec::with_capacity(f.size() as usize);
-            f.read_to_end(&mut data).map_err(|e| e.to_string())?;
-            order.push(name.clone());
-            files.insert(name, Entry::new(data, mode, symlink, Some(i)));
         }
-        Ok(Ipa { files, order, source: bytes.to_vec() })
+        Ok(Ipa { files, order, source: bytes })
     }
 
     pub fn bundles(&self) -> Result<Vec<Bundle>, String> {

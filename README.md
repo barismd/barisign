@@ -28,29 +28,31 @@ wget -qO- https://raw.githubusercontent.com/barismd/BariStore/main/install.sh | 
 ```
 
 After that, `baristore` opens the store over the terminal; press Return (or
-Ctrl-C) in the terminal, or Options › Quit, to close it. `baristore update` (or
-Options › Update BariStore) installs the newest build; `baristore doctor` (or
-Options › Copy diagnostics) gives a report to paste when something goes wrong
-(no password, token or key in it).
+Ctrl-C) in the terminal, or Options › Quit, to close it. If iOS stops it in the
+background, it starts again by itself and the page reconnects. `baristore
+update` (or Options › Update BariStore) installs the newest build; Options ›
+Log gives a report to paste when something goes wrong (no password, token or
+key in it).
 
 ## First run
 
 The store walks you through it:
 
-1. **LocalDevVPN and Developer Mode**: BariStore checks the loopback VPN answers.
+1. **Wi-Fi and LocalDevVPN**: BariStore checks that the loopback VPN answers
+   (it does not work on mobile data) and moves on by itself.
 2. **Pairing**: open Settings › Privacy & Security › Developer Mode (it
    appears there once pairing starts, even on an iPhone that never had it),
    tap **Pair with BariStore** and enter your passcode: the 6-digit code
    arrives as a notification, and you type it in Settings. BariStore keeps
    running meanwhile with inaudible speech; nothing covers the screen.
-3. **Developer Mode** is read over the new connection; if it is off, BariStore
-   can show the switch or turn it on (the iPhone restarts).
-4. **Apple ID** sign-in, two-factor code included. BariStore never signs you out.
+3. **Apple ID** sign-in, two-factor code included. BariStore never signs you out.
+
+"Start again" on the setup page starts over from the first step.
 
 ## Using it
 
-- **Featured**: search, Sources (add, remove, and add back the suggested
-  ones), and BariStore's picks: AltStore Classic,
+- **Featured**: search, Add IPA (any IPA from Files), Sources (add, remove,
+  and add back the suggested ones), and BariStore's picks: AltStore Classic,
   SideStore, LiveContainer + SideStore and LiveContainer, stable and nightly,
   resolved live from each project's GitHub releases. When an app is offered by
   several sources you choose which one to install from.
@@ -61,8 +63,10 @@ The store walks you through it:
   (`ALTCertificate.p12`), so they can refresh themselves without asking Apple
   for a new one.
 - **Options**: Apple ID, pairing-file export, install defaults (Increased
-  Memory Limit, remove extensions, reuse the App IDs of deleted apps, also for
-  extensions), appearance, update, diagnostics, reset, quit.
+  Memory Limit, remove extensions), appearance, update, log, clear cache,
+  reset, quit. Each install
+  sheet also lets you reuse the App ID of an app that is no longer on the
+  iPhone (and its extensions' ones).
 
 JIT: install **StikDebug** from Featured (StikDebug source). BariStore gives it
 the pairing file, and StikDebug mounts the developer disk image and enables JIT
