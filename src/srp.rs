@@ -4,8 +4,11 @@
 //!
 //! Conventions (as Apple's CoreUtils and the RustCrypto `srp` crate use them):
 //! k = H(N | PAD(g)), u = H(PAD(A) | PAD(B)), K = H(S),
-//! M1 = H(H(N) xor H(g) | H(I) | s | A | B | K), M2 = H(A | M1 | K),
+//! M1 = H(H(N) xor H(g') | H(I) | s | A | B | K), M2 = H(A | M1 | K),
 //! numbers hashed as minimal big-endian bytes unless padded (PAD = |N| bytes).
+//! g' is g for pair-setup (device-proven) and PAD(g) for GrandSlam (srp
+//! 0.7.0-rc.3 `compute_m1_rfc5054(g_no_pad = false)`, which isideload signs in
+//! with; H(g) there makes Apple answer -22406 "enter the correct password").
 
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256, Sha512};
@@ -41,6 +44,8 @@ pub struct Group {
     pub n: BigUint,
     pub g: BigUint,
     pub hash: Hash,
+    /// M1 hashes PAD(g) instead of g.
+    pad_g_in_m1: bool,
 }
 
 const N_2048: &str = "AC6BDB41324A9A9BF166DE5E1389582FAF72B6651987EE07FC3192943DB56050\
@@ -67,11 +72,13 @@ D87602733EC86A64521F2B18177B200CBBE117577A615D6C770988C0BAD946E2\
 
 impl Group {
     pub fn rfc5054_2048_sha256() -> Self {
-        Group { n: BigUint::parse_bytes(N_2048.as_bytes(), 16).unwrap(), g: 2u32.into(), hash: Hash::Sha256 }
+        Group { n: BigUint::parse_bytes(N_2048.as_bytes(), 16).unwrap(), g: 2u32.into(), hash: Hash::Sha256,
+                pad_g_in_m1: true }
     }
 
     pub fn rfc5054_3072_sha512() -> Self {
-        Group { n: BigUint::parse_bytes(N_3072.as_bytes(), 16).unwrap(), g: 5u32.into(), hash: Hash::Sha512 }
+        Group { n: BigUint::parse_bytes(N_3072.as_bytes(), 16).unwrap(), g: 5u32.into(), hash: Hash::Sha512,
+                pad_g_in_m1: false }
     }
 
     pub fn len(&self) -> usize {
@@ -97,12 +104,14 @@ impl Group {
         self.hn(&[&self.pad(a), &self.pad(b)])
     }
 
-    fn m1(&self, user: &[u8], salt: &[u8], a: &BigUint, b: &BigUint, key: &[u8]) -> Vec<u8> {
+    /// `b` as the peer sent it (srp 0.7 hashes B's bytes as received).
+    fn m1(&self, user: &[u8], salt: &[u8], a: &BigUint, b: &[u8], key: &[u8]) -> Vec<u8> {
         let hn = self.hash.digest(&[&self.n.to_bytes_be()]);
-        let hg = self.hash.digest(&[&self.g.to_bytes_be()]);
+        let g = if self.pad_g_in_m1 { self.pad(&self.g) } else { self.g.to_bytes_be() };
+        let hg = self.hash.digest(&[&g]);
         let xor: Vec<u8> = hn.iter().zip(hg.iter()).map(|(x, y)| x ^ y).collect();
         let hi = self.hash.digest(&[user]);
-        self.hash.digest(&[&xor, &hi, salt, &a.to_bytes_be(), &b.to_bytes_be(), key])
+        self.hash.digest(&[&xor, &hi, salt, &a.to_bytes_be(), b, key])
     }
 
     fn m2(&self, a: &BigUint, m1: &[u8], key: &[u8]) -> Vec<u8> {
@@ -168,7 +177,7 @@ impl<'g> Server<'g> {
         let u = g.u(&a, &self.big_b);
         let s = (&a * self.v.modpow(&u, &g.n)).modpow(&self.b, &g.n);
         let key = g.hash.digest(&[&s.to_bytes_be()]);
-        let client_proof = g.m1(&self.user, &self.salt, &a, &self.big_b, &key);
+        let client_proof = g.m1(&self.user, &self.salt, &a, &self.big_b.to_bytes_be(), &key);
         let server_proof = g.m2(&a, &client_proof, &key);
         Ok(ServerSession { key, client_proof, server_proof })
     }
@@ -181,7 +190,9 @@ pub struct Client<'g> {
 }
 
 pub struct ClientSession {
-    pub key: Vec<u8>,
+    /// The premaster secret S (minimal bytes): GrandSlam derives the key of
+    /// its encrypted session data from S itself (isideload `usr.key()`).
+    pub premaster: Vec<u8>,
     pub proof: Vec<u8>,
     expected_server_proof: Vec<u8>,
 }
@@ -204,6 +215,12 @@ impl<'g> Client<'g> {
         }
     }
 
+    #[cfg(test)]
+    fn with_secret(group: &'g Group, a: BigUint) -> Self {
+        let big_a = group.g.modpow(&a, &group.n);
+        Client { group, a, big_a }
+    }
+
     pub fn public(&self) -> Vec<u8> {
         self.big_a.to_bytes_be()
     }
@@ -221,10 +238,11 @@ impl<'g> Client<'g> {
         let kv = (g.k() * g.g.modpow(x, &g.n)) % &g.n;
         let base = ((&big_b + &g.n) - kv) % &g.n;
         let s = base.modpow(&(&self.a + &u * x), &g.n);
-        let key = g.hash.digest(&[&s.to_bytes_be()]);
-        let proof = g.m1(user, salt, &self.big_a, &big_b, &key);
+        let premaster = s.to_bytes_be();
+        let key = g.hash.digest(&[&premaster]);
+        let proof = g.m1(user, salt, &self.big_a, server_public, &key);
         let expected_server_proof = g.m2(&self.big_a, &proof, &key);
-        Ok(ClientSession { key, proof, expected_server_proof })
+        Ok(ClientSession { premaster, proof, expected_server_proof })
     }
 }
 
@@ -244,7 +262,7 @@ mod tests {
         let s = server.process(&client.public()).unwrap();
         assert!(same(&c.proof, &s.client_proof));
         assert!(c.verify_server(&s.server_proof));
-        assert_eq!(c.key, s.key);
+        assert_eq!(Sha512::digest(&c.premaster).to_vec(), s.key);
     }
 
     #[test]
@@ -300,20 +318,25 @@ mod interop {
     }
 
     #[test]
-    fn idevice_srp_gsa_client_accepts_our_server() {
-        use idevice_srp::groups::G_2048;
+    fn grandslam_client_matches_the_python_sign_in() {
+        // Vector from the earlier Python sign-in (device-proven, a port of
+        // what isideload gets from srp 0.7.0-rc.3): a = 07…07, b = 05…05,
+        // salt 00..0f, password key 42…42.
         let group = Group::rfc5054_2048_sha256();
-        let salt = [8u8; 16];
-        let x = x_without_user(&group, &salt, b"s2k-derived");
-        let server = Server::new(&group, b"someone@example.com", &salt, &x);
-        let client = SrpClient::<sha2::Sha256>::new(&G_2048);
-        let a = [3u8; 32];
-        let a_pub = client.compute_public_ephemeral(&a);
-        let verifier = client
-            .process_reply(&a, b"someone@example.com", b"s2k-derived", &salt, &server.public(), true)
-            .unwrap();
-        let session = server.process(&a_pub).unwrap();
-        assert_eq!(verifier.proof(), session.client_proof.as_slice());
-        assert!(verifier.verify_server(&session.server_proof).is_ok());
+        let client = Client::with_secret(&group, BigUint::from_bytes_be(&[7u8; 32]));
+        let b_pub = hex::decode(concat!(
+            "5ed0b35d53a999d45bc4972fbcc70eed825fe30c1e47242189c5f40e2f17dbc7",
+            "45024eb2e6bd76dddf10fd7a6e20395bb9a4e596700adb971b33fb1ae9beb849",
+            "0d7124c481340eedd6737e1e74b1ab2b119c556dfc43bd482f9734b9c2a7621f",
+            "92144a175ca321a54fd09b1b93bb89b64f255473f0209d83d6e1522138db5651",
+            "13c1db3118d93f969e094e9012ee39352d354e30acd3d8e109f9b03d8424cd10",
+            "4634d62e0f64c836581996adb663cbf61810e2e52879cc890657275663abc86c",
+            "3559d348b95e65b06b208b0d836ca28e96c9ea35fde48b5ffdf42d9465db7f4f",
+            "333762e12e44ff6c23964572dd7553a08a952723d2599c3a644e8a69e323e369",)).unwrap();
+        let salt: Vec<u8> = (0u8..16).collect();
+        let x = x_without_user(&group, &salt, &[0x42u8; 32]);
+        let session = client.process(b"someone@icloud.com", &salt, &b_pub, &x).unwrap();
+        assert_eq!(hex::encode(&session.proof), "e3093018ead5d2d94060f8234b5c54f40b0749f95dc0419099096f2e8b468adc");
+        assert_eq!(hex::encode(&session.premaster[..32]), "3f705becd05cbdbbc79b819dbd36ace57cab341e77bcc0fcc4699ea5a722b285");
     }
 }

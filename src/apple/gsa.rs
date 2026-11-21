@@ -236,6 +236,17 @@ impl Account {
     }
 }
 
+/// A plist dictionary, also when Apple sends a bare `<dict>` without the
+/// `<plist>` root.
+fn bare_plist(data: &[u8]) -> Option<Dictionary> {
+    let trimmed = std::str::from_utf8(data).ok()?.trim();
+    if trimmed.starts_with("<dict") {
+        plist::from_bytes(format!("<plist version=\"1.0\">{trimmed}</plist>").as_bytes()).ok()
+    } else {
+        plist::from_bytes(data).ok()
+    }
+}
+
 fn session_hmac(key: &[u8], label: &str) -> Vec<u8> {
     let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
     mac.update(label.as_bytes());
@@ -304,11 +315,16 @@ async fn srp_login(gs: &GrandSlam, email: &str, password: &str) -> Result<Stage,
         return Err(other("Apple's server proof did not verify"));
     }
     let spd_sealed = data(&r2, "spd")?;
-    let key = session_hmac(&session.key, "extra data key:");
-    let iv = session_hmac(&session.key, "extra data iv:");
-    let spd_raw = cbc::Decryptor::<aes::Aes256>::new_from_slices(&key, &iv[..16]).map_err(other)?
-        .decrypt_padded_vec_mut::<Pkcs7>(&spd_sealed).map_err(|_| other("cannot decrypt Apple's session data"))?;
-    let spd: Dictionary = plist::from_bytes(&spd_raw).map_err(other)?;
+    // isideload keys the session data on S, pysrp-based clients on H(S);
+    // take whichever opens it (as the earlier Python sign-in did).
+    let hashed = Sha256::digest(&session.premaster).to_vec();
+    let spd = [&session.premaster, &hashed].into_iter().find_map(|base| {
+        let key = session_hmac(base, "extra data key:");
+        let iv = session_hmac(base, "extra data iv:");
+        let raw = cbc::Decryptor::<aes::Aes256>::new_from_slices(&key, &iv[..16]).ok()?
+            .decrypt_padded_vec_mut::<Pkcs7>(&spd_sealed).ok()?;
+        bare_plist(&raw)
+    }).ok_or_else(|| other("cannot decrypt Apple's session data"))?;
     let status = r2.get("Status").and_then(Value::as_dictionary).cloned().unwrap_or_default();
     match status.get("au").and_then(Value::as_string) {
         Some("trustedDeviceSecondaryAuth") => return Ok(Stage::TrustedDevice { spd, sent: false }),
@@ -454,7 +470,7 @@ pub async fn app_token(gs: &GrandSlam, account: &mut Account) -> Result<(), Logi
     let opened = cipher.decrypt(aes_gcm::aead::generic_array::GenericArray::from_slice(&sealed[3..19]),
                                 Payload { msg: &sealed[19..], aad: &sealed[..3] })
         .map_err(|_| other("cannot decrypt the app token"))?;
-    let token: Dictionary = plist::from_bytes(&opened).map_err(other)?;
+    let token = bare_plist(&opened).ok_or_else(|| other("the app token is not a plist"))?;
     if token.get("status-code").and_then(Value::as_signed_integer) != Some(200) {
         return Err(other(format!("app token refused: {token:?}")));
     }
@@ -516,9 +532,8 @@ impl Route {
 ///   or identity before looking at the password; the next claim or server
 ///   is tried. A claim refused with 503 on two servers is skipped after
 ///   that (SideInstaller's AppleRefusals).
-/// * -20101/-20970/-22406 (credentials): tried once more with another
-///   claim, since Apple has answered a distrusted identity this way, then
-///   sign-in stops: more attempts with the same password risk a lock.
+/// * -20101/-20970/-22406 (credentials) stop at once: more attempts with
+///   the same password risk a lock.
 /// * 429 and a locked account stop at once.
 pub async fn login(email: &str, password: &str, ask: &CodeAsker, status: &(dyn Fn(String) + Send + Sync))
     -> Result<(GrandSlam, Account), LoginError>
@@ -526,7 +541,6 @@ pub async fn login(email: &str, password: &str, ask: &CodeAsker, status: &(dyn F
     let email = email.trim().to_lowercase();
     let mut last = LoginError::Other("no anisette server answered".into());
     let mut refused: Vec<Claim> = Vec::new();
-    let mut credential_retry_used = false;
     let saved = Route::saved();
     for server in candidate_servers().await {
         let http = http_client();
@@ -571,11 +585,6 @@ pub async fn login(email: &str, password: &str, ask: &CodeAsker, status: &(dyn F
                     logf!("gsa: {host} as {}: identity refused ({why})", claim.name());
                     gs.anisette.lock().await.forget();
                     last = LoginError::IdentityRefused(why);
-                }
-                Err(LoginError::WrongPassword(why)) if !credential_retry_used => {
-                    logf!("gsa: {host} as {}: {why}; once more with another client", claim.name());
-                    credential_retry_used = true;
-                    last = LoginError::WrongPassword(why);
                 }
                 Err(e @ (LoginError::WrongPassword(_) | LoginError::Stop(_) | LoginError::Cancelled)) => return Err(e),
                 Err(LoginError::Other(why)) => {

@@ -60,8 +60,12 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
   Android-library servers (-80046). Fresh HTTP/1.1 connection per GSA
   request (isideload: reused ones get 5xx). Windows-library servers need the
   hsc 434 resync. One anisette identity per (server, client info). Email is
-  lowercased. Credential codes -20101/-20970/-22406 stop sign-in after one
-  retry with the other claim.
+  lowercased. Credential codes -20101/-20970/-22406 stop sign-in.
+- GrandSlam SRP: M1 hashes H(N) xor H(PAD(g)) (srp 0.7.0-rc.3
+  `g_no_pad = false`); unpadded g gives -22406 for a right password (seen on
+  device 2026-11-21). The session data (spd) is keyed on S, falling back to
+  H(S). Pair-setup keeps unpadded g (device-proven). Known-answer test from
+  the old Python sign-in in `src/srp.rs`.
 - SideStore/AltStore refresh with the certificate in their bundle:
   `ALTCertificate.p12` (password = portal machineId) + `ALTCertificateID` =
   serial (SideStore CertificateProvisioningFlow; isideload). LC+SS: in the
@@ -70,7 +74,8 @@ iOS/iPadOS 27+ only. Free Apple ID accounts only.
 
 ## Verified vs not
 
-Linux-verified: SRP against idevice-srp (both roles), pairing host against a
+Linux-verified: SRP pair-setup against idevice-srp, GrandSlam SRP against the
+device-proven Python sign-in (known answer), pairing host against a
 mock iPhone, TLS-PSK against openssl s_server, TCP stack against smoltcp, tunnel
 against a mock device, CSR and PKCS#12 with openssl (3.x and 1.1.1), signatures
 with rcodesign. **Device-verified (owner, 0.1.0):** LocalDevVPN check, pairing.
