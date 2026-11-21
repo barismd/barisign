@@ -75,14 +75,14 @@ pub async fn call(tool: &str, args: &[&str]) -> Result<Value, MinisError> {
 }
 
 /// Fire-and-forget for cleanup paths (drop, Ctrl-C).
+/// Runs on its own thread: drops happen inside async tasks, and a Minis
+/// command can take seconds (apple-speak stop waits for the speech).
 pub fn call_now(tool: &str, args: &[&str]) {
-    let _ = std::process::Command::new(tool)
-        .args(args)
-        .arg("--compact")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    let mut cmd = std::process::Command::new(tool);
+    cmd.args(args).arg("--compact").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    std::thread::spawn(move || {
+        let _ = cmd.status();
+    });
 }
 
 pub fn available(tool: &str) -> bool {

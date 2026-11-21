@@ -92,7 +92,14 @@ async fn knock(host: &str, port: u16, answer: Duration) -> Knock {
         Ok(Err(e)) if matches!(e.kind(), std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset) => {
             return Knock::Closed;
         }
-        _ => return Knock::Silent,
+        Ok(Err(e)) => {
+            logf!("device: {host}:{port}: {e} ({:?})", e.kind());
+            return Knock::Silent;
+        }
+        Err(_) => {
+            logf!("device: {host}:{port}: no answer in 3 s");
+            return Knock::Silent;
+        }
     };
     let body = serde_json::to_vec(&json!({"message": {"plain": {"_0": {"request": {"_0": {"handshake": {"_0": {
         "hostOptions": {"attemptPairVerify": true},
@@ -108,8 +115,7 @@ async fn knock(host: &str, port: u16, answer: Duration) -> Knock {
     if answered { Knock::Answered } else { Knock::Closed }
 }
 
-pub const NO_ROUTE: &str = "The iPhone does not answer through LocalDevVPN. Wi-Fi must be on (LocalDevVPN does not \
-                        work on mobile data) and LocalDevVPN connected.";
+pub const NO_ROUTE: &str = "No connection to the iPhone. Check that Wi-Fi is on and LocalDevVPN is connected.";
 
 /// Where the RemotePairing service answers. Usually 49152, but iOS takes
 /// the first free dynamic port at boot, so when that one is not it, the
@@ -122,12 +128,21 @@ pub async fn endpoint() -> Result<(String, u16), OpenError> {
     let saved = std::fs::read_to_string(state::path("device-port")).ok()
         .and_then(|s| s.trim().parse::<u16>().ok()).filter(|p| *p != PAIRING_PORT);
     for port in saved.into_iter().chain([PAIRING_PORT]) {
-        match knock(LOOPBACK, port, Duration::from_secs(5)).await {
-            Knock::Answered => return Ok((LOOPBACK.to_string(), port)),
-            // Silence is no route at all (siboot): knocking on 16 000 more
-            // ports would only wait longer.
-            Knock::Silent => return Err(OpenError::NoVpn(NO_ROUTE.into())),
-            Knock::Closed => {}
+        // LocalDevVPN can take a few seconds to carry traffic again when
+        // Minis comes back from Settings: ask three times before giving up.
+        let mut silent = 0;
+        loop {
+            match knock(LOOPBACK, port, Duration::from_secs(5)).await {
+                Knock::Answered => return Ok((LOOPBACK.to_string(), port)),
+                // Silence is no route at all (siboot): knocking on 16 000
+                // more ports would only wait longer.
+                Knock::Silent if silent < 2 => {
+                    silent += 1;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+                Knock::Silent => return Err(OpenError::NoVpn(NO_ROUTE.into())),
+                Knock::Closed => break,
+            }
         }
     }
     logf!("device: {PAIRING_PORT} is not the pairing service; knocking on the other dynamic ports");

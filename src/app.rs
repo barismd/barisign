@@ -320,13 +320,18 @@ impl App {
         }
         // Prove the new record works and learn Developer Mode's state now.
         self.step("Checking the connection");
-        match self.device().await {
-            Ok(_) => Ok(format!("Paired with {}.", record.peer.name)),
-            Err(e) => {
-                logf!("pair: paired, but the first connection failed: {e}");
-                Ok(format!("Paired with {}, but the connection check failed: {e}", record.peer.name))
+        let mut last = String::new();
+        for attempt in 1..=3 {
+            match self.device().await {
+                Ok(_) => return Ok(format!("Paired with {}.", record.peer.name)),
+                Err(e) => {
+                    logf!("pair: connection check {attempt} failed: {e}");
+                    last = e;
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
             }
         }
+        Ok(format!("Paired with {}. {last}", record.peer.name))
     }
 
     pub async fn developer_mode(&self, action: Option<u64>) -> Result<String, String> {

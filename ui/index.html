@@ -209,8 +209,7 @@ function setupView() {
   const step = !paired ? (vpn ? 2 : 1) : !signed ? 3 : 4;
   const li = (n, title, body) => `<li class="${n < step ? "done" : n === step ? "now" : ""}"><div class="grow"><b>${title}</b>${n === step ? `<div class="muted small" style="margin-top:4px">${body}</div>` : ""}</div></li>`;
   const s1 = st.vpn == null ? `Checking LocalDevVPN…`
-    : `Turn on Wi-Fi, then install <b>LocalDevVPN</b> from the App Store, open it and connect. BariStore moves on by itself.
-     <div class="notice bad">${esc(S.vpn_message || "LocalDevVPN is not connected yet.")}</div>
+    : `Turn on Wi-Fi, then connect <b>LocalDevVPN</b> (free on the App Store). BariStore moves on by itself.
      <button class="btn secondary" onclick="check()">Check again</button>`;
   const s2 = `BariStore pairs this iPhone with itself; Settings shows where to tap once you start.
      <button class="btn" onclick="act('pair')">Start pairing</button>`;
@@ -233,7 +232,7 @@ function setupView() {
     <button class="link bad" style="text-align:center" onclick="ask({title:'Start again?', message:'BariStore forgets the pairing, the Apple ID session and its settings, and setup starts from the beginning. Apps stay on the iPhone.', ok:'Start again', danger:true, run:reset})">Start again</button>
   </div>`;
 }
-async function check() { const r = await act("check"); S.vpn_message = r.ok ? "" : r.message; render(); }
+async function check() { await act("check"); }
 function login() {
   const email = $("#email").value.trim(), password = $("#password").value;
   if (!email || !password) { toast("Enter your Apple ID email and password."); return; }
@@ -680,7 +679,7 @@ async function loadCatalog() {
   await poll();
   await loadCatalog();
   act("catalog_refresh").then(() => setTimeout(loadCatalog, 800));
-  act("check").then((r) => { S.vpn_message = r.ok ? "" : r.message; render(); });
+  act("check");
   setInterval(() => { if (S || failures) poll(); }, 900);
   // Setup's first step moves on by itself once LocalDevVPN answers.
   setInterval(() => {

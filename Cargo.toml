@@ -1,6 +1,6 @@
 [package]
 name = "baristore"
-version = "0.10.0-alpha.6"
+version = "0.10.0-alpha.7"
 edition = "2021"
 description = "An app store for iPhone and iPad that runs in Open Minis: pairs, signs and installs on the device itself"
 license = "MIT"
